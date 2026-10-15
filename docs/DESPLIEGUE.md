@@ -17,3 +17,10 @@ cd mcp && npm ci && PGHOST=... PGUSER=postgres npm test  # 9 pruebas MCP
 - MCP: https://buzon-ias-mcp.vercel.app/api/mcp
 - PWA: https://buzon-ias-pwa.vercel.app
 - Supabase: proyecto `gatito` (plan gratis). Las variables viven solo en Vercel.
+
+## Cuenta del dueño (la PWA no crea usuarios)
+La PWA usa `shouldCreateUser: false`: solo entran usuarios que ya existen.
+1. Supabase → Authentication → Users → **Add user → Send invitation** a tu correo (o "Create new user").
+2. Entra a la PWA con ese correo.
+3. Después: Authentication → Sign In / Providers → desactiva **Allow new users to sign up**.
+Recomendado: en Vercel → Firewall, regla de rate limit para `/api/mcp` (p. ej. 120/min por IP).

@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.118.0';
+import { createClient } from './vendor/supabase.js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -11,7 +11,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 
 $('#f-login').onsubmit = async (e) => {
   e.preventDefault();
-  const { error } = await sb.auth.signInWithOtp({ email: $('#email').value, options: { emailRedirectTo: location.origin + location.pathname } });
+  const { error } = await sb.auth.signInWithOtp({ email: $('#email').value, options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname } });
   $('#login-msg').textContent = error ? 'Error: ' + error.message : 'Revisa tu correo 📩';
 };
 $('#salir').onclick = () => sb.auth.signOut();
@@ -98,7 +98,9 @@ async function pintarAgentes(v) {
   }
   v.querySelectorAll('[data-rev]').forEach((b) => b.onclick = async () => {
     if (!confirm('¿Revocar este token? Tiene efecto inmediato.')) return;
-    await sb.from('tokens').update({ revocado_en: new Date().toISOString() }).eq('id', b.dataset.rev); pintar();
+    const { data, error } = await sb.from('tokens').update({ revocado_en: new Date().toISOString() }).eq('id', b.dataset.rev).select('id');
+    if (error || !data?.length) return alert('No se pudo revocar el token: ' + (error?.message ?? 'sin permiso o no existe') + '. Intenta de nuevo.');
+    pintar();
   });
   $('#f-ag').onsubmit = async (e) => {
     e.preventDefault();

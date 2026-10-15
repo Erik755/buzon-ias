@@ -47,17 +47,26 @@ reset role;
 set role anon;
 do $$ begin
   begin perform 1 from public.hilos; perform pg_temp.falla('06 anon leyó'); exception when insufficient_privilege then perform pg_temp.ok('06 anon sin acceso (no hay enlaces públicos)'); end;
-  begin perform public.validar_token(encode(sha256('bz_valido'),'hex'),'leer'); perform pg_temp.falla('07 anon validó token'); exception when insufficient_privilege then perform pg_temp.ok('07 anon no puede llamar validar_token'); end;
+  begin perform public._mcp_ctx('bz_valido_xxxxxxxxxxxxxxxxxxxx','leer',null); perform pg_temp.falla('07 anon llamó _mcp_ctx'); exception when insufficient_privilege then perform pg_temp.ok('07 anon no puede llamar _mcp_ctx'); end;
 end $$;
 reset role;
--- Tokens (como el servidor MCP, service_role)
+-- Tokens: se prueban por la API pública mcp_leer/mcp_crear (rol anon), igual que el servidor MCP
+update public.tokens set hash_token = encode(sha256(convert_to('bz_valido_' || repeat('a',30),'UTF8')),'hex') where hash_token = encode(sha256('bz_valido'),'hex');
+update public.tokens set hash_token = encode(sha256(convert_to('bz_revocado_' || repeat('a',30),'UTF8')),'hex') where hash_token = encode(sha256('bz_revocado'),'hex');
+update public.tokens set hash_token = encode(sha256(convert_to('bz_vencido_' || repeat('a',30),'UTF8')),'hex') where hash_token = encode(sha256('bz_vencido'),'hex');
+update public.tokens set hash_token = encode(sha256(convert_to('bz_sololeer_' || repeat('a',30),'UTF8')),'hex') where hash_token = encode(sha256('bz_sololeer'),'hex');
+set role anon;
+do $$ declare t text := repeat('a',30); begin
+  if (public.mcp_leer('bz_valido_' || t) -> 'hilos') is not null then perform pg_temp.ok('08 control positivo: token válido funciona'); else perform pg_temp.falla('08'); end if;
+  begin perform public.mcp_leer('bz_revocado_' || t); perform pg_temp.falla('09'); exception when others then if sqlerrm like '403:%' then perform pg_temp.ok('09 token revocado falla'); else raise; end if; end;
+  begin perform public.mcp_leer('bz_vencido_' || t); perform pg_temp.falla('10'); exception when others then if sqlerrm like '403:%' then perform pg_temp.ok('10 token vencido falla'); else raise; end if; end;
+  begin perform public.mcp_leer('bz_inventado_' || t); perform pg_temp.falla('11'); exception when others then if sqlerrm like '403:%' then perform pg_temp.ok('11 token inexistente falla'); else raise; end if; end;
+  begin perform public.mcp_crear('bz_sololeer_' || t, 'tarea', 'x'); perform pg_temp.falla('12'); exception when others then if sqlerrm like '403:%' then perform pg_temp.ok('12 token sin alcance "crear" falla'); else raise; end if; end;
+  begin perform public.mcp_responder('bz_valido_' || t, 'cccccccc-0000-0000-0000-000000000001', 'x', 'aprobar'); perform pg_temp.falla('12b'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('12b IA no puede aprobar por la API MCP'); else raise; end if; end;
+end $$;
+reset role;
 set role service_role;
 do $$ begin
-  if (select count(*) from public.validar_token(encode(sha256('bz_valido'),'hex'),'crear'))=1 then perform pg_temp.ok('08 control positivo: token válido funciona'); else perform pg_temp.falla('08'); end if;
-  if (select count(*) from public.validar_token(encode(sha256('bz_revocado'),'hex'),'leer'))=0 then perform pg_temp.ok('09 token revocado falla'); else perform pg_temp.falla('09'); end if;
-  if (select count(*) from public.validar_token(encode(sha256('bz_vencido'),'hex'),'leer'))=0 then perform pg_temp.ok('10 token vencido falla'); else perform pg_temp.falla('10'); end if;
-  if (select count(*) from public.validar_token(encode(sha256('bz_inventado'),'hex'),'leer'))=0 then perform pg_temp.ok('11 token inexistente falla'); else perform pg_temp.falla('11'); end if;
-  if (select count(*) from public.validar_token(encode(sha256('bz_sololeer'),'hex'),'crear'))=0 then perform pg_temp.ok('12 token sin alcance "crear" falla'); else perform pg_temp.falla('12'); end if;
   -- IA (servidor MCP) no puede aprobar
   begin insert into public.aprobaciones(hilo_id,humano_id,decision) values ('cccccccc-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','aprobado');
     perform pg_temp.falla('13 IA aprobó'); exception when insufficient_privilege then perform pg_temp.ok('13 IA no puede insertar aprobaciones'); end;
@@ -89,6 +98,14 @@ do $$ begin
   begin update public.auditoria set accion='x'; perform pg_temp.falla('24'); exception when insufficient_privilege then perform pg_temp.ok('24 owner no edita auditoría (trigger)'); end;
   begin delete from public.auditoria; perform pg_temp.falla('25'); exception when insufficient_privilege then perform pg_temp.ok('25 owner no borra auditoría (trigger)'); end;
   begin truncate public.auditoria; perform pg_temp.falla('26'); exception when insufficient_privilege then perform pg_temp.ok('26 owner no trunca auditoría (trigger)'); end;
+end $$;
+-- 28-30. Endurecimiento
+do $$ begin
+  if not exists (select 1 from pg_proc where proname='validar_token') then perform pg_temp.ok('28 validar_token eliminada'); else perform pg_temp.falla('28'); end if;
+  begin insert into public.hilos(buzon_id,tipo,titulo,creado_por_agente) values ('aaaaaaaa-0000-0000-0000-000000000002','tarea','x','bbbbbbbb-0000-0000-0000-000000000001');
+    perform pg_temp.falla('29'); exception when insufficient_privilege then perform pg_temp.ok('29 agente de otro buzón no se puede asignar a un hilo'); end;
+  begin insert into public.buzones(dueno_id,nombre) values ('11111111-1111-1111-1111-111111111111','segundo');
+    perform pg_temp.falla('30'); exception when unique_violation then perform pg_temp.ok('30 máximo 1 buzón por dueño'); end;
 end $$;
 -- 27. RLS activo en las 7 tablas
 do $$ begin

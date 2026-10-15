@@ -1,5 +1,5 @@
 // Service worker: solo cachea la carcasa estática; nunca datos del buzón.
-const C = 'buzon-v1', CASCARA = ['./', 'index.html', 'app.js', 'estilo.css', 'manifest.webmanifest', 'icon.svg'];
+const C = 'buzon-v2', CASCARA = ['./', 'index.html', 'app.js', 'estilo.css', 'manifest.webmanifest', 'icon.svg', 'vendor/supabase.js'];
 self.addEventListener('install', (e) => e.waitUntil(caches.open(C).then((c) => c.addAll(CASCARA))));
 self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== C).map((k) => caches.delete(k))))));
 self.addEventListener('fetch', (e) => {

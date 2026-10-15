@@ -106,12 +106,11 @@ test('negativa: límite de tasa (60/min)', async () => {
   await assert.rejects(() => servicio.leer(T.chatgpt, {}), (e) => e.codigo === 429);
 });
 
-test('negativa: anon no lee tablas directo ni llama validar_token', async () => {
+test('negativa: anon no lee tablas directo ni llama funciones internas', async () => {
   const c = await pool.connect();
   try {
     await c.query('set role anon');
     await assert.rejects(() => c.query('select * from hilos'), /permission denied/);
-    await assert.rejects(() => c.query("select * from validar_token('x','leer')"), /permission denied/);
     await assert.rejects(() => c.query("select _mcp_ctx('x','leer',null)"), /permission denied/);
   } finally { await c.query('reset role'); c.release(); }
 });
