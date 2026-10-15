@@ -74,5 +74,5 @@ create or replace function public.es_dueno(b uuid) returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.buzones where id = b and dueno_id = auth.uid());
 $$;
-revoke all on function public.es_dueno(uuid) from public;
+revoke all on function public.es_dueno(uuid) from public, anon;
 grant execute on function public.es_dueno(uuid) to authenticated;

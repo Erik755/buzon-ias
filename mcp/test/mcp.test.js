@@ -5,8 +5,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import pg from 'pg';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { repoPg } from '../lib/repo-pg.js';
-import { crearServicio } from '../lib/servicio.js';
+import { crearServicio, rpcPg } from '../lib/servicio.js';
 import { crearServidorMcp } from '../lib/servidor.js';
 import { hashToken, nuevoToken } from '../lib/token.js';
 
@@ -34,7 +33,7 @@ before(async () => {
   await ag('bbbbbbbb-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001', 'Claude', T.claude);
   await ag('bbbbbbbb-0000-0000-0000-000000000003', 'aaaaaaaa-0000-0000-0000-000000000002', 'Intruso', T.ajeno);
   await ag('bbbbbbbb-0000-0000-0000-000000000004', 'aaaaaaaa-0000-0000-0000-000000000001', 'Viejo', T.revocado, 'rev');
-  servicio = crearServicio(repoPg(pool), { limite: 1000 });
+  servicio = crearServicio(rpcPg(pool));
 });
 after(async () => { await pool?.end(); await admin.query(`drop database if exists ${DB}`); await admin.end(); });
 
@@ -45,6 +44,7 @@ async function cliente(token) {
 }
 const llamar = async (c, name, args) => {
   const r = await c.callTool({ name, arguments: args });
+  if (r.isError && !/\[\d{3}\]/.test(r.content[0].text)) console.error(r.content[0].text);
   return { error: !!r.isError, texto: r.content[0].text, json: r.isError ? null : JSON.parse(r.content[0].text) };
 };
 
@@ -101,9 +101,19 @@ test('negativa: una IA no puede aprobar (no existe la acción y el esquema la re
   assert.equal((await llamar(c, 'leer', { hilo_id: r.json.id })).json.hilo.estado, 'abierto');
 });
 
-test('negativa: límite de tasa', async () => {
-  const s = crearServicio(repoPg(pool), { limite: 2 });
-  await assert.rejects(async () => { for (let i = 0; i < 5; i++) await s.leer(T.chatgpt, {}); }, /Límite/);
+test('negativa: límite de tasa (60/min)', async () => {
+  await pool.query("insert into auditoria(buzon_id,actor,accion) select 'aaaaaaaa-0000-0000-0000-000000000001','agente:bbbbbbbb-0000-0000-0000-000000000001','relleno' from generate_series(1,60)");
+  await assert.rejects(() => servicio.leer(T.chatgpt, {}), (e) => e.codigo === 429);
+});
+
+test('negativa: anon no lee tablas directo ni llama validar_token', async () => {
+  const c = await pool.connect();
+  try {
+    await c.query('set role anon');
+    await assert.rejects(() => c.query('select * from hilos'), /permission denied/);
+    await assert.rejects(() => c.query("select * from validar_token('x','leer')"), /permission denied/);
+    await assert.rejects(() => c.query("select _mcp_ctx('x','leer',null)"), /permission denied/);
+  } finally { await c.query('reset role'); c.release(); }
 });
 
 test('todo queda en auditoría', async () => {

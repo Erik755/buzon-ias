@@ -53,4 +53,5 @@ begin
     returning a.id, a.buzon_id, a.nombre;
 end $$;
 revoke all on function public.validar_token(text, text) from public, anon, authenticated;
+revoke execute on function public.auditoria_inmutable(), public.tras_aprobacion(), public.hilos_estado_guard() from public, anon, authenticated;
 grant execute on function public.validar_token(text, text) to service_role;
