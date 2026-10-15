@@ -26,12 +26,16 @@ document.querySelectorAll('nav button').forEach((b) => b.onclick = () => {
 sb.auth.onAuthStateChange(async (_ev, ses) => {
   usuario = ses?.user ?? null;
   $('#login').hidden = !!usuario; $('#app').hidden = !usuario; $('#salir').hidden = !usuario;
-  if (usuario) { await asegurarBuzon(); pintar(); }
+  if (usuario) {
+    try { await asegurarBuzon(); pintar(); }
+    catch (e) { $('#vista').innerHTML = `<div class="vacio"><b>No pudimos abrir tu buzón</b>${esc(e.message)}<br><br>Toca <b>Salir</b> y vuelve a entrar con el enlace de tu correo.</div>`; }
+  }
 });
 
 async function asegurarBuzon() {
-  let { data } = await sb.from('buzones').select('*').limit(1);
-  if (!data?.length) ({ data } = await sb.from('buzones').insert({ dueno_id: usuario.id, nombre: 'Mi buzón' }).select());
+  let { data, error } = await sb.from('buzones').select('*').limit(1);
+  if (!error && !data?.length) ({ data, error } = await sb.from('buzones').insert({ dueno_id: usuario.id, nombre: 'Mi buzón' }).select());
+  if (error || !data?.length) throw new Error(error?.message || 'No se pudo abrir tu buzón');
   buzon = data[0];
 }
 
