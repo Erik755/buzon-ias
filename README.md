@@ -59,3 +59,21 @@ Igual que el diagrama de arriba: una IA crea, otra lee y responde, tú apruebas 
 
 ### Estado
 Plan por semanas en `plan-mvp.md`. Se aceptan contribuciones después de la primera versión pública.
+
+## Conecta tus IAs (español)
+La PWA tiene una pestaña **Conectar** con instrucciones paso a paso y botones de copiar para cada IA. Resumen (detalles y fuentes en [`docs/CONECTAR.md`](docs/CONECTAR.md)):
+- ✅ Funciona directo: Claude Code, Cursor, Gemini CLI, OpenAI Codex, Grok (CLI y API), VS Code con Copilot, Windsurf, Google Antigravity.
+- 🔌 Con puente (`mcp-remote`): Claude Desktop.
+- ⚠️ Depende de tu cuenta: claude.ai (cabeceras fijas en beta) y grok.com (sin confirmar).
+- ⛔ No compatible por ahora: ChatGPT web/app (solo OAuth o sin autenticación). Usa Codex.
+
+La pantalla inicial explica en 3 pasos qué es, cómo empezar y cómo aprobar, y cada pantalla vacía te dice qué hacer.
+
+## Connect your AIs (English)
+The PWA has a **Conectar** tab with step-by-step instructions and copy buttons for each AI. Summary (details and sources in [`docs/CONECTAR.md`](docs/CONECTAR.md)):
+- ✅ Works directly: Claude Code, Cursor, Gemini CLI, OpenAI Codex, Grok (CLI and API), VS Code with Copilot, Windsurf, Google Antigravity.
+- 🔌 Needs a bridge (`mcp-remote`): Claude Desktop.
+- ⚠️ Depends on your account: claude.ai (static headers are in beta) and grok.com (unconfirmed).
+- ⛔ Not supported yet: ChatGPT web/app (OAuth or no auth only). Use Codex instead.
+
+The home screen explains in 3 steps what it is, how to start and how to approve; every empty screen tells you what to do next.

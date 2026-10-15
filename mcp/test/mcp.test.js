@@ -115,6 +115,13 @@ test('negativa: anon no lee tablas directo ni llama funciones internas', async (
   } finally { await c.query('reset role'); c.release(); }
 });
 
+test('extraerBearer acepta "Bearer bz_" y "bz_" y rechaza lo demás', async () => {
+  const { extraerBearer } = await import('../lib/token.js');
+  const t = 'bz_' + 'a'.repeat(43);
+  assert.equal(extraerBearer('Bearer ' + t), t); assert.equal(extraerBearer(t), t);
+  assert.equal(extraerBearer('Basic ' + t), null); assert.equal(extraerBearer('Bearer abc'), null); assert.equal(extraerBearer(undefined), null);
+});
+
 test('todo queda en auditoría', async () => {
   const { rows } = await pool.query("select count(*)::int n from auditoria where actor like 'agente:%'");
   assert.ok(rows[0].n >= 8);

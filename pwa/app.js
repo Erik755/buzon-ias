@@ -1,20 +1,24 @@
 import { createClient } from './vendor/supabase.js';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, MCP_URL } from './config.js';
+import { GUIAS, ETIQUETA } from './guias.js';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = (s) => document.querySelector(s);
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fecha = (f) => new Date(f).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
-let usuario, buzon, vista = 'pendientes';
+let usuario, buzon, vista = 'pendientes', tokenGuia = '';
+const URL_MCP = MCP_URL || 'https://buzon-ias-mcp.vercel.app/api/mcp';
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 
 $('#f-login').onsubmit = async (e) => {
   e.preventDefault();
   const { error } = await sb.auth.signInWithOtp({ email: $('#email').value, options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname } });
-  $('#login-msg').textContent = error ? 'Error: ' + error.message : 'Revisa tu correo 📩';
+  $('#login-msg').textContent = error ? (/signups? not allowed|not found/i.test(error.message) ? 'Ese correo no tiene cuenta todavía. Pídele al administrador que te invite.' : 'Error: ' + error.message) : 'Listo. Revisa tu correo 📩 y abre el enlace en este mismo teléfono.';
 };
 $('#salir').onclick = () => sb.auth.signOut();
+$('#ver-guias').onclick = () => { const g = $('#guias-publicas'); if (g.childElementCount) g.innerHTML = ''; else pintarGuias(g, false); };
+function irA(v) { document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('activa', x.dataset.vista === v)); vista = v; pintar(); }
 document.querySelectorAll('nav button').forEach((b) => b.onclick = () => {
   document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('activa', x === b)); vista = b.dataset.vista; pintar();
 });
@@ -34,11 +38,22 @@ async function asegurarBuzon() {
 async function pintar() {
   const v = $('#vista'); v.innerHTML = '<p class="meta">Cargando…</p>';
   if (vista === 'agentes') return pintarAgentes(v);
+  if (vista === 'conectar') { v.innerHTML = ''; return pintarGuias(v, true); }
   let q = sb.from('hilos').select('*, agentes!hilos_creado_por_agente_fkey(nombre)').eq('buzon_id', buzon.id).order('creado_en', { ascending: false }).limit(50);
   if (vista === 'pendientes') q = q.eq('estado', 'pide_aprobacion');
   const { data, error } = await q;
   if (error) return v.textContent = error.message;
-  v.innerHTML = data.length ? '' : '<p class="meta">Nada pendiente 🎉</p>';
+  if (!data.length) {
+    const { count } = await sb.from('agentes').select('id', { count: 'exact', head: true }).eq('buzon_id', buzon.id);
+    v.innerHTML = !count
+      ? `<div class="vacio"><b>👋 Empecemos</b>Todavía no conectas ninguna IA.<br>1) Crea un agente en <b>Agentes</b> (uno por IA).<br>2) Sigue la guía en <b>Conectar</b>.<br>3) Pídele a tu IA: <i>"Deja una tarea en mi buzón"</i>.<br><br><button class="ok" id="ir-agentes">Crear mi primer agente</button></div>`
+      : vista === 'pendientes'
+        ? `<div class="vacio"><b>Nada por aprobar 🎉</b>Cuando una IA te pida permiso, aparecerá aquí. Prueba pedirle a una IA: <i>"Lee mi buzón, toma la tarea y pídeme aprobación cuando acabes"</i>.</div>`
+        : `<div class="vacio"><b>Tu historial está vacío</b>Pídele a una IA conectada: <i>"Deja en mi buzón una tarea: …"</i> y aquí verás todo lo que pase.</div>`;
+    $('#ir-agentes') && ($('#ir-agentes').onclick = () => irA('agentes'));
+    return;
+  }
+  v.innerHTML = '';
   for (const h of data) {
     const d = document.createElement('div'); d.className = 'tarjeta';
     d.innerHTML = `<span class="estado">${esc(h.estado)}</span><b>${esc(h.titulo)}</b>
@@ -86,7 +101,8 @@ function nuevoToken() {
 
 async function pintarAgentes(v) {
   const { data: ags } = await sb.from('agentes').select('*, tokens(id,alcances,vence_en,revocado_en,ultimo_uso)').eq('buzon_id', buzon.id).order('creado_en');
-  v.innerHTML = `<form id="f-ag" class="tarjeta"><b>Nuevo agente</b><input id="ag-nombre" required placeholder="Claude, ChatGPT, Grok…">
+  v.innerHTML = (ags.length ? '' : `<div class="vacio"><b>Crea un agente por cada IA</b>Un "agente" es la llave de una IA para entrar a tu buzón. Ponle el nombre de la IA (ej. "Claude"). Te daremos un token para pegar en esa IA; si un día no quieres que entre, lo revocas aquí.</div>`)
+    + `<form id="f-ag" class="tarjeta"><b>Nuevo agente</b><input id="ag-nombre" required placeholder="Claude, ChatGPT, Grok…">
     <select id="ag-dias"><option value="7">7 días</option><option value="30" selected>30 días</option><option value="90">90 días</option></select>
     <button class="ok">Crear y generar token</button></form>`;
   for (const a of ags) {
@@ -110,7 +126,49 @@ async function pintarAgentes(v) {
     const vence = new Date(Date.now() + +$('#ag-dias').value * 864e5).toISOString();
     const r = await sb.from('tokens').insert({ agente_id: ag.id, hash_token: await sha256hex(token), vence_en: vence });
     if (r.error) return alert(r.error.message);
-    $('#dlg-cuerpo').innerHTML = `<h3>Token de ${esc(ag.nombre)}</h3><p>Cópialo ahora: <b>no se vuelve a mostrar</b>.</p><code>${esc(token)}</code>`;
+    $('#dlg-cuerpo').innerHTML = `<h3>Token de ${esc(ag.nombre)}</h3><p>Cópialo ahora: <b>no se vuelve a mostrar</b>. Es como una contraseña: no lo compartas ni lo pongas en capturas.</p><code id="tok">${esc(token)}</code>
+      <div class="fila"><button class="ok" id="cp-tok">Copiar token</button><button id="usar-tok">Ver dónde pegarlo</button></div>`;
+    $('#cp-tok').onclick = () => copiar(token, $('#cp-tok'));
+    $('#usar-tok').onclick = () => { tokenGuia = token; $('#dlg').close(); irA('conectar'); };
     $('#dlg').showModal(); pintar();
   };
+}
+
+async function copiar(texto, boton) {
+  try { await navigator.clipboard.writeText(texto); } catch {
+    const t = document.createElement('textarea'); t.value = texto; document.body.append(t); t.select(); document.execCommand('copy'); t.remove();
+  }
+  const o = boton.textContent; boton.textContent = '✔ Copiado'; setTimeout(() => (boton.textContent = o), 1500);
+}
+
+function pintarGuias(v, conSesion) {
+  const caja = document.createElement('div');
+  caja.innerHTML = `<div class="tarjeta"><b>Conecta tus IAs</b>
+    <p class="meta">Cada IA necesita 2 cosas: la <b>dirección del buzón</b> y su <b>token</b>.</p>
+    <p>1) Dirección del buzón (MCP):</p><pre id="url-mcp">${esc(URL_MCP)}</pre><button class="copiar" id="cp-url">Copiar dirección</button>
+    <p>2) Token: ${conSesion ? 'créalo en <b>Agentes</b> (uno por IA) y pégalo aquí para que las instrucciones salgan listas para copiar. No se guarda en ningún lado.' : 'entra y créalo en <b>Agentes</b>. Aquí abajo verás TU_TOKEN donde va.'}</p>
+    ${conSesion ? '<input id="tok-guia" type="password" placeholder="bz_… (pega el token aquí)" autocomplete="off">' : ''}
+    <p class="meta">✅ funciona directo · 🔌 necesita un pequeño puente en tu compu · ⚠️ depende de tu cuenta · ⛔ no compatible</p></div>
+    <div id="lista-guias"></div>`;
+  v.append(caja);
+  caja.querySelector('#cp-url').onclick = (e) => copiar(URL_MCP, e.target);
+  const inp = caja.querySelector('#tok-guia');
+  if (inp) { inp.value = tokenGuia; inp.oninput = () => { tokenGuia = inp.value.trim(); lista(); }; }
+  const lista = () => {
+    const tok = /^bz_[A-Za-z0-9_-]{20,}$/.test(tokenGuia) ? tokenGuia : 'TU_TOKEN';
+    const r = (t) => t.replaceAll('{URL}', URL_MCP).replaceAll('{TOKEN}', tok);
+    const abiertas = new Set([...caja.querySelectorAll('details[open]')].map((d) => d.dataset.id));
+    const cont = caja.querySelector('#lista-guias'); cont.innerHTML = '';
+    for (const g of GUIAS) {
+      const d = document.createElement('details'); d.className = 'guia'; d.dataset.id = g.id; if (abiertas.has(g.id)) d.open = true;
+      d.innerHTML = `<summary>${esc(g.nombre)}<span class="etq">${ETIQUETA[g.estado]}</span></summary>
+        <p><b>Dónde:</b> ${esc(r(g.donde))}</p><ol>${g.pasos.map((p) => `<li>${esc(r(p))}</li>`).join('')}</ol>
+        ${g.codigo ? `<pre>${esc(r(g.codigo))}</pre><button class="copiar" data-c="1">Copiar</button>` : ''}
+        ${g.nota ? `<p class="aviso">${esc(r(g.nota))}</p>` : ''}
+        <p><b>¿Quedó?</b> ${esc(g.probar)}</p>`;
+      const b = d.querySelector('[data-c]'); if (b) b.onclick = () => copiar(r(g.codigo), b);
+      cont.append(d);
+    }
+  };
+  lista();
 }
