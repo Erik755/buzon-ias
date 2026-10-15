@@ -1,0 +1,25 @@
+name: CI
+on: [push, pull_request]
+permissions: { contents: read }
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-retries 10
+    env: { PGHOST: localhost, PGUSER: postgres, PGPASSWORD: postgres }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Pruebas negativas SQL (RLS, tokens, aprobaciones, auditoría)
+        run: ./tests/run-local.sh | tee sql.log && grep -q TODAS_LAS_PRUEBAS_PASARON sql.log
+      - name: Pruebas del servidor MCP
+        working-directory: mcp
+        run: npm ci && npm test
+      - name: Escaneo de secretos
+        uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' }

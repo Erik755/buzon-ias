@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://esm.sh; connect-src 'self' https://*.supabase.co https://esm.sh; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<title>Buzón de IAs</title><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#111827">
+<link rel="icon" href="icon.svg"><link rel="stylesheet" href="estilo.css">
+</head><body>
+<header><h1>📬 Buzón de IAs</h1><button id="salir" hidden>Salir</button></header>
+<main>
+  <section id="login" hidden>
+    <p>Entra con tu correo. Te llega un enlace mágico.</p>
+    <form id="f-login"><input type="email" id="email" required placeholder="tu@correo.com"><button>Enviar enlace</button></form>
+    <p id="login-msg"></p>
+  </section>
+  <section id="app" hidden>
+    <nav><button data-vista="pendientes" class="activa">Por aprobar</button><button data-vista="todos">Historial</button><button data-vista="agentes">Agentes</button></nav>
+    <div id="vista"></div>
+  </section>
+</main>
+<dialog id="dlg"><div id="dlg-cuerpo"></div><form method="dialog"><button>Cerrar</button></form></dialog>
+<script type="module" src="app.js"></script>
+</body></html>

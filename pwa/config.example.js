@@ -1,0 +1,4 @@
+// Copia a config.js (NO se sube a git) o genéralo en el build de Vercel con `node build-config.mjs`.
+// La anon key es pública por diseño; la seguridad la da RLS. NUNCA pongas aquí la service_role.
+export const SUPABASE_URL = 'https://TU-PROYECTO.supabase.co';
+export const SUPABASE_ANON_KEY = 'TU_ANON_KEY';
