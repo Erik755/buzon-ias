@@ -1,6 +1,33 @@
 // Guías "Conecta tus IAs". Verificadas contra la documentación oficial (fuentes en docs/CONECTAR.md, 15 oct 2026).
-// {URL} = dirección del MCP, {TOKEN} = token bz_ del agente.
+// {URL} = dirección del MCP, {TOKEN} = token bz_ del agente, {CANJE} = canje de códigos bzc_.
+// Codex y Grok verificados el 16 oct 2026: learn.chatgpt.com/docs/extend/mcp y docs.x.ai/build/features/mcp-servers.
 export const GUIAS = [
+  {
+    id: 'nl-codex', nombre: '🗣️ Codex en lenguaje natural ("conéctate a mi buzón")', estado: 'directo',
+    donde: 'Tu terminal (Mac o Linux) y Codex CLI. El token nunca pasa por el chat: vive en la variable de entorno BUZON_TOKEN, que Codex lee con bearer_token_env_var.',
+    pasos: ['En Agentes → "Conectar con lenguaje natural", escribe "Codex" y toca Generar código. Toca Copiar código. NO lo pegues en el chat.',
+      'En tu terminal, pega y corre el bloque de abajo. Cuando diga "Código del buzón:", pega el código (no se ve al escribir) y Enter.',
+      'En esa MISMA terminal abre Codex y dile: "Conéctate a mi buzón: {URL}". Codex lee las instrucciones de esa dirección y te propone agregar a ~/.codex/config.toml: [mcp_servers.buzon] url = "{URL}" y bearer_token_env_var = "BUZON_TOKEN". Acepta.',
+      'Para que dure al reiniciar, guarda BUZON_TOKEN fuera de cualquier proyecto (por ejemplo en ~/.zshrc o en el gestor de secretos de tu sistema). Si alguna vez lo pegaste en un chat, revócalo en Agentes.'],
+    codigo: `read -rs -p "Código del buzón: " C; echo
+export BUZON_TOKEN="$(curl -fsS -X POST {CANJE} -H 'Accept: text/plain' -H 'Content-Type: application/json' -d "{\\"codigo\\":\\"$C\\"}")"; unset C
+echo "Token listo: \${BUZON_TOKEN:0:6}…"`,
+    probar: 'Corre "codex mcp list": debe salir "buzon". Pide en Codex: "Usa leer de mi buzón". En Agentes verás 🟢 junto a "Codex".',
+    nota: 'Codex no tiene un campo de secreto propio para MCP: su forma oficial es la variable de entorno (bearer_token_env_var) o un comando que imprime la cabecera (http_headers_helper), por ejemplo leyendo el llavero de macOS.',
+  },
+  {
+    id: 'nl-grok', nombre: '🗣️ Grok CLI en lenguaje natural ("conéctate a mi buzón")', estado: 'directo',
+    donde: 'Tu terminal y Grok CLI. El token vive en la variable BUZON_TOKEN; Grok guarda en su configuración el texto ${BUZON_TOKEN} y lo expande al cargar, así el secreto no queda escrito en el archivo.',
+    pasos: ['En Agentes → "Conectar con lenguaje natural", escribe "Grok" y toca Generar código. Toca Copiar código. NO lo pegues en el chat.',
+      'En tu terminal, pega y corre el bloque de abajo. Cuando diga "Código del buzón:", pega el código (no se ve) y Enter.',
+      'En esa MISMA terminal abre Grok y dile: "Conéctate a mi buzón: {URL}". Grok lee las instrucciones y te propone este comando (con comillas simples, tal cual): grok mcp add --transport http buzon {URL} --header \'Authorization: Bearer ${BUZON_TOKEN}\'. Acepta.',
+      'Para que dure, guarda BUZON_TOKEN en ~/.zshrc o en el gestor de secretos de tu sistema, nunca en un repositorio.'],
+    codigo: `read -rs -p "Código del buzón: " C; echo
+export BUZON_TOKEN="$(curl -fsS -X POST {CANJE} -H 'Accept: text/plain' -H 'Content-Type: application/json' -d "{\\"codigo\\":\\"$C\\"}")"; unset C
+echo "Token listo: \${BUZON_TOKEN:0:6}…"`,
+    probar: 'Corre "grok mcp doctor buzon" o "grok mcp list". Luego pide: "Usa leer de mi buzón". En Agentes verás 🟢 junto a "Grok".',
+    nota: 'grok.com (la app web) no documenta un campo para un token fijo; para este flujo usa Grok CLI.',
+  },
   {
     id: 'claude-code', nombre: 'Claude Code (terminal)', estado: 'directo',
     donde: 'En la terminal de tu computadora, con Claude Code instalado.',
@@ -40,15 +67,15 @@ export const GUIAS = [
   {
     id: 'codex', nombre: 'OpenAI Codex (CLI y extensión)', estado: 'directo',
     donde: 'Archivo ~/.codex/config.toml. Codex no deja escribir el token dentro del archivo: lo lee de una variable de entorno.',
-    pasos: ['Agrega esto a ~/.codex/config.toml:', 'Guarda tu token en la variable BUZON_TOKEN (en Mac/Linux: export BUZON_TOKEN="{TOKEN}" en tu terminal o en ~/.zshrc; en Windows: setx BUZON_TOKEN "{TOKEN}").', 'Abre Codex de nuevo.'],
+    pasos: ['Agrega esto a ~/.codex/config.toml:', 'Guarda tu token en la variable BUZON_TOKEN (en Mac/Linux: export BUZON_TOKEN="{TOKEN}" en tu terminal o en ~/.zshrc; en Windows: setx BUZON_TOKEN "{TOKEN}"). ¿Prefieres no copiar el token? Usa la guía "Codex en lenguaje natural".', 'Abre Codex de nuevo.'],
     codigo: '[mcp_servers.buzon]\nurl = "{URL}"\nbearer_token_env_var = "BUZON_TOKEN"',
     probar: 'Corre "codex mcp list": debe aparecer "buzon". Dentro de Codex pide: "Lee mi buzón".',
   },
   {
     id: 'grok', nombre: 'Grok', estado: 'directo',
     donde: 'Grok CLI en la terminal. En grok.com → Connectors → New Connector → Custom también puedes pegar la URL, pero úsalo solo si te deja escribir una cabecera o API key.',
-    pasos: ['Pega este comando en la terminal (Grok CLI).'],
-    codigo: 'grok mcp add --transport http buzon {URL} --header "Authorization: Bearer {TOKEN}"',
+    pasos: ['Guarda tu token en la variable BUZON_TOKEN (export BUZON_TOKEN="{TOKEN}" en tu terminal o ~/.zshrc) o usa la guía "Grok CLI en lenguaje natural".', 'Pega este comando tal cual (con comillas simples): Grok guarda ${BUZON_TOKEN} y lo expande desde el entorno al cargar, así el token no queda en su config.'],
+    codigo: "grok mcp add --transport http buzon {URL} --header 'Authorization: Bearer ${BUZON_TOKEN}'",
     probar: 'Abre Grok CLI y pide: "Lee mi buzón y muéstrame el historial del último hilo".',
     nota: 'Desde la API de xAI (Responses): herramienta { "type": "mcp", "server_url": "{URL}", "server_label": "buzon", "authorization": "{TOKEN}" }.',
   },

@@ -14,6 +14,7 @@ Every assistant works in its own silo. You end up copying context between chats,
 - **3 MCP tools only:** `create`, `read`, `reply`.
 - **Human approval:** AIs can request approval but can never grant it. Approvals happen only in the PWA.
 - **Security by design:** Postgres Row Level Security, no public links, append-only audit log, scoped, expiring, revocable tokens (stored hashed).
+- **v2 (in review):** attachments (PDF, PNG, JPG, WEBP, TXT, MD; real-type checked, 3 MB each, 100 MB/mailbox, private bucket, 5-minute signed links), Web Push notifications (VAPID, title only, opt-in button), optional per-agent HMAC-signed webhooks with SSRF protection, and natural-language setup: tell Grok or Codex "connect to my mailbox" + the MCP URL; a single-use `bzc_` code is swapped for the token in your terminal, never in the chat. Self-description at `GET /api/mcp`.
 - **Free stack:** Vercel + Supabase + GitHub.
 - **License:** MIT.
 
@@ -47,6 +48,7 @@ Cada asistente trabaja aislado. Terminas copiando contexto entre chats y nadie s
 - **Solo 3 herramientas MCP:** `crear`, `leer`, `responder`.
 - **Aprobación humana:** las IAs pueden pedir aprobación, pero nunca darla. Solo se aprueba en la PWA.
 - **Seguridad desde el diseño:** reglas por fila (RLS) en Postgres, sin enlaces públicos, auditoría de solo escritura y tokens con alcance limitado, vencimiento y revocación (guardados como hash).
+- **v2 (en revisión):** adjuntos (PDF, PNG, JPG, WEBP, TXT, MD; se valida el tipo real, 3 MB c/u, 100 MB por buzón, bucket privado y enlaces firmados de 5 min), avisos push (VAPID, solo título, se activan con un botón), webhook opcional por agente firmado con HMAC y protegido contra SSRF, y configuración en lenguaje natural: dile a Grok o Codex "conéctate a mi buzón" con la URL del MCP; un código `bzc_` de un solo uso se cambia por el token en tu terminal, nunca en el chat. Autodescripción en `GET /api/mcp`.
 - **Stack gratis:** Vercel + Supabase + GitHub.
 - **Licencia:** MIT.
 

@@ -3,3 +3,4 @@
 export const SUPABASE_URL = 'https://TU-PROYECTO.supabase.co';
 export const SUPABASE_ANON_KEY = 'TU_ANON_KEY';
 export const MCP_URL = 'https://TU-MCP.vercel.app/api/mcp';
+export const VAPID_PUBLIC_KEY = ''; // clave PÚBLICA VAPID (opcional). La privada solo en secrets de Supabase.

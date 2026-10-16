@@ -18,7 +18,7 @@ jobs:
       - uses: supabase/setup-cli@v1
         with: { version: 2.121.0 }
       - name: Levantar Supabase local (aplica supabase/migrations)
-        run: supabase start -x studio,imgproxy,storage-api,realtime,edge-runtime,logflare,vector,supavisor,postgres-meta,mailpit
+        run: supabase start -x studio,imgproxy,realtime,logflare,vector,supavisor,postgres-meta,mailpit
       - name: Variables del Supabase local (no son secretos; solo existen dentro del job)
         run: |
           supabase status -o env > /tmp/sb.env
@@ -26,12 +26,25 @@ jobs:
           echo "SUPABASE_API_URL=$API_URL" >> "$GITHUB_ENV"
           echo "SUPABASE_ANON_KEY=${ANON_KEY:-$PUBLISHABLE_KEY}" >> "$GITHUB_ENV"
           echo "DB_URL=$DB_URL" >> "$GITHUB_ENV"
+          echo "::add-mask::${SERVICE_ROLE_KEY:-$SECRET_KEY}"
+          echo "SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY:-$SECRET_KEY}" >> "$GITHUB_ENV"
+      - name: Edge Functions locales (adjuntos, notificar)
+        run: |
+          nohup supabase functions serve > /tmp/functions.log 2>&1 &
+          for i in $(seq 1 60); do
+            c=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$SUPABASE_API_URL/functions/v1/adjuntos" -H "apikey: $SUPABASE_ANON_KEY" -H 'Content-Type: application/json' -d '{}' || true)
+            [ "$c" = "400" ] && echo "funciones listas" && break; sleep 2
+          done
+          [ "$c" = "400" ] || { cat /tmp/functions.log; exit 1; }
       - name: Pruebas negativas SQL (RLS, tokens, aprobaciones, auditoría)
         run: ./tests/run-supabase.sh
       - name: Pruebas del servidor MCP (Postgres del Supabase local + API PostgREST/GoTrue)
         working-directory: mcp
-        env: { PGHOST: 127.0.0.1, PGPORT: '54322', PGUSER: postgres, PGPASSWORD: postgres }
+        env: { PGHOST: 127.0.0.1, PGPORT: '54322', PGUSER: postgres, PGPASSWORD: postgres, SUPABASE_FUNCIONES: '1' }
         run: npm ci && npm test
+      - name: Registro de las Edge Functions (si algo falló)
+        if: failure()
+        run: cat /tmp/functions.log || true
       - name: Apagar Supabase
         if: always()
         run: supabase stop --no-backup

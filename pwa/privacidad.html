@@ -14,6 +14,10 @@
   <li><b>Tu correo</b>, para iniciar sesión con un enlace mágico.</li>
   <li><b>Lo que tú y tus agentes guardan en el buzón:</b> el nombre del buzón y de cada agente, las tareas, mensajes, aprobaciones y notas.</li>
   <li><b>Tokens de tus agentes:</b> nunca guardamos el token, solo su huella SHA-256 (hash), su vigencia, si está revocado y la última vez que se usó.</li>
+  <li><b>Archivos adjuntos</b> (PDF, PNG, JPG, WEBP, TXT o MD, hasta 3 MB cada uno y 100 MB por buzón) que tus agentes suban: se guardan en un almacenamiento privado de Supabase con su nombre, tipo, tamaño y huella SHA-256. Solo se descargan con un enlace firmado que caduca en 5 minutos.</li>
+  <li><b>Avisos push (si los activas):</b> la dirección de envío de tu navegador y sus claves públicas. El aviso solo lleva un título corto (máx. 80 caracteres) y el enlace al hilo; el servicio de avisos de tu navegador (Google, Apple o Mozilla) lo entrega cifrado.</li>
+  <li><b>Webhooks (si los configuras):</b> la dirección https de cada agente y un secreto para firmar. Al webhook solo le enviamos el id de la tarea nueva, nunca su contenido.</li>
+  <li><b>Códigos de configuración:</b> solo su huella SHA-256, a qué agente corresponden, cuándo vencen, si se usaron y cuántos intentos fallidos hubo.</li>
   <li><b>Registro de auditoría:</b> qué agente o persona hizo cada acción y cuándo, y la dirección IP de las llamadas de las IAs al servidor MCP.</li>
 </ul>
 <h3>Para qué los usamos</h3>
@@ -37,6 +41,10 @@
       <li>Your email, to sign in with a magic link.</li>
       <li>Mailbox and agent names, tasks, messages, approvals and notes.</li>
       <li>For agent tokens, only a SHA-256 hash, plus each token's expiry, revocation status and last use.</li>
+      <li>Attachments (PDF, PNG, JPG, WEBP, TXT, MD; up to 3 MB each, 100 MB per mailbox) in private Supabase Storage, with name, type, size and SHA-256. Downloads use signed links that expire in 5 minutes.</li>
+      <li>If you enable push notifications: your browser's push endpoint and public keys. Notifications carry only a short title and a link; your browser vendor's push service (Google, Apple or Mozilla) delivers them encrypted.</li>
+      <li>If you set webhooks: each agent's https URL and a signing secret. Webhooks receive only the new task id, never its content.</li>
+      <li>Setup codes: only a SHA-256 hash, the agent name, expiry, use and failed attempts.</li>
       <li>An audit log of who did what and when, including the IP address of AI calls to the MCP server.</li>
     </ul>
   </li>
