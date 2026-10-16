@@ -4,12 +4,20 @@
   "private": true,
   "type": "module",
   "license": "MIT",
-  "engines": { "node": ">=20" },
-  "scripts": { "test": "node --test test/" },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "e2e:prod": "node e2e/prod.e2e.mjs"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@supabase/supabase-js": "^2.118.0",
     "zod": "^3.25.0"
   },
-  "devDependencies": { "pg": "^8.13.0" }
+  "devDependencies": {
+    "pg": "^8.13.0",
+    "playwright-core": "^1.64.1"
+  }
 }
