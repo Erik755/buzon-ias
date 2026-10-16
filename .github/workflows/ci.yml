@@ -1,25 +1,43 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
 permissions: { contents: read }
+concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }
 jobs:
   pruebas:
+    name: Pruebas (Supabase local)
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17
-        env: { POSTGRES_PASSWORD: postgres }
-        ports: ['5432:5432']
-        options: --health-cmd pg_isready --health-interval 5s --health-retries 10
-    env: { PGHOST: localhost, PGUSER: postgres, PGPASSWORD: postgres }
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
+        with: { node-version: 20, cache: npm, cache-dependency-path: mcp/package-lock.json }
+      - uses: supabase/setup-cli@v1
+        with: { version: 2.121.0 }
+      - name: Levantar Supabase local (aplica supabase/migrations)
+        run: supabase start -x studio,imgproxy,storage-api,realtime,edge-runtime,logflare,vector,supavisor,postgres-meta,mailpit
+      - name: Variables del Supabase local (no son secretos; solo existen dentro del job)
+        run: |
+          supabase status -o env > /tmp/sb.env
+          . /tmp/sb.env
+          echo "SUPABASE_API_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "SUPABASE_ANON_KEY=${ANON_KEY:-$PUBLISHABLE_KEY}" >> "$GITHUB_ENV"
+          echo "DB_URL=$DB_URL" >> "$GITHUB_ENV"
       - name: Pruebas negativas SQL (RLS, tokens, aprobaciones, auditoría)
-        run: ./tests/run-local.sh | tee sql.log && grep -q TODAS_LAS_PRUEBAS_PASARON sql.log
-      - name: Pruebas del servidor MCP
+        run: ./tests/run-supabase.sh
+      - name: Pruebas del servidor MCP (Postgres del Supabase local + API PostgREST/GoTrue)
         working-directory: mcp
+        env: { PGHOST: 127.0.0.1, PGPORT: '54322', PGUSER: postgres, PGPASSWORD: postgres }
         run: npm ci && npm test
-      - name: Escaneo de secretos
-        uses: gitleaks/gitleaks-action@v2
+      - name: Apagar Supabase
+        if: always()
+        run: supabase stop --no-backup
+  secretos:
+    name: Escaneo de secretos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
         env: { GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' }

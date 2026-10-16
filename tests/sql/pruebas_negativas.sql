@@ -1,8 +1,8 @@
 -- Pruebas negativas. Cada prueba imprime OK o lanza error (psql -v ON_ERROR_STOP=1).
 \set QUIET on
 -- Datos semilla (como superusuario)
-insert into auth.users values ('11111111-1111-1111-1111-111111111111','erik@ejemplo'),
-                              ('22222222-2222-2222-2222-222222222222','intruso@ejemplo');
+insert into auth.users(id,email) values ('11111111-1111-1111-1111-111111111111','erik@ejemplo.test'),
+                              ('22222222-2222-2222-2222-222222222222','intruso@ejemplo.test');
 insert into public.buzones(id,dueno_id,nombre) values
   ('aaaaaaaa-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','Buzón de Erik'),
   ('aaaaaaaa-0000-0000-0000-000000000002','22222222-2222-2222-2222-222222222222','Buzón ajeno');
@@ -107,6 +107,22 @@ do $$ begin
   begin insert into public.buzones(dueno_id,nombre) values ('11111111-1111-1111-1111-111111111111','segundo');
     perform pg_temp.falla('30'); exception when unique_violation then perform pg_temp.ok('30 máximo 1 buzón por dueño'); end;
 end $$;
+-- 31-33. Probar conexión
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ begin
+  begin perform hash_token from public.tokens; perform pg_temp.falla('31'); exception when insufficient_privilege then perform pg_temp.ok('31 el dueño no puede leer hash_token'); end;
+  if (select count(*) from public.estado_agentes)=1 and (select ultimo_uso from public.estado_agentes) is not null then perform pg_temp.ok('32 Erik ve estado y último uso de su agente'); else perform pg_temp.falla('32'); end if;
+end $$;
+select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$ begin
+  if (select count(*) from public.estado_agentes)=0 then perform pg_temp.ok('33 intruso no ve el estado de agentes de Erik'); else perform pg_temp.falla('33'); end if;
+end $$;
+reset role;
+set role anon;
+do $$ begin
+  begin perform 1 from public.estado_agentes; perform pg_temp.falla('34'); exception when insufficient_privilege then perform pg_temp.ok('34 anon no ve estado_agentes'); end;
+end $$;
+reset role;
 -- 27. RLS activo en las 7 tablas
 do $$ begin
   if (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace

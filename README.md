@@ -1,5 +1,7 @@
 # AI Shared Inbox (Buzón compartido de tus IAs) — DRAFT
 
+[![CI](https://github.com/Erik755/buzon-ias/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Erik755/buzon-ias/actions/workflows/ci.yml)
+
 > ⚠️ Draft. Not released yet.
 
 ## English
