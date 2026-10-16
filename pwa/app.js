@@ -10,6 +10,9 @@ let usuario, buzon, vista = 'pendientes', tokenGuia = '';
 const URL_MCP = MCP_URL || 'https://buzon-ias-mcp.vercel.app/api/mcp';
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+const avisoRed = () => { $('#sin-red').hidden = navigator.onLine; };
+addEventListener('online', () => { avisoRed(); if (usuario) asegurarBuzon().then(pintar).catch(() => {}); });
+addEventListener('offline', avisoRed); avisoRed();
 
 $('#f-login').onsubmit = async (e) => {
   e.preventDefault();
@@ -28,7 +31,9 @@ sb.auth.onAuthStateChange(async (_ev, ses) => {
   $('#login').hidden = !!usuario; $('#app').hidden = !usuario; $('#salir').hidden = !usuario;
   if (usuario) {
     try { await asegurarBuzon(); pintar(); }
-    catch (e) { $('#vista').innerHTML = `<div class="vacio"><b>No pudimos abrir tu buzón</b>${esc(e.message)}<br><br>Toca <b>Salir</b> y vuelve a entrar con el enlace de tu correo.</div>`; }
+    catch (e) { $('#vista').innerHTML = !navigator.onLine || /fetch|network/i.test(e.message)
+      ? `<div class="vacio"><b>📡 Sin conexión</b>Tus tareas se cargarán solas cuando vuelva internet.</div>`
+      : `<div class="vacio"><b>No pudimos abrir tu buzón</b>${esc(e.message)}<br><br>Toca <b>Salir</b> y vuelve a entrar con el enlace de tu correo.</div>`; }
   }
 });
 
@@ -46,7 +51,7 @@ async function pintar() {
   let q = sb.from('hilos').select('*, agentes!hilos_creado_por_agente_fkey(nombre)').eq('buzon_id', buzon.id).order('creado_en', { ascending: false }).limit(50);
   if (vista === 'pendientes') q = q.eq('estado', 'pide_aprobacion');
   const { data, error } = await q;
-  if (error) return v.textContent = error.message;
+  if (error) return v.innerHTML = !navigator.onLine || /fetch|network/i.test(error.message) ? '<div class="vacio"><b>📡 Sin conexión</b>Se cargará cuando vuelva internet.</div>' : esc(error.message);
   if (!data.length) {
     const { count } = await sb.from('agentes').select('id', { count: 'exact', head: true }).eq('buzon_id', buzon.id);
     v.innerHTML = !count

@@ -7,6 +7,6 @@ if (/service_role/.test(payload) || SUPABASE_ANON_KEY.startsWith('sb_secret_')) 
 const d = (p) => new URL('./' + p, import.meta.url);
 rmSync(d('dist'), { recursive: true, force: true });
 mkdirSync(d('dist/vendor'), { recursive: true });
-for (const f of ['index.html', 'app.js', 'estilo.css', 'sw.js', 'manifest.webmanifest', 'icon.svg', 'vendor/supabase.js', 'guias.js', 'privacidad.html', 'terminos.html']) copyFileSync(d(f), d('dist/' + f));
+for (const f of ['index.html', 'app.js', 'estilo.css', 'sw.js', 'manifest.webmanifest', 'icon.svg', 'vendor/supabase.js', 'guias.js', 'privacidad.html', 'terminos.html', 'offline.html', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png']) copyFileSync(d(f), d('dist/' + f));
 writeFileSync(d('dist/config.js'), `export const SUPABASE_URL=${JSON.stringify(SUPABASE_URL)};export const SUPABASE_ANON_KEY=${JSON.stringify(SUPABASE_ANON_KEY)};export const MCP_URL=${JSON.stringify(process.env.MCP_URL || 'https://buzon-ias-mcp.vercel.app/api/mcp')};\n`);
 console.log('dist/ listo');

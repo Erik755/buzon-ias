@@ -11,7 +11,12 @@ export default async function handler(req, res) {
   if (req.method === 'GET' && !req.headers.authorization) { res.setHeader('Content-Type', 'application/json'); return res.end('{"servicio":"buzon-ias MCP","uso":"POST con Authorization: Bearer bz_..."}'); }
   if (req.method !== 'POST') { res.statusCode = 405; res.setHeader('Allow', 'POST'); return res.end(); }
   const token = extraerBearer(req.headers.authorization);
-  if (!token) { res.statusCode = 401; res.setHeader('WWW-Authenticate', 'Bearer'); return res.end('Falta token'); }
+  if (!token) {
+    const hay = !!(req.headers.authorization || '').trim();
+    res.statusCode = 401;
+    res.setHeader('WWW-Authenticate', hay ? 'Bearer error="invalid_token"' : 'Bearer');
+    return res.end(hay ? 'Token inválido: usa "Authorization: Bearer bz_…" con el token que te dio la PWA' : 'Falta token: agrega "Authorization: Bearer bz_…"');
+  }
   servicio ??= crearServicio(rpcSupabase(createClient));
   const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || null;
   const server = crearServidorMcp(servicio, token, ip);
