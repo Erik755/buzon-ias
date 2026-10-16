@@ -104,18 +104,26 @@ function nuevoToken() {
 }
 
 async function pintarAgentes(v) {
-  const { data: ags } = await sb.from('agentes').select('*, tokens(id,alcances,vence_en,revocado_en,ultimo_uso)').eq('buzon_id', buzon.id).order('creado_en');
+  const [{ data: ags }, { data: est }] = await Promise.all([
+    sb.from('agentes').select('*, tokens(id,alcances,vence_en,revocado_en,ultimo_uso)').eq('buzon_id', buzon.id).order('creado_en'),
+    sb.from('estado_agentes').select('agente_id,ultimo_uso,ultima_accion,accion').eq('buzon_id', buzon.id),
+  ]);
+  const estado = Object.fromEntries((est ?? []).map((e) => [e.agente_id, e]));
   v.innerHTML = (ags.length ? '' : `<div class="vacio"><b>Crea un agente por cada IA</b>Un "agente" es la llave de una IA para entrar a tu buzón. Ponle el nombre de la IA (ej. "Claude"). Te daremos un token para pegar en esa IA; si un día no quieres que entre, lo revocas aquí.</div>`)
     + `<form id="f-ag" class="tarjeta"><b>Nuevo agente</b><input id="ag-nombre" required placeholder="Claude, ChatGPT, Grok…">
     <select id="ag-dias"><option value="7">7 días</option><option value="30" selected>30 días</option><option value="90">90 días</option></select>
     <button class="ok">Crear y generar token</button></form>`;
   for (const a of ags) {
     const d = document.createElement('div'); d.className = 'tarjeta';
-    d.innerHTML = `<b>${esc(a.nombre)}</b>` + a.tokens.map((t) => `<div class="meta">${t.revocado_en ? '⛔ revocado' : new Date(t.vence_en) < new Date() ? '⌛ vencido' : '🟢 activo'}
+    const e = estado[a.id];
+    d.innerHTML = `<b>${esc(a.nombre)}</b> <span class="estado">${conexion(e?.ultimo_uso)}</span>
+      <div class="meta">${e?.ultima_accion ? 'Última acción: ' + esc(e.accion) + ' · ' + hace(e.ultima_accion) : 'Todavía no ha usado el buzón'}</div>
+      <button class="copiar" data-probar="${a.id}">Probar conexión</button>` + a.tokens.map((t) => `<div class="meta">${t.revocado_en ? '⛔ revocado' : new Date(t.vence_en) < new Date() ? '⌛ vencido' : '🟢 activo'}
       · vence ${fecha(t.vence_en)} · último uso ${t.ultimo_uso ? fecha(t.ultimo_uso) : 'nunca'}
       ${!t.revocado_en ? `<button data-rev="${t.id}" class="no">Revocar</button>` : ''}</div>`).join('');
     v.append(d);
   }
+  v.querySelectorAll('[data-probar]').forEach((b) => b.onclick = () => probarConexion(ags.find((a) => a.id === b.dataset.probar), estado[b.dataset.probar]?.ultimo_uso));
   v.querySelectorAll('[data-rev]').forEach((b) => b.onclick = async () => {
     if (!confirm('¿Revocar este token? Tiene efecto inmediato.')) return;
     const { data, error } = await sb.from('tokens').update({ revocado_en: new Date().toISOString() }).eq('id', b.dataset.rev).select('id');
@@ -169,10 +177,42 @@ function pintarGuias(v, conSesion) {
         <p><b>Dónde:</b> ${esc(r(g.donde))}</p><ol>${g.pasos.map((p) => `<li>${esc(r(p))}</li>`).join('')}</ol>
         ${g.codigo ? `<pre>${esc(r(g.codigo))}</pre><button class="copiar" data-c="1">Copiar</button>` : ''}
         ${g.nota ? `<p class="aviso">${esc(r(g.nota))}</p>` : ''}
-        <p><b>¿Quedó?</b> ${esc(g.probar)}</p>`;
+        <p><b>¿Quedó?</b> ${esc(g.probar)}${g.estado !== 'no' ? ' O toca «Probar conexión» en Agentes.' : ''}</p>`;
       const b = d.querySelector('[data-c]'); if (b) b.onclick = () => copiar(r(g.codigo), b);
       cont.append(d);
     }
   };
   lista();
+}
+
+function hace(f) {
+  const s = Math.round((Date.now() - new Date(f)) / 1000);
+  if (s < 60) return 'hace unos segundos'; if (s < 3600) return `hace ${Math.round(s / 60)} min`;
+  if (s < 86400) return `hace ${Math.round(s / 3600)} h`; return fecha(f);
+}
+function conexion(u) {
+  if (!u) return '⚪ Sin conectar';
+  return Date.now() - new Date(u) < 15 * 60e3 ? '🟢 Conectada' : '🟡 Conectada antes · ' + hace(u);
+}
+
+// Probar conexión: la PWA nunca habla con la IA ni ve tokens; solo observa (con RLS) cuándo usó el MCP.
+let sondeo;
+async function probarConexion(ag, antes) {
+  clearInterval(sondeo);
+  const c = $('#dlg-cuerpo'), inicio = Date.now(), base = antes ? new Date(antes).getTime() : 0;
+  c.innerHTML = `<h3>Probar conexión: ${esc(ag.nombre)}</h3>
+    <p>1) Abre ${esc(ag.nombre)} y escríbele:</p><pre>Usa la herramienta "leer" de mi buzón y dime cuántos hilos hay.</pre>
+    <button class="copiar" id="cp-ping">Copiar mensaje</button>
+    <p>2) Deja esta pantalla abierta. En cuanto tu IA lea el buzón, aquí verás ✅.</p><p id="ping-estado" class="aviso">⏳ Esperando a ${esc(ag.nombre)}…</p>`;
+  $('#cp-ping').onclick = (e) => copiar('Usa la herramienta "leer" de mi buzón y dime cuántos hilos hay.', e.target);
+  $('#dlg').showModal();
+  const revisar = async () => {
+    if (!$('#dlg').open) return clearInterval(sondeo);
+    const { data } = await sb.from('estado_agentes').select('ultimo_uso').eq('agente_id', ag.id).maybeSingle();
+    const u = data?.ultimo_uso ? new Date(data.ultimo_uso).getTime() : 0;
+    const p = $('#ping-estado'); if (!p) return clearInterval(sondeo);
+    if (u > base) { clearInterval(sondeo); p.className = 'vacio'; p.innerHTML = `<b>✅ ¡${esc(ag.nombre)} está conectada!</b>Usó tu buzón ${hace(data.ultimo_uso)}.`; pintar(); }
+    else if (Date.now() - inicio > 180e3) { clearInterval(sondeo); p.innerHTML = '⚠️ No vimos ninguna llamada en 3 minutos. Revisa en <b>Conectar</b> que pegaste la dirección y el token correctos, y que el token no esté revocado o vencido.'; }
+  };
+  sondeo = setInterval(revisar, 4000); revisar();
 }
