@@ -13,6 +13,8 @@ const local = URL_ && /^http:\/\/(127\.0\.0\.1|localhost)/.test(URL_) && process
 const opts = { skip: !local && 'sin Supabase local con Edge Functions' };
 const A = nuevoToken(), B = nuevoToken(), X = nuevoToken();
 const PDF = Buffer.from('%PDF-1.4\n%prueba CI\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
+// Dentro de Docker la función ve SUPABASE_URL=http://kong:8000; en la nube es la URL pública. Aquí se reescribe el origen.
+const publica = (u) => { const x = new URL(u); return URL_ + x.pathname + x.search; };
 let erik, intruso, servicio, buzon, hilo, adj;
 
 async function usuario(n) {
@@ -38,7 +40,7 @@ test('Storage real: A sube un PDF, B lo descarga con URL firmada', opts, async (
   const r = await servicio.crear(A, { tipo: 'tarea', titulo: 'CI: PDF', adjuntos: [{ nombre: 'doc.pdf', base64: PDF.toString('base64') }] });
   hilo = r.id; adj = r.adjuntos[0]; assert.equal(adj.tipo, 'application/pdf', JSON.stringify(r.adjuntos));
   const d = await servicio.leer(B, { adjunto_id: adj.id });
-  const f = await fetch(d.url); assert.equal(f.status, 200);
+  const f = await fetch(publica(d.url)); assert.equal(f.status, 200);
   assert.deepEqual(Buffer.from(await f.arrayBuffer()), PDF);
 });
 test('Storage real: el bucket es privado (sin URL firmada no hay acceso)', opts, async () => {
