@@ -79,3 +79,7 @@ The PWA has a **Conectar** tab with step-by-step instructions and copy buttons f
 - ⛔ Not supported yet: ChatGPT web/app (OAuth or no auth only). Use Codex instead.
 
 The home screen explains in 3 steps what it is, how to start and how to approve; every empty screen tells you what to do next.
+
+## Privacidad y términos / Privacy & terms
+- Aviso de privacidad / Privacy notice: https://buzon-ias-pwa.vercel.app/privacidad.html ([fuente](pwa/privacidad.html))
+- Términos de uso / Terms of use: https://buzon-ias-pwa.vercel.app/terminos.html ([fuente](pwa/terminos.html))
