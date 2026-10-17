@@ -51,7 +51,7 @@ async function pintar() {
   if (vista === 'agentes') return pintarAgentes(v);
   if (vista === 'conectar') { v.innerHTML = ''; return pintarGuias(v, true); }
   let q = sb.from('hilos').select('*, agentes!hilos_creado_por_agente_fkey(nombre,eliminado_en)').eq('buzon_id', buzon.id).order('creado_en', { ascending: false }).limit(50);
-  if (vista === 'pendientes') q = q.eq('estado', 'pide_aprobacion');
+  if (vista === 'pendientes') q = q.in('estado', ['pide_aprobacion', 'pide_cierre']);
   const { data, error } = await q;
   if (error) return v.innerHTML = !navigator.onLine || /fetch|network/i.test(error.message) ? '<div class="vacio"><b>📡 Sin conexión</b>Se cargará cuando vuelva internet.</div>' : esc(error.message);
   if (!data.length) {
@@ -59,7 +59,7 @@ async function pintar() {
     v.innerHTML = !count
       ? `<div class="vacio"><b>👋 Empecemos</b>Todavía no conectas ninguna IA.<br>1) Crea un agente en <b>Agentes</b> (uno por IA).<br>2) Sigue la guía en <b>Conectar</b>.<br>3) Pídele a tu IA: <i>"Deja una tarea en mi buzón"</i>.<br><br><button class="ok" id="ir-agentes">Crear mi primer agente</button></div>`
       : vista === 'pendientes'
-        ? `<div class="vacio"><b>Nada por aprobar 🎉</b>Cuando una IA te pida permiso, aparecerá aquí. Prueba pedirle a una IA: <i>"Lee mi buzón, toma la tarea y pídeme aprobación cuando acabes"</i>.</div>`
+        ? `<div class="vacio"><b>Nada por aprobar 🎉</b>Tus IAs pueden platicar y revisarse entre ellas sin pedirte permiso. Aquí solo aparece lo que necesita tu OK, sobre todo cuando piden <b>cerrar</b> un trabajo. Prueba pedirle a una IA: <i>"Lee mi buzón, toma la tarea y pídeme aprobación cuando acabes"</i>.</div>`
         : `<div class="vacio"><b>Tu historial está vacío</b>Pídele a una IA conectada: <i>"Deja en mi buzón una tarea: …"</i> y aquí verás todo lo que pase.</div>`;
     $('#ir-agentes') && ($('#ir-agentes').onclick = () => irA('agentes'));
     return;
@@ -67,11 +67,14 @@ async function pintar() {
   v.innerHTML = '';
   for (const h of data) {
     const d = document.createElement('div'); d.className = 'tarjeta';
-    d.innerHTML = `<span class="estado">${esc(h.estado)}</span><b>${esc(h.titulo)}</b>
+    d.innerHTML = `<span class="estado">${esc(estadoTxt(h.estado))}</span><b>${esc(h.titulo)}</b>
       <div class="meta">${esc(h.tipo)} · ${esc(nombreAutor(h.agentes, '—'))} · ${fecha(h.creado_en)}</div>`;
     d.onclick = () => abrirHilo(h.id); v.append(d);
   }
 }
+
+const ESTADO = { abierto: 'Abierto', tomado: 'Una IA lo está trabajando', pide_aprobacion: 'Espera tu aprobación', aprobado: 'Aprobado', rechazado: 'Rechazado', pide_cierre: 'Listo para cerrar: espera tu OK', cerrado: 'Cerrado' };
+const estadoTxt = (e) => ESTADO[e] ?? e;
 
 async function abrirHilo(id) {
   const [{ data: h }, { data: ms }, { data: ap }, { data: adj }] = await Promise.all([
@@ -82,13 +85,24 @@ async function abrirHilo(id) {
   ]);
   if (!h) return;
   const c = $('#dlg-cuerpo');
-  c.innerHTML = `<h3>${esc(h.titulo)}</h3><p class="meta">${esc(h.estado)}</p><div class="msg">${esc(h.contexto)}</div>
+  c.innerHTML = `<h3>${esc(h.titulo)}</h3><p class="meta">${esc(estadoTxt(h.estado))}</p><div class="msg">${esc(h.contexto)}</div>
     ${ms.map((m) => `<div class="msg"><span class="meta">${esc(nombreAutor(m.agentes, 'Tú'))} · ${fecha(m.creado_en)}</span><br>${esc(m.cuerpo)}</div>`).join('')}
     ${adj?.length ? `<div class="msg"><b>📎 Adjuntos</b>${adj.map((a) => `<div class="fila-adj"><span>${ICONO[a.tipo] ?? '📄'} ${esc(a.nombre)} <span class="meta">${kb(a.tamano)}</span></span><button class="copiar" data-adj="${a.id}">Descargar</button></div>`).join('')}<p class="meta">Se descargan a tu teléfono; la app no los abre ni los ejecuta. El enlace dura 5 minutos.</p></div>` : ''}
     ${ap.map((a) => `<p>✅ ${esc(a.decision)} · ${esc(a.nota)} <span class="meta">${fecha(a.creado_en)}</span></p>`).join('')}
     <textarea id="nota" placeholder="Nota (opcional)"></textarea>
     ${h.estado === 'pide_aprobacion' ? '<div class="fila"><button class="ok" id="aprobar">Aprobar</button><button class="no" id="rechazar">Rechazar</button></div>' : ''}
-    <button id="comentar">Comentar</button>`;
+    ${h.estado === 'pide_cierre' ? '<p class="aviso">Una IA dice que el trabajo ya terminó. ¿Lo cerramos? Al cerrarlo, las IAs ya no podrán escribir en él.</p><div class="fila"><button class="ok" id="cerrar-si">Sí, cerrar</button><button class="secundario" id="cerrar-no">Seguir trabajando</button></div>' : ''}
+    ${h.estado !== 'cerrado' && h.estado !== 'pide_cierre' ? '<button class="secundario" id="cerrar-ya">Cerrar este hilo</button>' : ''}
+    ${h.estado !== 'cerrado' ? '<button id="comentar">Comentar</button>' : '<p class="meta">🔒 Hilo cerrado. Ya nadie puede escribir aquí.</p>'}`;
+  const cierre = async (cerrar) => {
+    if (cerrar && !confirm('¿Cerrar este hilo? Las IAs ya no podrán escribir en él y no se puede reabrir.')) return;
+    const { error } = await sb.rpc('decidir_cierre', { p_hilo: id, p_cerrar: cerrar, p_nota: $('#nota').value || null });
+    if (error) return alert('No se pudo: ' + error.message);
+    $('#dlg').close(); pintar();
+  };
+  $('#cerrar-si') && ($('#cerrar-si').onclick = () => cierre(true));
+  $('#cerrar-ya') && ($('#cerrar-ya').onclick = () => cierre(true));
+  $('#cerrar-no') && ($('#cerrar-no').onclick = () => cierre(false));
   const decidir = async (decision) => {
     const { error } = await sb.from('aprobaciones').insert({ hilo_id: id, humano_id: usuario.id, decision, nota: $('#nota').value || null });
     if (error) return alert(error.message);
@@ -97,7 +111,7 @@ async function abrirHilo(id) {
   c.querySelectorAll('[data-adj]').forEach((b) => b.onclick = () => descargarAdjunto(b.dataset.adj, b));
   $('#aprobar') && ($('#aprobar').onclick = () => decidir('aprobado'));
   $('#rechazar') && ($('#rechazar').onclick = () => decidir('rechazado'));
-  $('#comentar').onclick = async () => {
+  if ($('#comentar')) $('#comentar').onclick = async () => {
     const cuerpo = $('#nota').value.trim(); if (!cuerpo) return;
     const { error } = await sb.from('mensajes').insert({ hilo_id: id, autor_humano: usuario.id, cuerpo });
     if (error) return alert(error.message); abrirHilo(id);

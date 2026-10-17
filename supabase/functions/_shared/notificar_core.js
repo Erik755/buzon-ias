@@ -4,7 +4,7 @@
 // * Cada destino entregado se marca (_marcar_entregado): los reintentos solo van a los que fallaron.
 // * En ultimo_error solo se guarda 'push_fallo' / 'webhook_fallo' (sin códigos HTTP: no sirve de oráculo).
 import { validarDestino } from './ssrf.js';
-import { firmar, payloadTarea } from './hmac.js';
+import { firmar, payloadTarea, payloadMensaje } from './hmac.js';
 import { enviarPush, payloadPush } from './webpush.js';
 
 export async function procesar(deps, limite = 20) {
@@ -14,7 +14,8 @@ export async function procesar(deps, limite = 20) {
     resumen.procesadas++;
     const hechos = new Set(n.entregados || []), fallos = new Set();
     const marcar = (d) => deps.rpc('_marcar_entregado', { p_id: n.id, p_destino: d });
-    if (deps.claves) {
+    // Los mensajes entre IAs no hacen sonar el teléfono del dueño: solo avisan a las otras IAs.
+    if (deps.claves && n.evento !== 'mensaje_nuevo') {
       for (const s of await deps.suscripciones(n.buzon_id)) {
         const d = `push:${s.id}`; if (hechos.has(d)) continue;
         try {
@@ -26,10 +27,10 @@ export async function procesar(deps, limite = 20) {
         } catch { fallos.add('push_fallo'); }
       }
     }
-    if (n.evento === 'hilo_nuevo') {
+    if (n.evento === 'hilo_nuevo' || n.evento === 'mensaje_nuevo') {
       for (const w of await deps.webhooks(n.buzon_id, n.creado_por_agente)) {
         const d = `wh:${w.id}`; if (hechos.has(d)) continue;
-        const r = await enviarWebhook(w, n.hilo_id, deps);
+        const r = await enviarWebhook(w, n.hilo_id, deps, n.evento);
         if (r.ok) await marcar(d); else fallos.add('webhook_fallo');
       }
     }
@@ -39,11 +40,11 @@ export async function procesar(deps, limite = 20) {
   return resumen;
 }
 
-export async function enviarWebhook(w, hiloId, deps) {
+export async function enviarWebhook(w, hiloId, deps, evento = 'hilo_nuevo') {
   if (!w.webhook_secreto) return { ok: false, motivo: 'sin_secreto' };
   const v = await validarDestino(w.webhook_url, deps.resolver);
   if (!v.ok) return v;
-  const cuerpo = payloadTarea(hiloId);
+  const cuerpo = evento === 'mensaje_nuevo' ? payloadMensaje(hiloId) : payloadTarea(hiloId);
   try {
     const status = await deps.enviar(w.webhook_url, v.ips[0], { 'Content-Type': 'application/json', 'User-Agent': 'buzon-ias-webhook/1', 'X-Buzon-Firma': await firmar(w.webhook_secreto, cuerpo) }, cuerpo);
     if (status >= 300 && status < 400) return { ok: false, motivo: 'redireccion_no_permitida' };

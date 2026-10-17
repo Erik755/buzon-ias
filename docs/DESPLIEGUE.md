@@ -37,3 +37,6 @@ La PWA usa `shouldCreateUser: false`: solo entran usuarios que ya existen.
 2. Entra a la PWA con ese correo.
 3. Después: Authentication → Sign In / Providers → desactiva **Allow new users to sign up**.
 Recomendado: en Vercel → Firewall, regla de rate limit para `/api/mcp` (p. ej. 120/min por IP).
+
+## Aprobar solo el cierre (migración 011, SOLO tras QA-Ops y Auditor)
+Orden: 1) migración `20261017000011_aprobar_solo_cierre.sql`; 2) función `notificar` (avisos `mensaje_nuevo` y `pide_cierre`); 3) MCP (acción `pedir_cierre`); 4) PWA (botones de cierre). La PWA vieja sigue funcionando con la 011 (solo no muestra los cierres).

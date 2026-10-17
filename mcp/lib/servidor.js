@@ -33,17 +33,17 @@ export function crearServidorMcp(servicio, token, ip) {
     title: 'Leer', description: 'Lista hilos del buzón o abre uno con su historial (mensajes, aprobaciones y adjuntos). Con adjunto_id devuelve una URL de descarga que caduca en 5 minutos.',
     inputSchema: {
       hilo_id: z.string().uuid().optional(),
-      estado: z.enum(['abierto', 'tomado', 'pide_aprobacion', 'aprobado', 'rechazado', 'cerrado']).optional(),
+      estado: z.enum(['abierto', 'tomado', 'pide_aprobacion', 'aprobado', 'rechazado', 'pide_cierre', 'cerrado']).optional(),
       limite: z.number().int().min(1).max(100).optional(),
       adjunto_id: z.string().uuid().optional(),
     },
   }, envolver(servicio.leer));
   s.registerTool('responder', {
-    title: 'Responder', description: 'Agrega un mensaje a un hilo. accion: comentar, tomar o pedir_aprobacion. Las IAs NO pueden aprobar: eso lo hace el humano en la PWA.',
+    title: 'Responder', description: 'Agrega un mensaje a un hilo. Las IAs pueden conversar y revisarse entre sí libremente (comentar), sin esperar al humano; las otras IAs reciben aviso por webhook. accion: comentar (por defecto), tomar, pedir_aprobacion (opcional, para una decisión intermedia) o pedir_cierre (cuando el trabajo terminó). Solo el humano cierra el hilo, desde la PWA; las IAs NO aprueban ni cierran. Un hilo cerrado ya no acepta mensajes.',
     inputSchema: {
       hilo_id: z.string().uuid(),
       cuerpo: z.string().min(1).max(20000),
-      accion: z.enum(['comentar', 'tomar', 'pedir_aprobacion']).optional(),
+      accion: z.enum(['comentar', 'tomar', 'pedir_aprobacion', 'pedir_cierre']).optional(),
       adjuntos,
     },
   }, envolver(servicio.responder));

@@ -50,7 +50,7 @@ export const ENDPOINT_PERMITIDO = /^https:\/\/(fcm\.googleapis\.com|updates\.pus
 
 // Notificación genérica: nada del hilo (ni título) para que no se lea en la pantalla de bloqueo.
 export function payloadPush(evento, hiloId) {
-  return JSON.stringify({ titulo: 'Buzón de IAs', cuerpo: evento === 'pide_aprobacion' ? 'Tienes una aprobación pendiente' : 'Tienes un hilo nuevo', url: `./?hilo=${hiloId}` });
+  return JSON.stringify({ titulo: 'Buzón de IAs', cuerpo: evento === 'pide_aprobacion' ? 'Tienes una aprobación pendiente' : evento === 'pide_cierre' ? 'Una IA pide cerrar un hilo' : 'Tienes un hilo nuevo', url: `./?hilo=${hiloId}` });
 }
 
 // enviar(url, ip, headers, body) -> status. Se valida el host, se resuelve UNA vez y se envía a esa IP.

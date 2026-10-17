@@ -16,3 +16,8 @@ export async function verificar(secreto, cuerpo, cabecera, ahora = Math.floor(Da
 export function payloadTarea(hiloId) {
   return JSON.stringify({ evento: 'tarea_nueva', hilo_id: hiloId, aviso: 'Tienes una tarea nueva en el Buzón. Llama a la herramienta "leer" con este hilo_id.' });
 }
+
+// Mensaje nuevo en un hilo (solo el id; nunca el contenido).
+export function payloadMensaje(hiloId) {
+  return JSON.stringify({ evento: 'mensaje_nuevo', hilo_id: hiloId, aviso: 'Hay un mensaje nuevo en un hilo del Buzón. Llama a la herramienta "leer" con este hilo_id.' });
+}

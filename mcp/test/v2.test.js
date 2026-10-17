@@ -223,6 +223,40 @@ test('adjuntos: la cuota se revisa ANTES de subir (nada llega al bucket) y mensa
   assert.equal((await manejar({ accion: 'subir', hilo_id: hilo, mensaje_id: "x' or 1=1", nombre: 'a.pdf', base64: PDF.toString('base64') }, { token: T.a }, dd)).status, 400);
 });
 
+test('aprobar solo el cierre: mensajes entre IAs avisan por webhook (no al autor, sin push); pedir_cierre avisa al dueño', async () => {
+  await pool.query("update agentes set webhook_url='https://hooks.ejemplo.dev/a', webhook_secreto='whsec_a' where nombre='Agente A'");
+  await pool.query("update agentes set webhook_url='https://hooks.ejemplo.dev/b', webhook_secreto='whsec_b' where nombre='Agente B'");
+  const h = await servicio.crear(T.a, { tipo: 'tarea', titulo: 'Revisa mi código' });
+  await pool.query("update notificaciones set estado='enviada'");
+  const rev = await servicio.responder(T.b, { hilo_id: h.id, cuerpo: 'Revisado: dos cambios' });
+  assert.equal(rev.estado, 'abierto', 'el mensaje no necesita aprobación');
+  const vk = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
+  const claves = { publica: Buffer.from(await crypto.subtle.exportKey('raw', vk.publicKey)).toString('base64url'), privada: (await crypto.subtle.exportKey('jwk', vk.privateKey)).d, sujeto: 'mailto:t@t.t' };
+  const llamadas = [];
+  const deps = {
+    rpc: rpcPg(pool, 'service_role'), claves, enviar: async (url, ip, headers, body) => { llamadas.push({ url, headers, body }); return 201; },
+    suscripciones: async (b) => (await pool.query('select id,endpoint,p256dh,auth from push_suscripciones where buzon_id=$1', [b])).rows,
+    borrarSuscripcion: async () => {},
+    webhooks: async (b, ex) => (await pool.query('select id,webhook_url,webhook_secreto from agentes where buzon_id=$1 and webhook_url is not null and id is distinct from $2', [b, ex])).rows,
+    resolver: async (x) => ({ 'hooks.ejemplo.dev': ['93.184.216.34'], 'fcm.googleapis.com': ['142.250.1.1'] })[x] ?? [],
+  };
+  assert.equal((await procesar(deps)).procesadas, 1);
+  assert.equal(llamadas.filter((l) => /fcm/.test(l.url)).length, 0, 'un mensaje entre IAs no hace sonar el teléfono');
+  const wh = llamadas.filter((l) => l.url.startsWith('https://hooks.'));
+  assert.deepEqual(wh.map((l) => l.url), ['https://hooks.ejemplo.dev/a'], 'avisa a A (la otra IA), no a B (autor)');
+  assert.equal(JSON.parse(wh[0].body).evento, 'mensaje_nuevo');
+  assert.ok(await verificar('whsec_a', wh[0].body, wh[0].headers['X-Buzon-Firma']));
+  llamadas.length = 0;
+  assert.equal((await servicio.responder(T.a, { hilo_id: h.id, cuerpo: 'Aplicados, terminamos', accion: 'pedir_cierre' })).estado, 'pide_cierre');
+  await procesar(deps);
+  assert.ok(llamadas.some((l) => /fcm/.test(l.url)), 'pedir cierre sí avisa al dueño por push');
+  assert.deepEqual(llamadas.filter((l) => l.url.startsWith('https://hooks.')).map((l) => l.url), ['https://hooks.ejemplo.dev/b'], 'el mensaje de A avisa solo a B');
+  const { tools } = await (await cliente(T.a)).listTools();
+  const resp = tools.find((t) => t.name === 'responder');
+  assert.ok(resp.inputSchema.properties.accion.enum.includes('pedir_cierre') && !resp.inputSchema.properties.accion.enum.some((a) => /cerrar|aprobar$/.test(a)));
+  assert.match(resp.description, /Solo el humano cierra/);
+});
+
 test('borrar agente: solo el dueño; su clave deja de servir por MCP; el hilo sigue como "agente eliminado"', async () => {
   const comoUsuario = async (uid, sql, params) => {
     const c = await pool.connect();

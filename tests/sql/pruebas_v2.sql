@@ -244,4 +244,58 @@ do $$ declare i bigint; begin
     exception when others then if sqlerrm like '404:%' then perform pg_temp.ok('89 pre-chequeo rechaza hilo de otro buzón'); else raise; end if; end;
 end $$;
 reset role;
+-- 101-112 Aprobar solo el cierre
+reset role;
+insert into public.tokens(agente_id,hash_token) values ('bbbbbbbb-0000-0000-0000-000000000002', encode(sha256(convert_to('bz_'||repeat('w',30),'UTF8')),'hex'));
+create temp table _h as select (public.mcp_crear('bz_'||repeat('v',30),'tarea','Revisión entre IAs')->>'id')::uuid id;
+grant select on _h to anon, authenticated;
+do $$ declare h uuid := (select id from _h); n int; begin
+  perform public.mcp_responder('bz_'||repeat('w',30), h, 'Revisé: falta un caso');
+  perform public.mcp_responder('bz_'||repeat('v',30), h, 'Corregido');
+  if (select estado from public.hilos where id=h)='abierto' and (select count(*) from public.mensajes where hilo_id=h)=2
+    then perform pg_temp.ok('101 las IAs conversan sin aprobación (el hilo sigue abierto)'); else perform pg_temp.falla('101'); end if;
+  select count(*) into n from public.notificaciones where hilo_id=h and evento='mensaje_nuevo';
+  if n=2 and (select agente_origen from public.notificaciones where hilo_id=h and evento='mensaje_nuevo' order by id limit 1)='bbbbbbbb-0000-0000-0000-000000000002'
+    then perform pg_temp.ok('102 cada mensaje de IA encola aviso con su autor (para no avisarle a sí misma)'); else perform pg_temp.falla('102'); end if;
+  perform public.mcp_responder('bz_'||repeat('w',30), h, 'Terminado, ¿cerramos?', 'pedir_cierre');
+  if (select estado from public.hilos where id=h)='pide_cierre'
+     and exists (select 1 from public.notificaciones where hilo_id=h and evento='pide_cierre')
+    then perform pg_temp.ok('103 pedir_cierre deja el hilo esperando al dueño y encola aviso'); else perform pg_temp.falla('103'); end if;
+  begin perform public.mcp_responder('bz_'||repeat('w',30), h, 'x', 'cerrar'); perform pg_temp.falla('104');
+    exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('104 una IA no puede cerrar (acción inexistente)'); else raise; end if; end;
+end $$;
+set role anon;
+do $$ begin
+  begin perform public.decidir_cierre((select id from _h), true); perform pg_temp.falla('105');
+    exception when insufficient_privilege then perform pg_temp.ok('105 anon (una IA) no puede llamar decidir_cierre'); end;
+end $$;
+reset role;
+set role authenticated; select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$ begin
+  begin perform public.decidir_cierre((select id from _h), true); perform pg_temp.falla('106');
+    exception when insufficient_privilege then perform pg_temp.ok('106 intruso no cierra hilos de Erik'); end;
+end $$;
+select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ begin
+  begin update public.hilos set estado='cerrado' where id=(select id from _h); perform pg_temp.falla('107');
+    exception when insufficient_privilege then perform pg_temp.ok('107 ni el dueño cierra con update directo (solo con decidir_cierre, auditado)'); end;
+  if public.decidir_cierre((select id from _h), false, 'Falta el README') = 'abierto' then perform pg_temp.ok('108 "Seguir trabajando" devuelve el hilo a abierto con nota'); else perform pg_temp.falla('108'); end if;
+end $$;
+reset role;
+do $$ begin perform public.mcp_responder('bz_'||repeat('w',30), (select id from _h), 'README listo', 'pedir_cierre'); end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ begin
+  if public.decidir_cierre((select id from _h), true) = 'cerrado' then perform pg_temp.ok('109 Erik aprueba el cierre'); else perform pg_temp.falla('109'); end if;
+  begin update public.hilos set estado='abierto' where id=(select id from _h); perform pg_temp.falla('110');
+    exception when insufficient_privilege then perform pg_temp.ok('110 un hilo cerrado no se reabre'); end;
+end $$;
+reset role;
+do $$ declare h uuid := (select id from _h); begin
+  begin perform public.mcp_responder('bz_'||repeat('v',30), h, 'otra cosa'); perform pg_temp.falla('111');
+    exception when others then if sqlerrm like '409:%' then perform pg_temp.ok('111 hilo cerrado ya no acepta mensajes de IAs'); else raise; end if; end;
+  if (select count(*) from public.auditoria where objeto_id=h and accion in ('cierre:aprobado','cierre:rechazado') and actor like 'humano:%')=2
+     and exists (select 1 from public.mensajes where hilo_id=h and autor_humano is not null and cuerpo='Falta el README')
+    then perform pg_temp.ok('112 cierre y rechazo auditados como humano; la nota queda en el hilo'); else perform pg_temp.falla('112'); end if;
+end $$;
+reset role;
 \echo TODAS_LAS_PRUEBAS_PASARON
