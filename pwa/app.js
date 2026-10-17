@@ -157,7 +157,7 @@ async function pintarAgentes(v) {
     <select id="nl-min"><option value="5">Dura 5 min</option><option value="10" selected>Dura 10 min</option><option value="15">Dura 15 min</option></select>
     <button class="ok">Generar código</button><div id="nl-lista"></div></form>
     <div class="tarjeta"><b>Tus agentes</b> <span class="meta">(${ags.length})</span>
-    <label class="meta"><input type="checkbox" id="solo-act" ${soloActivos ? 'checked' : ''}> Mostrar solo activos</label>
+    <label class="meta"><input type="checkbox" id="solo-act" style="width:auto;margin:0 6px 0 0;vertical-align:middle" ${soloActivos ? 'checked' : ''}> Mostrar solo activos</label>
     <button class="secundario" id="limpiar">🧹 Limpiar inactivos</button><div id="limpiar-lista"></div>
     <p class="meta">Inactivo = no se ha usado en ${DIAS_INACTIVO} días o nunca se conectó. Borrar un agente quita su acceso para siempre; sus hilos y mensajes se quedan como "agente eliminado".</p></div>
     <div class="tarjeta"><b>🔔 Avisos en este teléfono</b><p class="meta">Te avisamos cuando una IA te pida aprobación o deje un hilo nuevo. El aviso solo trae el título, nunca el contenido.</p><div id="push-caja"></div></div>`;
@@ -186,7 +186,7 @@ async function pintarAgentes(v) {
     const caja = $('#limpiar-lista');
     if (!inact.length) { caja.innerHTML = '<p class="meta">✓ No hay agentes inactivos.</p>'; return; }
     caja.innerHTML = `<p class="meta">Se borrarán estos ${inact.length}:</p><ul>${inact.map((a) => `<li>${esc(a.nombre)} · ${estado[a.id]?.ultimo_uso ? 'último uso ' + fecha(estado[a.id].ultimo_uso) : 'nunca se conectó'}</li>`).join('')}</ul>
-      <div class="fila"><button class="no" id="limpiar-ok">Borrar ${inact.length}</button><button class="secundario" id="limpiar-no">Cancelar</button></div>`;
+      <div class="fila"><button class="no" id="limpiar-ok" style="white-space:nowrap">Borrar ${inact.length}</button><button class="secundario" id="limpiar-no">Cancelar</button></div>`;
     $('#limpiar-no').onclick = () => (caja.innerHTML = '');
     $('#limpiar-ok').onclick = async () => {
       if (!confirm(`¿Borrar ${inact.length} agente(s) inactivo(s)? No se puede deshacer.`)) return;
