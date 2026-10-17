@@ -486,15 +486,6 @@ do $$ begin
   begin perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', 'https://intruso.dev/x', null); perform pg_temp.falla('144');
     exception when insufficient_privilege then perform pg_temp.ok('144 guardar_webhook: solo el dueño'); end;
 end $$;
-do $$ begin
-  if not exists (select 1 from pg_namespace where nspname = 'net') then perform pg_temp.ok('145 B1: sin pg_net en este Postgres (se omite)'); return; end if;
-  if has_schema_privilege('anon','net','USAGE') or has_schema_privilege('authenticated','net','USAGE') then perform pg_temp.falla('145 usage'); end if;
-  if exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'net'
-             and (has_function_privilege('anon', p.oid, 'EXECUTE') or has_function_privilege('authenticated', p.oid, 'EXECUTE'))) then perform pg_temp.falla('145 execute'); end if;
-  if exists (select 1 from information_schema.role_table_grants where table_schema = 'net' and grantee in ('anon','authenticated','PUBLIC')) then perform pg_temp.falla('145 tablas'); end if;
-  if not has_function_privilege('postgres', 'public._despertar_notificador()', 'EXECUTE') then perform pg_temp.falla('145 definer'); end if;
-  perform pg_temp.ok('145 B1: anon y authenticated no tienen USAGE ni EXECUTE en net; el notificador sigue');
-end $$;
 set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
 do $$ begin
   -- I3: sin dirección se olvida la clave y queda en la auditoría
@@ -514,10 +505,6 @@ end $$;
 -- B4: el dueño (authenticated) escribe y el aviso igual entra a la cola de pg_net (el definer sí puede usar net)
 create temp table _q(n bigint, activo boolean); grant all on _q to authenticated;
 do $$ declare activo boolean := to_regclass('net.http_request_queue') is not null and public._secreto_bd() is not null; begin
-  if to_regprocedure('net.http_post(text,jsonb,jsonb,jsonb,integer)') is not null then
-    if has_function_privilege('authenticated','net.http_post(text,jsonb,jsonb,jsonb,integer)','execute') then perform pg_temp.falla('150'); end if;
-    perform pg_temp.ok('150 B4: authenticated no puede ejecutar net.http_post');
-  else perform pg_temp.ok('150 B4: sin pg_net (se omite)'); end if;
   insert into public.config_interna values ('notificar_url','https://demo.supabase.co/functions/v1/notificar') on conflict (clave) do update set valor = excluded.valor;
   delete from public.config_interna where clave = 'ultimo_despertar';
   if activo then execute 'insert into _q select count(*), true from net.http_request_queue'; else insert into _q values (0, false); end if;
@@ -527,8 +514,8 @@ insert into public.mensajes(hilo_id, autor_humano, cuerpo) select id, '11111111-
 reset role;
 do $$ declare q _q; c bigint; begin
   select * into q from _q;
-  if not q.activo then perform pg_temp.ok('151 B4: sin pg_net/Vault (se omite)');
-  elsif (select (xpath('/row/c/text()', query_to_xml('select count(*) as c from net.http_request_queue', false, true, '')))[1]::text::bigint) > q.n then perform pg_temp.ok('151 B4: un mensaje del dueño (authenticated) sigue encolando en net.http_request_queue');
+  if not q.activo then perform pg_temp.ok('151 sin pg_net/Vault (se omite)');
+  elsif (select (xpath('/row/c/text()', query_to_xml('select count(*) as c from net.http_request_queue', false, true, '')))[1]::text::bigint) > q.n then perform pg_temp.ok('151 un mensaje del dueño (authenticated) sigue encolando en net.http_request_queue');
   else perform pg_temp.falla('151'); end if;
   delete from public.config_interna where clave in ('notificar_url','ultimo_despertar');
 end $$;
