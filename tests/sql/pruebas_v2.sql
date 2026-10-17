@@ -244,4 +244,213 @@ do $$ declare i bigint; begin
     exception when others then if sqlerrm like '404:%' then perform pg_temp.ok('89 pre-chequeo rechaza hilo de otro buzón'); else raise; end if; end;
 end $$;
 reset role;
+-- 101-112 Aprobar solo el cierre
+reset role;
+insert into public.tokens(agente_id,hash_token) values ('bbbbbbbb-0000-0000-0000-000000000002', encode(sha256(convert_to('bz_'||repeat('w',30),'UTF8')),'hex'));
+create temp table _h as select (public.mcp_crear('bz_'||repeat('v',30),'tarea','Revisión entre IAs')->>'id')::uuid id;
+grant select on _h to anon, authenticated;
+do $$ declare h uuid := (select id from _h); n int; begin
+  perform public.mcp_responder('bz_'||repeat('w',30), h, 'Revisé: falta un caso');
+  perform public.mcp_responder('bz_'||repeat('v',30), h, 'Corregido');
+  if (select estado from public.hilos where id=h)='abierto' and (select count(*) from public.mensajes where hilo_id=h)=2
+    then perform pg_temp.ok('101 las IAs conversan sin aprobación (el hilo sigue abierto)'); else perform pg_temp.falla('101'); end if;
+  select count(*) into n from public.notificaciones where hilo_id=h and evento='mensaje_nuevo';
+  if n=2 and (select agente_origen from public.notificaciones where hilo_id=h and evento='mensaje_nuevo' order by id limit 1)='bbbbbbbb-0000-0000-0000-000000000002'
+    then perform pg_temp.ok('102 cada mensaje de IA encola aviso con su autor (para no avisarle a sí misma)'); else perform pg_temp.falla('102'); end if;
+  perform public.mcp_responder('bz_'||repeat('w',30), h, 'Terminado, ¿cerramos?', 'pedir_cierre');
+  if (select estado from public.hilos where id=h)='pide_cierre'
+     and exists (select 1 from public.notificaciones where hilo_id=h and evento='pide_cierre')
+    then perform pg_temp.ok('103 pedir_cierre deja el hilo esperando al dueño y encola aviso'); else perform pg_temp.falla('103'); end if;
+  begin perform public.mcp_responder('bz_'||repeat('w',30), h, 'x', 'cerrar'); perform pg_temp.falla('104');
+    exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('104 una IA no puede cerrar (acción inexistente)'); else raise; end if; end;
+end $$;
+set role anon;
+do $$ begin
+  begin perform public.decidir_cierre((select id from _h), true); perform pg_temp.falla('105');
+    exception when insufficient_privilege then perform pg_temp.ok('105 anon (una IA) no puede llamar decidir_cierre'); end;
+end $$;
+reset role;
+set role authenticated; select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$ begin
+  begin perform public.decidir_cierre((select id from _h), true); perform pg_temp.falla('106');
+    exception when insufficient_privilege then perform pg_temp.ok('106 intruso no cierra hilos de Erik'); end;
+end $$;
+select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ begin
+  begin update public.hilos set estado='cerrado' where id=(select id from _h); perform pg_temp.falla('107');
+    exception when insufficient_privilege then perform pg_temp.ok('107 ni el dueño cierra con update directo (solo con decidir_cierre, auditado)'); end;
+  if public.decidir_cierre((select id from _h), false, 'Falta el README') = 'abierto' then perform pg_temp.ok('108 "Seguir trabajando" devuelve el hilo a abierto con nota'); else perform pg_temp.falla('108'); end if;
+end $$;
+reset role;
+do $$ begin perform public.mcp_responder('bz_'||repeat('w',30), (select id from _h), 'README listo', 'pedir_cierre'); end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ begin
+  if public.decidir_cierre((select id from _h), true) = 'cerrado' then perform pg_temp.ok('109 Erik aprueba el cierre'); else perform pg_temp.falla('109'); end if;
+  begin update public.hilos set estado='abierto' where id=(select id from _h); perform pg_temp.falla('110');
+    exception when insufficient_privilege then perform pg_temp.ok('110 un hilo cerrado no se reabre'); end;
+end $$;
+reset role;
+do $$ declare h uuid := (select id from _h); begin
+  begin perform public.mcp_responder('bz_'||repeat('v',30), h, 'otra cosa'); perform pg_temp.falla('111');
+    exception when others then if sqlerrm like '409:%' then perform pg_temp.ok('111 hilo cerrado ya no acepta mensajes de IAs'); else raise; end if; end;
+  if (select count(*) from public.auditoria where objeto_id=h and accion in ('cierre:aprobado','cierre:rechazado') and actor like 'humano:%')=2
+     and exists (select 1 from public.mensajes where hilo_id=h and autor_humano is not null and cuerpo='Falta el README')
+    then perform pg_temp.ok('112 cierre y rechazo auditados como humano; la nota queda en el hilo'); else perform pg_temp.falla('112'); end if;
+end $$;
+reset role;
+-- 113-122 Lo que me toca (para, lecturas, lista corta)
+reset role;
+create temp table _t (k text primary key, id uuid);
+grant select on _t to anon, authenticated;
+do $$ declare r jsonb; l jsonb; e text; begin
+  insert into _t values ('t1', (public.mcp_crear('bz_'||repeat('v',30),'tarea','Para Codex 1',null,null,'codex')->>'id')::uuid);
+  update public.hilos set creado_en = now() - interval '1 hour' where id=(select id from _t where k='t1');
+  insert into _t values ('t2', (public.mcp_crear('bz_'||repeat('v',30),'tarea','Para Codex 2',null,null,'Codex')->>'id')::uuid);
+  if (select para_agente from public.hilos where id=(select id from _t where k='t1'))='bbbbbbbb-0000-0000-0000-000000000002'
+    then perform pg_temp.ok('113 crear con para guarda el destinatario (sin importar mayúsculas)'); else perform pg_temp.falla('113'); end if;
+  foreach e in array array['Nadie','Viejo1','AgenteAjeno'] loop
+    begin perform public.mcp_crear('bz_'||repeat('v',30),'tarea','x',null,null,e); perform pg_temp.falla('114 '||e);
+      exception when others then if sqlerrm not like '400:%' then raise; end if; end;
+  end loop;
+  perform pg_temp.ok('114 para inexistente, eliminado o de otro buzón se rechaza');
+  l := public.mcp_leer('bz_'||repeat('w',30)) -> 'hilos';
+  if (l->0->>'id')::uuid = (select id from _t where k='t1') and (l->1->>'id')::uuid = (select id from _t where k='t2') and l->0->>'motivo'='para_ti'
+    then perform pg_temp.ok('115 sin filtros: primero lo dirigido a mí, el más antiguo primero'); else perform pg_temp.falla('115 '||l::text); end if;
+  r := l->0;
+  if not r ? 'mensajes' and r->>'estado_texto'='Abierto' and r->>'para'='Codex' and r->>'creado_por'='Claude'
+     and r->>'creado_en' ~ '^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d-06:00$' and r->>'ultima_actividad_cdmx' like '% (hora de CDMX)'
+    then perform pg_temp.ok('116 resumen corto: título, estado sencillo, para, creador y horas ISO con desfase y CDMX'); else perform pg_temp.falla('116 '||r::text); end if;
+  if not exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('v',30))->'hilos') x where (x->>'id')::uuid in (select id from _t))
+    then perform pg_temp.ok('117 a Claude no le toca lo que dirigió a Codex'); else perform pg_temp.falla('117'); end if;
+  insert into _t values ('x', (public.mcp_crear('bz_'||repeat('v',30),'tarea','Sin destinatario')->>'id')::uuid);
+  if exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('w',30))->'hilos') x where (x->>'id')::uuid=(select id from _t where k='x') and x->>'motivo'='hilo_nuevo')
+    then perform pg_temp.ok('118 hilo nuevo sin destinatario aparece hasta que lo abro'); else perform pg_temp.falla('118'); end if;
+  perform public.mcp_leer('bz_'||repeat('w',30), (select id from _t where k='x'));
+  perform public.mcp_responder('bz_'||repeat('w',30), (select id from _t where k='x'), 'mi propio mensaje');
+  if not exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('w',30))->'hilos') x where (x->>'id')::uuid=(select id from _t where k='x'))
+     and exists (select 1 from public.lecturas where agente_id='bbbbbbbb-0000-0000-0000-000000000002' and hilo_id=(select id from _t where k='x'))
+    then perform pg_temp.ok('119 abrirlo registra la lectura; mis propios mensajes no me lo regresan'); else perform pg_temp.falla('119'); end if;
+  update public.lecturas set leido_en = now() - interval '1 minute' where hilo_id=(select id from _t where k='x');
+  update public.mensajes set creado_en = now() - interval '2 minutes' where hilo_id=(select id from _t where k='x');
+  perform public.mcp_responder('bz_'||repeat('v',30), (select id from _t where k='x'), 'respuesta de Claude');
+  if exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('w',30))->'hilos') x where (x->>'id')::uuid=(select id from _t where k='x') and x->>'motivo'='mensajes_nuevos' and (x->>'mensajes_sin_leer')::int=1)
+    then perform pg_temp.ok('120 un mensaje nuevo de otra IA lo regresa a mi lista'); else perform pg_temp.falla('120'); end if;
+  perform public.mcp_responder('bz_'||repeat('w',30), (select id from _t where k='t2'), 'terminé', 'pedir_cierre');
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ begin perform public.decidir_cierre((select id from _t where k='t2'), true); end $$;
+reset role;
+do $$ declare l jsonb; begin
+  l := public.mcp_leer('bz_'||repeat('w',30)) -> 'hilos';
+  if not exists (select 1 from jsonb_array_elements(l) x where (x->>'id')::uuid=(select id from _t where k='t2'))
+     and exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('w',30), null, 'todos', 100)->'hilos') x where (x->>'id')::uuid=(select id from _t where k='t2') and x->>'estado_texto'='Cerrado')
+    then perform pg_temp.ok('121 lo cerrado no sale por defecto; con estado "todos" sí'); else perform pg_temp.falla('121'); end if;
+end $$;
+set role anon;
+do $$ begin
+  begin perform 1 from public.lecturas limit 1; perform pg_temp.falla('122');
+    exception when insufficient_privilege then perform pg_temp.ok('122 anon (una IA) no lee el registro de lecturas'); end;
+end $$;
+reset role;
+set role authenticated; select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$ begin
+  if (select count(*) from public.lecturas)=0 then perform pg_temp.ok('123 un intruso no ve las lecturas de Erik'); else perform pg_temp.falla('123'); end if;
+end $$;
+reset role;
+-- 124-128 Lo tomado se queda; lo dirigido a otra IA no es mío; horas en el historial
+reset role;
+insert into public.agentes(id,buzon_id,nombre) values ('bbbbbbbb-0000-0000-0000-0000000000a3','aaaaaaaa-0000-0000-0000-000000000001','Gemini');
+insert into public.tokens(agente_id,hash_token) values ('bbbbbbbb-0000-0000-0000-0000000000a3', encode(sha256(convert_to('bz_'||repeat('g',30),'UTF8')),'hex'));
+do $$ declare y uuid; z uuid; l jsonb; m jsonb; begin
+  y := (public.mcp_crear('bz_'||repeat('v',30),'tarea','Para tomar')->>'id')::uuid;
+  perform public.mcp_leer('bz_'||repeat('w',30), y);
+  perform public.mcp_responder('bz_'||repeat('w',30), y, 'Lo tomo', 'tomar');
+  if exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('w',30))->'hilos') x where (x->>'id')::uuid=y and x->>'motivo'='tomado_por_ti')
+    then perform pg_temp.ok('124 lo que la IA tomó sigue en su lista aunque no haya nada nuevo'); else perform pg_temp.falla('124'); end if;
+  z := (public.mcp_crear('bz_'||repeat('v',30),'tarea','Solo para Codex',null,null,'Codex')->>'id')::uuid;
+  perform public.mcp_responder('bz_'||repeat('w',30), z, 'Codex trabajando');
+  if not exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('g',30))->'hilos') x where (x->>'id')::uuid=z)
+    then perform pg_temp.ok('125 lo dirigido a otra IA no aparece aunque tenga mensajes nuevos'); else perform pg_temp.falla('125'); end if;
+  perform public.mcp_responder('bz_'||repeat('g',30), z, 'Gemini opina');
+  update public.lecturas set leido_en = now() - interval '1 minute' where hilo_id = z;
+  update public.mensajes set creado_en = now() - interval '2 minutes' where hilo_id = z;
+  perform public.mcp_responder('bz_'||repeat('w',30), z, 'Codex responde a Gemini');
+  if exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('g',30))->'hilos') x where (x->>'id')::uuid=z and x->>'motivo'='mensajes_nuevos')
+    then perform pg_temp.ok('126 si la IA ya escribió en un hilo ajeno, sí le avisan las respuestas'); else perform pg_temp.falla('126'); end if;
+  perform public.mcp_responder('bz_'||repeat('g',30), y, 'Gemini mete su cuchara');
+  if exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('w',30))->'hilos') x where (x->>'id')::uuid=y and x->>'motivo'='tomado_por_ti')
+    then perform pg_temp.ok('127 lo tomado se ordena antes que lo demás y conserva su motivo'); else perform pg_temp.falla('127'); end if;
+  m := public.mcp_leer('bz_'||repeat('w',30), z);
+  if m->'mensajes'->0->>'creado_en_cdmx' like '% (hora de CDMX)' and m->'mensajes'->0->>'creado_en' ~ '[-+]\d\d:\d\d$' and m->'hilo'->>'creado_en_cdmx' like '% (hora de CDMX)'
+    then perform pg_temp.ok('128 al abrir un hilo, cada mensaje trae la hora legible de CDMX'); else perform pg_temp.falla('128'); end if;
+end $$;
+reset role;
+-- 129-138 Avisos confiables (013): clave del receptor, destinatarios por hilo, freno anti ping-pong
+reset role;
+update public.agentes set webhook_url='https://hooks.ejemplo.dev/' || nombre, webhook_secreto='whsec_x'
+ where id in ('bbbbbbbb-0000-0000-0000-000000000001','bbbbbbbb-0000-0000-0000-000000000002','bbbbbbbb-0000-0000-0000-0000000000a3');
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ declare g boolean; begin
+  g := public.guardar_clave_webhook('bbbbbbbb-0000-0000-0000-000000000001', 'clave-de-grok-123456');
+  if g and (select webhook_tiene_clave from public.agentes where id='bbbbbbbb-0000-0000-0000-000000000001')
+    then perform pg_temp.ok('129 el dueño guarda la clave del receptor y la PWA solo ve que existe'); else perform pg_temp.falla('129'); end if;
+  begin perform webhook_clave from public.agentes limit 1; perform pg_temp.falla('130');
+    exception when insufficient_privilege then perform pg_temp.ok('130 nadie puede leer la clave guardada'); end;
+  begin perform public.guardar_clave_webhook('bbbbbbbb-0000-0000-0000-000000000001', 'con espacio x'); perform pg_temp.falla('131');
+    exception when sqlstate '22023' then perform pg_temp.ok('131 una clave con espacios se rechaza'); end;
+end $$;
+select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$ begin
+  begin perform public.guardar_clave_webhook('bbbbbbbb-0000-0000-0000-000000000001', 'clave-de-intruso-123'); perform pg_temp.falla('132');
+    exception when insufficient_privilege then perform pg_temp.ok('132 un intruso no puede poner la clave de otro buzón'); end;
+end $$;
+set role anon;
+do $$ begin
+  begin perform public._destinos_webhook(1); perform pg_temp.falla('133');
+    exception when insufficient_privilege then perform pg_temp.ok('133 una IA no puede consultar destinos ni el secreto de la BD'); end;
+  begin perform public._secreto_bd(); perform pg_temp.falla('133b'); exception when insufficient_privilege then null; end;
+end $$;
+reset role;
+create temp table _d(k text primary key, id uuid);
+grant all on _d to anon, authenticated, service_role;
+do $$ declare h uuid; n bigint; ds uuid[]; i int; begin
+  -- Hilo dirigido a Codex: solo se despierta a Codex
+  h := (public.mcp_crear('bz_'||repeat('v',30),'tarea','Para Codex (013)',null,null,'Codex')->>'id')::uuid;
+  insert into _d values ('h', h);
+  select max(id) into n from public.notificaciones where hilo_id=h and evento='hilo_nuevo';
+  select array_agg(id) into ds from public._destinos_webhook(n);
+  if ds = array['bbbbbbbb-0000-0000-0000-000000000002'::uuid] then perform pg_temp.ok('134 hilo dirigido: solo despierta a la destinataria'); else perform pg_temp.falla('134 ' || coalesce(ds::text,'null')); end if;
+  -- Codex responde: se despierta al creador, no a Codex (autor) ni a Gemini (ajena al hilo)
+  update public.notificaciones set entregados = array['wh:bbbbbbbb-0000-0000-0000-000000000002'] where id = n;
+  perform public.mcp_leer('bz_'||repeat('w',30), h);
+  perform public.mcp_responder('bz_'||repeat('w',30), h, 'Codex responde');
+  select max(id) into n from public.notificaciones where hilo_id=h and evento='mensaje_nuevo';
+  select array_agg(id) into ds from public._destinos_webhook(n);
+  if ds = array['bbbbbbbb-0000-0000-0000-000000000001'::uuid] then perform pg_temp.ok('135 mensaje: solo despierta a las IAs del hilo, nunca al autor'); else perform pg_temp.falla('135 ' || coalesce(ds::text,'null')); end if;
+  -- Ya se despertó al creador y no ha abierto el hilo: un segundo mensaje no lo vuelve a despertar
+  update public.notificaciones set entregados = array['wh:bbbbbbbb-0000-0000-0000-000000000001'], creado_en = now() - interval '10 seconds' where id = n;
+  perform public.mcp_responder('bz_'||repeat('w',30), h, 'Codex otra vez');
+  select max(id) into n from public.notificaciones where hilo_id=h and evento='mensaje_nuevo';
+  if not exists (select 1 from public._destinos_webhook(n)) then perform pg_temp.ok('136 a quien ya avisamos y no ha abierto el hilo no se le vuelve a despertar'); else perform pg_temp.falla('136'); end if;
+  -- 20 mensajes seguidos entre IAs: el hilo deja de despertar IAs hasta que el dueño escriba
+  update public.lecturas set leido_en = now() + interval '1 hour' where hilo_id = h;
+  update public.notificaciones set entregados = '{}' where hilo_id = h;
+  for i in 1..20 loop perform public.mcp_responder('bz_'||repeat(case when i % 2 = 0 then 'v' else 'w' end,30), h, 'ping ' || i); end loop;
+  select max(id) into n from public.notificaciones where hilo_id=h and evento='mensaje_nuevo';
+  if not exists (select 1 from public._destinos_webhook(n)) then perform pg_temp.ok('137 freno anti ping-pong: 20 mensajes seguidos entre IAs ya no despiertan a nadie'); else perform pg_temp.falla('137'); end if;
+  insert into public.mensajes(hilo_id, autor_humano, cuerpo) values (h, '11111111-1111-1111-1111-111111111111', 'Erik: sigan así');
+  select max(id) into n from public.notificaciones where hilo_id=h and evento='mensaje_nuevo';
+  select array_agg(id order by id) into ds from public._destinos_webhook(n);
+  if (select origen_humano from public.notificaciones where id=n)
+     and ds = array['bbbbbbbb-0000-0000-0000-000000000001'::uuid,'bbbbbbbb-0000-0000-0000-000000000002'::uuid]
+    then perform pg_temp.ok('138 un mensaje del dueño despierta a las IAs del hilo y reinicia el freno'); else perform pg_temp.falla('138 ' || coalesce(ds::text,'null')); end if;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ begin perform public.borrar_agentes(array['bbbbbbbb-0000-0000-0000-000000000001'::uuid]); end $$;
+reset role;
+do $$ begin
+  if (select webhook_clave is null and webhook_url is null from public.agentes where id='bbbbbbbb-0000-0000-0000-000000000001')
+    then perform pg_temp.ok('139 al borrar un agente se olvida su clave del receptor'); else perform pg_temp.falla('139'); end if;
+end $$;
+reset role;
 \echo TODAS_LAS_PRUEBAS_PASARON

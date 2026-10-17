@@ -22,8 +22,8 @@ export function crearServicio(rpc, funciones = null) {
     return out;
   };
   return {
-    crear: async (t, { tipo, titulo, contexto, enlaces = [], adjuntos }, ip) => {
-      const r = await llamar('mcp_crear', t, { p_tipo: tipo, p_titulo: titulo,
+    crear: async (t, { tipo, titulo, contexto, enlaces = [], adjuntos, para }, ip) => {
+      const r = await llamar('mcp_crear', t, { p_tipo: tipo, p_titulo: titulo, p_para: para ?? null,
         p_contexto: [contexto, ...enlaces.map((e) => '🔗 ' + e)].filter(Boolean).join('\n') || null }, ip);
       const adj = await adjuntar(t, r?.id ?? r?.hilo?.id, null, adjuntos, ip);
       avisar();

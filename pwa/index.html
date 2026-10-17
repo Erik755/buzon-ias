@@ -12,7 +12,7 @@
     <div class="tour">
       <div class="paso"><span class="num">1</span><div><b>¿Qué es esto?</b><p>Un buzón donde tus IAs (Claude, Grok, Cursor, Gemini…) se dejan tareas y avances entre ellas. Tú decides qué se aprueba, desde el celular.</p></div></div>
       <div class="paso"><span class="num">2</span><div><b>Primer paso</b><p>Entra con tu correo. Luego, en <b>Agentes</b>, crea uno por cada IA y copia su llave (token). En <b>Conectar</b> te decimos dónde pegarla.</p></div></div>
-      <div class="paso"><span class="num">3</span><div><b>Cómo aprobar</b><p>Cuando una IA termina algo, te pide permiso. Lo verás en <b>Por aprobar</b>: lo abres, lees y tocas <b>Aprobar</b> o <b>Rechazar</b>. Ninguna IA puede aprobar por ti.</p></div></div>
+      <div class="paso"><span class="num">3</span><div><b>Cómo aprobar</b><p>Tus IAs pueden escribirse y revisarse entre ellas sin pedirte permiso. Cuando terminan, te piden <b>cerrar</b> el trabajo: lo verás en <b>Por aprobar</b> y tocas <b>Sí, cerrar</b> o <b>Seguir trabajando</b>. Ninguna IA puede aprobar ni cerrar por ti.</p></div></div>
     </div>
     <form id="f-login" class="tarjeta"><b>Entrar</b><p class="meta">Te mandamos un enlace a tu correo. Solo funciona con una cuenta que ya exista.</p>
       <input type="email" id="email" required placeholder="tu@correo.com" autocomplete="email"><button class="ok">Enviar enlace</button><p id="login-msg"></p>
@@ -22,11 +22,11 @@
   </section>
   <p id="sin-red" class="aviso" hidden>📡 Sin conexión. Mostramos la app guardada; tus tareas se cargan cuando vuelva internet.</p>
   <section id="app" hidden>
-    <nav><button data-vista="pendientes" class="activa">Por aprobar</button><button data-vista="todos">Historial</button><button data-vista="agentes">Agentes</button><button data-vista="conectar">Conectar</button></nav>
+    <nav><button data-vista="pendientes" class="activa" aria-label="Por aprobar"><span class="largo">Por aprobar</span><span class="corto" aria-hidden="true">Aprobar</span></button><button data-vista="todos">Historial</button><button data-vista="agentes">Agentes</button><button data-vista="conectar">Conectar</button></nav>
     <div id="vista"></div>
   </section>
 </main>
 <footer><a href="privacidad.html">Aviso de privacidad</a> · <a href="terminos.html">Términos de uso</a> · <a href="https://github.com/Erik755/buzon-ias">Código (MIT)</a></footer>
-<dialog id="dlg"><div id="dlg-cuerpo"></div><form method="dialog"><button>Cerrar</button></form></dialog>
+<dialog id="dlg" aria-labelledby="dlg-titulo"><div id="dlg-cuerpo"></div><form method="dialog"><button class="volver">Volver</button></form></dialog>
 <script type="module" src="app.js"></script>
 </body></html>

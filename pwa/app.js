@@ -1,6 +1,8 @@
 import { createClient } from './vendor/supabase.js';
 import * as CFG from './config.js';
 import { GUIAS, ETIQUETA, QUE_HACER } from './guias.js';
+import { mensajeAmable, conBotones } from './errores.js';
+const avisar = (que, error) => alert(`${que}: ${mensajeAmable(error, navigator.onLine)}`);
 
 const { SUPABASE_URL, SUPABASE_ANON_KEY, MCP_URL } = CFG;
 const VAPID = CFG.VAPID_PUBLIC_KEY || '';
@@ -50,16 +52,16 @@ async function pintar() {
   const v = $('#vista'); v.innerHTML = '<p class="meta">Cargando…</p>';
   if (vista === 'agentes') return pintarAgentes(v);
   if (vista === 'conectar') { v.innerHTML = ''; return pintarGuias(v, true); }
-  let q = sb.from('hilos').select('*, agentes!hilos_creado_por_agente_fkey(nombre,eliminado_en)').eq('buzon_id', buzon.id).order('creado_en', { ascending: false }).limit(50);
-  if (vista === 'pendientes') q = q.eq('estado', 'pide_aprobacion');
+  let q = sb.from('hilos').select('*, creador:agentes!hilos_creado_por_agente_fkey(nombre,eliminado_en), destino:agentes!hilos_para_agente_fkey(nombre,eliminado_en)').eq('buzon_id', buzon.id).order('creado_en', { ascending: false }).limit(50);
+  if (vista === 'pendientes') q = q.in('estado', ['pide_aprobacion', 'pide_cierre']);
   const { data, error } = await q;
-  if (error) return v.innerHTML = !navigator.onLine || /fetch|network/i.test(error.message) ? '<div class="vacio"><b>📡 Sin conexión</b>Se cargará cuando vuelva internet.</div>' : esc(error.message);
+  if (error) return v.innerHTML = !navigator.onLine || /fetch|network/i.test(error.message) ? '<div class="vacio"><b>📡 Sin conexión</b>Se cargará cuando vuelva internet.</div>' : `<div class="vacio"><b>No pudimos cargar tus hilos</b>${esc(mensajeAmable(error))}</div>`;
   if (!data.length) {
     const { count } = await sb.from('agentes').select('id', { count: 'exact', head: true }).eq('buzon_id', buzon.id).is('eliminado_en', null);
     v.innerHTML = !count
       ? `<div class="vacio"><b>👋 Empecemos</b>Todavía no conectas ninguna IA.<br>1) Crea un agente en <b>Agentes</b> (uno por IA).<br>2) Sigue la guía en <b>Conectar</b>.<br>3) Pídele a tu IA: <i>"Deja una tarea en mi buzón"</i>.<br><br><button class="ok" id="ir-agentes">Crear mi primer agente</button></div>`
       : vista === 'pendientes'
-        ? `<div class="vacio"><b>Nada por aprobar 🎉</b>Cuando una IA te pida permiso, aparecerá aquí. Prueba pedirle a una IA: <i>"Lee mi buzón, toma la tarea y pídeme aprobación cuando acabes"</i>.</div>`
+        ? `<div class="vacio"><b>Nada por aprobar 🎉</b>Tus IAs pueden platicar y revisarse entre ellas sin pedirte permiso. Aquí solo aparece lo que necesita tu OK, sobre todo cuando piden <b>cerrar</b> un trabajo. Prueba pedirle a una IA: <i>"Lee mi buzón, toma la tarea y pídeme aprobación cuando acabes"</i>.</div>`
         : `<div class="vacio"><b>Tu historial está vacío</b>Pídele a una IA conectada: <i>"Deja en mi buzón una tarea: …"</i> y aquí verás todo lo que pase.</div>`;
     $('#ir-agentes') && ($('#ir-agentes').onclick = () => irA('agentes'));
     return;
@@ -67,41 +69,61 @@ async function pintar() {
   v.innerHTML = '';
   for (const h of data) {
     const d = document.createElement('div'); d.className = 'tarjeta';
-    d.innerHTML = `<span class="estado">${esc(h.estado)}</span><b>${esc(h.titulo)}</b>
-      <div class="meta">${esc(h.tipo)} · ${esc(nombreAutor(h.agentes, '—'))} · ${fecha(h.creado_en)}</div>`;
+    d.innerHTML = `<span class="estado">${esc(estadoTxt(h.estado))}</span><b>${esc(h.titulo)}</b>
+      <div class="meta">De: ${esc(nombreAutor(h.creador, 'ti'))}${h.destino ? ' · <b>Para: ' + esc(nombreAutor(h.destino, '')) + '</b>' : ' · Para: cualquier IA'}</div>
+      <div class="meta">🕒 ${fecha(h.creado_en)} (hora de tu teléfono)</div>`;
     d.onclick = () => abrirHilo(h.id); v.append(d);
   }
 }
 
+const ESTADO = { abierto: 'Abierto', tomado: 'Una IA lo está trabajando', pide_aprobacion: 'Espera tu aprobación', aprobado: 'Aprobado', rechazado: 'Rechazado', pide_cierre: 'Listo para cerrar: espera tu OK', cerrado: 'Cerrado' };
+const estadoTxt = (e) => ESTADO[e] ?? e;
+
 async function abrirHilo(id) {
   const [{ data: h }, { data: ms }, { data: ap }, { data: adj }] = await Promise.all([
-    sb.from('hilos').select('*').eq('id', id).single(),
+    sb.from('hilos').select('*, creador:agentes!hilos_creado_por_agente_fkey(nombre,eliminado_en), destino:agentes!hilos_para_agente_fkey(nombre,eliminado_en)').eq('id', id).single(),
     sb.from('mensajes').select('*, agentes(nombre,eliminado_en)').eq('hilo_id', id).order('creado_en'),
     sb.from('aprobaciones').select('*').eq('hilo_id', id).order('creado_en'),
     sb.from('adjuntos').select('id,nombre,tipo,tamano,creado_en').eq('hilo_id', id).order('creado_en'),
   ]);
   if (!h) return;
   const c = $('#dlg-cuerpo');
-  c.innerHTML = `<h3>${esc(h.titulo)}</h3><p class="meta">${esc(h.estado)}</p><div class="msg">${esc(h.contexto)}</div>
+  c.innerHTML = `<h3 id="dlg-titulo">${esc(h.titulo)}</h3><p class="meta">${esc(estadoTxt(h.estado))} · De: ${esc(nombreAutor(h.creador, 'ti'))} · Para: ${h.destino ? esc(nombreAutor(h.destino, '')) : 'cualquier IA'} · 🕒 ${fecha(h.creado_en)}</p><div class="msg">${esc(h.contexto)}</div>
     ${ms.map((m) => `<div class="msg"><span class="meta">${esc(nombreAutor(m.agentes, 'Tú'))} · ${fecha(m.creado_en)}</span><br>${esc(m.cuerpo)}</div>`).join('')}
     ${adj?.length ? `<div class="msg"><b>📎 Adjuntos</b>${adj.map((a) => `<div class="fila-adj"><span>${ICONO[a.tipo] ?? '📄'} ${esc(a.nombre)} <span class="meta">${kb(a.tamano)}</span></span><button class="copiar" data-adj="${a.id}">Descargar</button></div>`).join('')}<p class="meta">Se descargan a tu teléfono; la app no los abre ni los ejecuta. El enlace dura 5 minutos.</p></div>` : ''}
     ${ap.map((a) => `<p>✅ ${esc(a.decision)} · ${esc(a.nota)} <span class="meta">${fecha(a.creado_en)}</span></p>`).join('')}
-    <textarea id="nota" placeholder="Nota (opcional)"></textarea>
+    <div class="pie">
+    ${h.estado !== 'cerrado' ? `<label for="nota" class="meta">${h.estado === 'pide_cierre' ? 'Tu mensaje (opcional): se agrega al hilo y lo leen las IAs. Sirve para «Comentar» o para explicar por qué cierras o sigues.' : 'Tu mensaje: se agrega al hilo y lo leen las IAs.'}</label>
+    <textarea id="nota" placeholder="Escribe aquí…"></textarea>` : ''}
+    <p id="nota-aviso" class="aviso" role="status" hidden></p>
     ${h.estado === 'pide_aprobacion' ? '<div class="fila"><button class="ok" id="aprobar">Aprobar</button><button class="no" id="rechazar">Rechazar</button></div>' : ''}
-    <button id="comentar">Comentar</button>`;
-  const decidir = async (decision) => {
-    const { error } = await sb.from('aprobaciones').insert({ hilo_id: id, humano_id: usuario.id, decision, nota: $('#nota').value || null });
-    if (error) return alert(error.message);
+    ${h.estado === 'pide_cierre' ? '<p class="aviso">Una IA dice que el trabajo ya terminó. ¿Lo cerramos? Al cerrarlo, las IAs ya no podrán escribir en él.</p><div class="fila acciones"><button class="ok" id="cerrar-si">Sí,&nbsp;cerrar</button><button id="cerrar-no">Seguir trabajando</button></div>' : ''}
+    ${h.estado === 'cerrado' ? '<p class="meta">🔒 Hilo cerrado. Ya nadie puede escribir aquí.</p>' : `<div class="fila">${h.estado !== 'pide_cierre' ? '<button class="secundario" id="cerrar-ya">Cerrar hilo</button>' : ''}<button id="comentar">Comentar</button></div>`}
+    </div>`;
+  const botonesCierre = () => [$('#cerrar-si'), $('#cerrar-no'), $('#cerrar-ya'), $('#comentar')];
+  const cierre = (cerrar) => conBotones(botonesCierre(), async () => {
+    if (cerrar && !confirm('¿Cerrar este hilo? Las IAs ya no podrán escribir en él y no se puede reabrir.')) return;
+    const { error } = await sb.rpc('decidir_cierre', { p_hilo: id, p_cerrar: cerrar, p_nota: $('#nota')?.value || null });
+    if (error) return alert('No se pudo: ' + mensajeAmable(error, navigator.onLine));
     $('#dlg').close(); pintar();
-  };
+  });
+  $('#cerrar-si') && ($('#cerrar-si').onclick = () => cierre(true));
+  $('#cerrar-ya') && ($('#cerrar-ya').onclick = () => cierre(true));
+  $('#cerrar-no') && ($('#cerrar-no').onclick = () => cierre(false));
+  const decidir = (decision) => conBotones([$('#aprobar'), $('#rechazar')], async () => {
+    const { error } = await sb.from('aprobaciones').insert({ hilo_id: id, humano_id: usuario.id, decision, nota: $('#nota')?.value || null });
+    if (error) return alert('No se pudo: ' + mensajeAmable(error, navigator.onLine));
+    $('#dlg').close(); pintar();
+  });
   c.querySelectorAll('[data-adj]').forEach((b) => b.onclick = () => descargarAdjunto(b.dataset.adj, b));
   $('#aprobar') && ($('#aprobar').onclick = () => decidir('aprobado'));
   $('#rechazar') && ($('#rechazar').onclick = () => decidir('rechazado'));
-  $('#comentar').onclick = async () => {
-    const cuerpo = $('#nota').value.trim(); if (!cuerpo) return;
+  if ($('#comentar')) $('#comentar').onclick = () => conBotones(botonesCierre(), async () => {
+    const cuerpo = $('#nota').value.trim();
+    if (!cuerpo) { const av = $('#nota-aviso'); av.textContent = 'Escribe tu mensaje en el cuadro de arriba antes de tocar «Comentar».'; av.hidden = false; $('#nota').focus(); return; }
     const { error } = await sb.from('mensajes').insert({ hilo_id: id, autor_humano: usuario.id, cuerpo });
-    if (error) return alert(error.message); abrirHilo(id);
-  };
+    if (error) return alert('No se pudo enviar: ' + mensajeAmable(error, navigator.onLine)); abrirHilo(id);
+  });
   $('#dlg').showModal();
 }
 
@@ -118,7 +140,7 @@ async function descargarAdjunto(id, boton) {
     const u = new URL(j.url);
     if (u.origin !== new URL(SUPABASE_URL).origin) throw new Error('Enlace inesperado');
     const a = document.createElement('a'); a.href = u.href; a.rel = 'noopener noreferrer'; a.download = j.nombre; document.body.append(a); a.click(); a.remove();
-  } catch (e) { alert(e.message); } finally { boton.disabled = false; }
+  } catch (e) { avisar('No se pudo descargar', e); } finally { boton.disabled = false; }
 }
 
 async function sha256hex(t) {
@@ -137,13 +159,13 @@ let soloActivos = false;
 
 async function borrarAgentes(ids) {
   const { data, error } = await sb.rpc('borrar_agentes', { p_agentes: ids });
-  if (error) { alert('No se pudo borrar: ' + error.message); return false; }
+  if (error) { avisar('No se pudo borrar', error); return false; }
   return data;
 }
 
 async function pintarAgentes(v) {
   const [{ data: ags }, { data: est }] = await Promise.all([
-    sb.from('agentes').select('id,nombre,creado_en,webhook_url, tokens(id,alcances,vence_en,revocado_en,ultimo_uso)').eq('buzon_id', buzon.id).is('eliminado_en', null).order('creado_en'),
+    sb.from('agentes').select('id,nombre,creado_en,webhook_url,webhook_tiene_clave,webhook_tiene_secreto, tokens(id,alcances,vence_en,revocado_en,ultimo_uso)').eq('buzon_id', buzon.id).is('eliminado_en', null).order('creado_en'),
     sb.from('estado_agentes').select('agente_id,ultimo_uso,ultima_accion,accion').eq('buzon_id', buzon.id),
   ]);
   const estado = Object.fromEntries((est ?? []).map((e) => [e.agente_id, e]));
@@ -160,7 +182,7 @@ async function pintarAgentes(v) {
     <label class="meta" style="display:flex;align-items:center;gap:8px;margin:8px 0"><input type="checkbox" id="solo-act" style="width:20px;height:20px;margin:0;flex:none" ${soloActivos ? 'checked' : ''}> Mostrar solo activos</label>
     <button class="secundario" id="limpiar">🧹 Limpiar inactivos</button><div id="limpiar-lista"></div>
     <p class="meta">Inactivo = no se ha usado en ${DIAS_INACTIVO} días o nunca se conectó. Borrar un agente quita su acceso para siempre; sus hilos y mensajes se quedan como "agente eliminado".</p></div>
-    <div class="tarjeta"><b>🔔 Avisos en este teléfono</b><p class="meta">Te avisamos cuando una IA te pida aprobación o deje un hilo nuevo. El aviso solo trae el título, nunca el contenido.</p><div id="push-caja"></div></div>`;
+    <div class="tarjeta"><b>🔔 Avisos en este teléfono</b><p class="meta">Te avisamos cuando una IA te pida aprobación o deje un hilo nuevo. El aviso no muestra el título ni el contenido: ábrelo para verlo.</p><div id="push-caja"></div></div>`;
   for (const a of ags) {
     if (soloActivos && esInactivo(estado[a.id]?.ultimo_uso)) continue;
     const d = document.createElement('div'); d.className = 'tarjeta';
@@ -168,8 +190,12 @@ async function pintarAgentes(v) {
     d.innerHTML = `<b>${esc(a.nombre)}</b> <span class="estado">${conexion(e?.ultimo_uso)}</span>
       <div class="meta">${e?.ultima_accion ? 'Última acción: ' + esc(e.accion) + ' · ' + hace(e.ultima_accion) : 'Todavía no ha usado el buzón'}</div>
       <div class="fila"><button class="copiar" data-probar="${a.id}">Probar conexión</button><button class="no" data-borrar="${a.id}">Borrar</button></div>
-      <details class="guia"><summary>Webhook (opcional)</summary><p class="meta">Si esta IA tiene una dirección https que recibe avisos, le mandamos solo el id de la tarea nueva, firmado con HMAC. Nunca el contenido.</p>
-      <input data-wh="${a.id}" type="url" placeholder="https://…" value="${esc(a.webhook_url ?? '')}" maxlength="500"><div class="fila"><button data-whg="${a.id}">Guardar</button><button data-whs="${a.id}" class="secundario">Generar secreto</button></div></details>` + a.tokens.map((t) => `<div class="meta">${t.revocado_en ? '⛔ revocado' : new Date(t.vence_en) < new Date() ? '⌛ vencido' : '🟢 activo'}
+      <details class="guia"><summary>Despertar a esta IA (webhook, opcional)</summary><p class="meta">Cuando haya algo para esta IA te avisamos a su dirección https, solo con el número del hilo; nunca el contenido.</p>
+      <p class="meta"><b>Grok Bot:</b> en su rutina copia <i>Webhook URL</i> y pégala en Dirección; copia <i>Webhook key</i> y pégala en Clave. Luego toca Guardar.</p>
+      <label class="meta" for="wh-${a.id}">Dirección (https)</label><input id="wh-${a.id}" data-wh="${a.id}" type="url" inputmode="url" autocomplete="off" placeholder="https://…" value="${esc(a.webhook_url ?? '')}" maxlength="500">
+      <label class="meta" for="whk-${a.id}">Clave del receptor ${a.webhook_tiene_clave ? '(✔ ya hay una guardada; escribe otra para cambiarla)' : '(opcional)'}</label><input id="whk-${a.id}" data-whk="${a.id}" type="password" autocomplete="off" spellcheck="false" placeholder="${a.webhook_tiene_clave ? '••••••••' : 'Pega aquí la Webhook key'}" maxlength="500">
+      <div class="fila"><button data-whg="${a.id}">Guardar</button>${a.webhook_tiene_clave ? `<button data-whq="${a.id}" class="secundario">Quitar clave</button>` : ''}<button data-whs="${a.id}" class="secundario">${a.webhook_tiene_secreto ? 'Cambiar firma' : 'Generar firma (avanzado)'}</button></div>
+      <p class="meta">${a.webhook_url ? (a.webhook_tiene_clave || a.webhook_tiene_secreto ? '🟢 Listo: esta IA recibe avisos.' : '⚠️ Falta la clave o la firma: sin una de las dos no se envían avisos.') : 'Sin dirección: esta IA no recibe avisos.'}</p></details>` + a.tokens.map((t) => `<div class="meta">${t.revocado_en ? '⛔ revocado' : new Date(t.vence_en) < new Date() ? '⌛ vencido' : '🟢 activo'}
       · vence ${fecha(t.vence_en)} · último uso ${t.ultimo_uso ? fecha(t.ultimo_uso) : 'nunca'}
       ${!t.revocado_en ? `<button data-rev="${t.id}" class="no">Revocar</button>` : ''}</div>`).join('');
     v.append(d);
@@ -196,21 +222,31 @@ async function pintarAgentes(v) {
   v.querySelectorAll('[data-rev]').forEach((b) => b.onclick = async () => {
     if (!confirm('¿Revocar este token? Tiene efecto inmediato.')) return;
     const { data, error } = await sb.from('tokens').update({ revocado_en: new Date().toISOString() }).eq('id', b.dataset.rev).select('id');
-    if (error || !data?.length) return alert('No se pudo revocar el token: ' + (error?.message ?? 'sin permiso o no existe') + '. Intenta de nuevo.');
+    if (error || !data?.length) return avisar('No se pudo revocar la clave', error ?? { message: 'sin permiso' });
     pintar();
   });
-  v.querySelectorAll('[data-whg]').forEach((b) => b.onclick = async () => {
-    const url = v.querySelector(`[data-wh="${b.dataset.whg}"]`).value.trim() || null;
+  v.querySelectorAll('[data-whg]').forEach((b) => b.onclick = () => conBotones([b], async () => {
+    const id = b.dataset.whg;
+    const url = v.querySelector(`[data-wh="${id}"]`).value.trim() || null;
+    const clave = v.querySelector(`[data-whk="${id}"]`).value.trim();
     if (url && !/^https:\/\/[^/@\s]+(\/\S*)?$/.test(url)) return alert('La dirección debe empezar con https:// (sin usuario ni contraseña).');
-    const { data, error } = await sb.from('agentes').update({ webhook_url: url }).eq('id', b.dataset.whg).select('id');
-    if (error || !data?.length) return alert('No se pudo guardar: ' + (error?.message ?? 'sin permiso'));
-    b.textContent = '✔ Guardado'; setTimeout(() => (b.textContent = 'Guardar'), 1500);
-  });
+    if (clave && (clave.length < 8 || /\s/.test(clave))) return alert('La clave parece incompleta: cópiala otra vez completa, sin espacios.');
+    const { data, error } = await sb.from('agentes').update({ webhook_url: url }).eq('id', id).select('id');
+    if (error || !data?.length) return avisar('No se pudo guardar', error ?? { message: 'sin permiso' });
+    if (clave) { const r = await sb.rpc('guardar_clave_webhook', { p_agente: id, p_clave: clave }); if (r.error) return avisar('No se pudo guardar la clave', r.error); }
+    pintar();
+  }));
+  v.querySelectorAll('[data-whq]').forEach((b) => b.onclick = () => conBotones([b], async () => {
+    if (!confirm('¿Quitar la clave? Esta IA dejará de recibir avisos hasta que pegues otra.')) return;
+    const { error } = await sb.rpc('guardar_clave_webhook', { p_agente: b.dataset.whq, p_clave: null });
+    if (error) return avisar('No se pudo quitar la clave', error);
+    pintar();
+  }));
   v.querySelectorAll('[data-whs]').forEach((b) => b.onclick = async () => {
-    if (!confirm('¿Generar un secreto nuevo? El anterior deja de servir.')) return;
+    if (!confirm('¿Generar una firma nueva? La anterior deja de servir.')) return;
     const { data, error } = await sb.rpc('rotar_secreto_webhook', { p_agente: b.dataset.whs });
-    if (error) return alert(error.message);
-    $('#dlg-cuerpo').innerHTML = `<h3>Secreto del webhook</h3><p>Cópialo ahora: <b>no se vuelve a mostrar</b>. Tu IA lo usa para verificar la cabecera <code>X-Buzon-Firma</code> (HMAC-SHA256 de "t.cuerpo").</p><code>${esc(data)}</code><div class="fila"><button class="ok" id="cp-whs">Copiar secreto</button></div>`;
+    if (error) return avisar('No se pudo generar la firma', error);
+    $('#dlg-cuerpo').innerHTML = `<h3>Firma del webhook</h3><p>Cópiala ahora: <b>no se vuelve a mostrar</b>. Solo la necesita un receptor que tú programes para comprobar que el aviso viene del Buzón (técnico: cabecera <code>X-Buzon-Firma</code>, HMAC-SHA256 de "t.cuerpo"). Grok Bot no la necesita: usa la Clave.</p><code>${esc(data)}</code><div class="fila"><button class="ok" id="cp-whs">Copiar secreto</button></div>`;
     $('#cp-whs').onclick = () => copiar(data, $('#cp-whs')); $('#dlg').showModal();
   });
   pintarCodigos(); pintarPush();
@@ -218,7 +254,7 @@ async function pintarAgentes(v) {
     e.preventDefault();
     const nombre = $('#nl-nombre').value.trim();
     const { data, error } = await sb.rpc('crear_codigo_config', { p_buzon: buzon.id, p_nombre: nombre, p_minutos: +$('#nl-min').value });
-    if (error) return alert(error.message);
+    if (error) return avisar('No se pudo generar el código', error);
     $('#dlg-cuerpo').innerHTML = `<h3>Código para ${esc(nombre)}</h3>
       <p class="aviso">⚠️ <b>No lo pegues en el chat.</b> Pégalo solo cuando tu terminal diga <i>"Código del buzón:"</i> (no se ve al escribir).</p>
       <code>${esc(data.codigo)}</code><div class="fila"><button class="ok" id="cp-nl">Copiar código</button></div>
@@ -231,11 +267,11 @@ async function pintarAgentes(v) {
   $('#f-ag').onsubmit = async (e) => {
     e.preventDefault();
     const { data: ag, error } = await sb.from('agentes').insert({ buzon_id: buzon.id, nombre: $('#ag-nombre').value }).select('id,nombre').single();
-    if (error) return alert(error.message);
+    if (error) return avisar('No se pudo crear el agente', error);
     const token = nuevoToken();
     const vence = new Date(Date.now() + +$('#ag-dias').value * 864e5).toISOString();
     const r = await sb.from('tokens').insert({ agente_id: ag.id, hash_token: await sha256hex(token), vence_en: vence });
-    if (r.error) return alert(r.error.message);
+    if (r.error) return avisar('No se pudo crear la clave', r.error);
     $('#dlg-cuerpo').innerHTML = `<h3>Clave de ${esc(ag.nombre)}</h3><p>Cópialo ahora: <b>no se vuelve a mostrar</b>. Es como una contraseña: no lo compartas ni lo pongas en capturas.</p><code id="tok">${esc(token)}</code>
       <div class="fila"><button class="ok" id="cp-tok">Copiar clave</button><button id="usar-tok">Ver dónde pegarlo</button></div>`;
     $('#cp-tok').onclick = () => copiar(token, $('#cp-tok'));
@@ -250,7 +286,7 @@ async function pintarCodigos() {
   caja.innerHTML = (data ?? []).map((c) => `<div class="meta">${esc(c.nombre_agente)} · ${c.usado_en ? '✅ usado ' + hace(c.usado_en) : new Date(c.vence_en) < new Date() ? '⌛ vencido' : '🟡 activo hasta ' + fecha(c.vence_en)}${c.intentos_fallidos ? ` · ${c.intentos_fallidos} intento(s) fallido(s)` : ''}
     ${!c.usado_en && new Date(c.vence_en) > new Date() ? `<button class="no" data-anular="${c.id}">Anular</button>` : ''}</div>`).join('');
   caja.querySelectorAll('[data-anular]').forEach((b) => b.onclick = async () => {
-    const { error } = await sb.rpc('anular_codigo_config', { p_id: b.dataset.anular }); if (error) return alert(error.message); pintarCodigos();
+    const { error } = await sb.rpc('anular_codigo_config', { p_id: b.dataset.anular }); if (error) return avisar('No se pudo anular el código', error); pintarCodigos();
   });
 }
 
@@ -271,7 +307,7 @@ async function pintarPush() {
       const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64aU8(VAPID) });
       const { error } = await sb.from('push_suscripciones').insert({ buzon_id: buzon.id, humano_id: usuario.id, endpoint: s.endpoint, p256dh: b64u(s.getKey('p256dh')), auth: b64u(s.getKey('auth')) });
       if (error) { await s.unsubscribe(); throw error; }
-    } catch (e) { alert('No se pudieron activar: ' + e.message); }
+    } catch (e) { avisar('No se pudieron activar los avisos', e); }
     pintarPush();
   });
   $('#push-off') && ($('#push-off').onclick = async () => {
