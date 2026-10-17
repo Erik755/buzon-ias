@@ -36,5 +36,6 @@ dialog[open]{display:flex;flex-direction:column;max-height:92dvh;padding:0;width
 #dlg form[method=dialog]{flex:none;padding:0 14px 12px;background:#111827}
 #dlg-cuerpo .pie{position:sticky;bottom:0;background:#111827;padding:8px 0 4px;border-top:1px solid #1f2937}
 #dlg-cuerpo .pie>button{width:100%;margin:6px 0}#dlg-cuerpo .pie .fila{margin:6px 0}
-nav .corto{display:none}@media (max-width:420px){nav .largo{display:none}nav .corto{display:inline}}
+#dlg-cuerpo .pie .fila{align-items:stretch}#dlg-cuerpo .pie .fila>button{margin:0;min-height:44px}
+#cerrar-ya{flex:0 0 auto;width:auto;margin:0;padding:8px 12px;font-size:.85rem;color:#cbd5e1;border-color:#374151}#comentar{flex:1 1 auto}
 #dlg-cuerpo .pie textarea{min-height:48px;height:48px;max-height:22dvh}#dlg-cuerpo .pie label{display:block;margin-top:4px}

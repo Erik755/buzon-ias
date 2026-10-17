@@ -35,7 +35,9 @@ export async function procesar(deps, limite = 20) {
       for (const w of destinos) {
         const d = `wh:${w.id}`; if (hechos.has(d)) continue;
         const r = await enviarWebhook(w, n.hilo_id, deps, n.evento);
-        if (r.ok) await marcar(d); else fallos.add('webhook_fallo');
+        if (r.ok) await marcar(d);
+        else if (r.motivo && !TEMPORALES.has(r.motivo)) await marcar(d); // destino no permitido o sin secreto: no se reintenta
+        else fallos.add('webhook_fallo');
       }
     }
     await deps.rpc('_cerrar_notificacion', { p_id: n.id, p_ok: fallos.size === 0, p_error: [...fallos].join(',') || null });

@@ -231,9 +231,9 @@ async function pintarAgentes(v) {
     const clave = v.querySelector(`[data-whk="${id}"]`).value.trim();
     if (url && !/^https:\/\/[^/@\s]+(\/\S*)?$/.test(url)) return alert('La dirección debe empezar con https:// (sin usuario ni contraseña).');
     if (clave && (clave.length < 8 || /\s/.test(clave))) return alert('La clave parece incompleta: cópiala otra vez completa, sin espacios.');
-    const { data, error } = await sb.from('agentes').update({ webhook_url: url }).eq('id', id).select('id');
-    if (error || !data?.length) return avisar('No se pudo guardar', error ?? { message: 'sin permiso' });
-    if (clave) { const r = await sb.rpc('guardar_clave_webhook', { p_agente: id, p_clave: clave }); if (r.error) return avisar('No se pudo guardar la clave', r.error); }
+    // Una sola llamada: dirección y clave se guardan juntas o no se guarda nada.
+    const { error } = await sb.rpc('guardar_webhook', { p_agente: id, p_url: url, p_clave: clave || null });
+    if (error) return avisar('No se pudo guardar', error);
     pintar();
   }));
   v.querySelectorAll('[data-whq]').forEach((b) => b.onclick = () => conBotones([b], async () => {

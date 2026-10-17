@@ -452,5 +452,38 @@ do $$ begin
   if (select webhook_clave is null and webhook_url is null from public.agentes where id='bbbbbbbb-0000-0000-0000-000000000001')
     then perform pg_temp.ok('139 al borrar un agente se olvida su clave del receptor'); else perform pg_temp.falla('139'); end if;
 end $$;
+do $$ declare h uuid; n bigint; i int; v text; begin
+  -- B2: con más de 10 hilos nuevos de la misma IA en la última hora sin mensaje del dueño, un hilo nuevo no despierta a nadie
+  for i in 1..11 loop
+    insert into public.hilos(buzon_id, tipo, titulo, creado_por_agente)
+      values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','ráfaga '||i,'bbbbbbbb-0000-0000-0000-000000000002');
+  end loop;
+  h := (public.mcp_crear('bz_'||repeat('w',30),'tarea','Ráfaga 12',null,null,null)->>'id')::uuid;
+  select max(id) into n from public.notificaciones where hilo_id=h and evento='hilo_nuevo';
+  if not exists (select 1 from public._destinos_webhook(n)) then perform pg_temp.ok('140 B2: ráfaga de hilos nuevos de una IA ya no despierta a nadie'); else perform pg_temp.falla('140'); end if;
+  -- B3: un despertar hace menos de 5 s no se repite
+  insert into public.config_interna values ('notificar_url','https://demo.supabase.co/functions/v1/notificar') on conflict (clave) do update set valor = excluded.valor;
+  v := (clock_timestamp() - interval '1 second')::text;
+  insert into public.config_interna values ('ultimo_despertar', v) on conflict (clave) do update set valor = excluded.valor;
+  perform public._despertar_notificador();
+  if (select valor from public.config_interna where clave='ultimo_despertar') = v then perform pg_temp.ok('141 B3: el despertar se limita a uno cada 5 s'); else perform pg_temp.falla('141'); end if;
+  delete from public.config_interna where clave in ('notificar_url','ultimo_despertar');
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ begin
+  begin perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', 'https://nuevo.ejemplo.dev/hook', 'con espacio x'); perform pg_temp.falla('142');
+    exception when others then null; end;
+  if (select webhook_url is distinct from 'https://nuevo.ejemplo.dev/hook' from public.agentes where id='bbbbbbbb-0000-0000-0000-000000000002')
+    then perform pg_temp.ok('142 guardar_webhook: si la clave no vale, tampoco se guarda la dirección'); else perform pg_temp.falla('142 b'); end if;
+  perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', 'https://nuevo.ejemplo.dev/hook', 'clave-buena-12345');
+  if (select webhook_url = 'https://nuevo.ejemplo.dev/hook' and webhook_tiene_clave from public.agentes where id='bbbbbbbb-0000-0000-0000-000000000002')
+    then perform pg_temp.ok('143 guardar_webhook guarda dirección y clave juntas'); else perform pg_temp.falla('143 ');  end if;
+end $$;
+select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$ begin
+  begin perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', 'https://intruso.dev/x', null); perform pg_temp.falla('144');
+    exception when insufficient_privilege then perform pg_temp.ok('144 guardar_webhook: solo el dueño'); end;
+end $$;
 reset role;
 \echo TODAS_LAS_PRUEBAS_PASARON
+
