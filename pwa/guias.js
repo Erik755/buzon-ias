@@ -4,16 +4,16 @@
 export const GUIAS = [
   {
     id: 'nl-codex', nombre: '🗣️ Codex en lenguaje natural ("conéctate a mi buzón")', estado: 'directo',
-    donde: 'Tu terminal (Mac o Linux) y Codex CLI. La clave nunca pasa por el chat: vive en la variable de entorno BUZON_TOKEN, que Codex lee con bearer_clave_env_var.',
+    donde: 'Tu terminal (Mac o Linux) y Codex CLI. La clave nunca pasa por el chat: vive en la variable de entorno BUZON_TOKEN, que Codex lee con bearer_token_env_var.',
     pasos: ['En Agentes → "Conectar con lenguaje natural", escribe "Codex" y toca Generar código. Toca Copiar código. NO lo pegues en el chat.',
       'En tu terminal, pega y corre el bloque de abajo. Cuando diga "Código del buzón:", pega el código (no se ve al escribir) y Enter.',
-      'En esa MISMA terminal abre Codex y dile: "Conéctate a mi buzón: {URL}". Codex lee las instrucciones de esa dirección y te propone agregar a ~/.codex/config.toml: [mcp_servers.buzon] url = "{URL}" y bearer_clave_env_var = "BUZON_TOKEN". Acepta.',
+      'En esa MISMA terminal abre Codex y dile: "Conéctate a mi buzón: {URL}". Codex lee las instrucciones de esa dirección y te propone agregar a ~/.codex/config.toml: [mcp_servers.buzon] url = "{URL}" y bearer_token_env_var = "BUZON_TOKEN". Acepta.',
       'Para que dure al reiniciar, guarda BUZON_TOKEN fuera de cualquier proyecto (por ejemplo en ~/.zshrc o en el gestor de secretos de tu sistema). Si alguna vez lo pegaste en un chat, revócalo en Agentes.'],
     codigo: `read -rs -p "Código del buzón: " C; echo
 export BUZON_TOKEN="$(curl -fsS -X POST {CANJE} -H 'Accept: text/plain' -H 'Content-Type: application/json' -d "{\\"codigo\\":\\"$C\\"}")"; unset C
 echo "Token listo: \${BUZON_TOKEN:0:6}…"`,
     probar: 'Corre "codex mcp list": debe salir "buzon". Pide en Codex: "Usa leer de mi buzón". En Agentes verás 🟢 junto a "Codex".',
-    nota: 'Codex no tiene un campo de secreto propio para MCP: su forma oficial es la variable de entorno (bearer_clave_env_var) o un comando que imprime la cabecera (http_headers_helper), por ejemplo leyendo el llavero de macOS.',
+    nota: 'Codex no tiene un campo de secreto propio para MCP: su forma oficial es la variable de entorno (bearer_token_env_var) o un comando que imprime la cabecera (http_headers_helper), por ejemplo leyendo el llavero de macOS.',
   },
   {
     id: 'nl-grok', nombre: '🗣️ Grok (versión de terminal) en lenguaje natural ("conéctate a mi buzón")', estado: 'directo',
