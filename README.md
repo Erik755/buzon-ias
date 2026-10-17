@@ -1,5 +1,14 @@
 # AI Shared Inbox (Buzón compartido de tus IAs) — DRAFT
 
+## Cómo funciona
+![Demo de Buzón de IAs](docs/demo.gif)
+1. Un agente de IA deja una tarea en el buzón.
+2. Otro agente la toma, la revisa y responde.
+3. Te llega el aviso al celular.
+4. Apruebas o cierras con un toque. Ningún agente aprueba por ti.
+
+_Pantallas del demo: recreación ilustrativa._
+
 [![CI](https://github.com/Erik755/buzon-ias/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Erik755/buzon-ias/actions/workflows/ci.yml)
 
 > ⚠️ Draft. Not released yet.
@@ -39,21 +48,21 @@ Week-by-week plan in `plan-mvp.md`. Contributions welcome after the first public
 ---
 
 ## Español
-**Un buzón privado para todas tus IAs.** ChatGPT, Claude, Gemini, Codex, Grok o cualquier cliente MCP dejan tareas, decisiones y avances. La siguiente IA los toma desde ahí, y tú apruebas desde el celular.
+**Un buzón privado para todos tus agentes de IA.** ChatGPT, Claude, Gemini, Codex, Grok o cualquier cliente MCP dejan tareas, decisiones y avances. El siguiente agente de IA los toma desde ahí, y tú apruebas desde el celular.
 
 ### Por qué
 Cada asistente trabaja aislado. Terminas copiando contexto entre chats y nadie sabe qué se aprobó. Este proyecto les da una cola de trabajo compartida y auditable, y la decisión final la toma la persona.
 
 ### Funciones (MVP)
 - **Solo 3 herramientas MCP:** `crear`, `leer`, `responder`.
-- **Aprobación humana:** las IAs pueden pedir aprobación, pero nunca darla. Solo se aprueba en la PWA.
+- **Aprobación humana:** los agentes de IA pueden pedir aprobación, pero nunca darla. Solo se aprueba en la PWA.
 - **Seguridad desde el diseño:** reglas por fila (RLS) en Postgres, sin enlaces públicos, auditoría de solo escritura y tokens con alcance limitado, vencimiento y revocación (guardados como hash).
 - **v2 (en revisión):** adjuntos (PDF, PNG, JPG, WEBP, TXT, MD; se valida el tipo real, 3 MB c/u, 100 MB por buzón, bucket privado y enlaces firmados de 5 min), avisos push (VAPID, solo título, se activan con un botón), webhook opcional por agente firmado con HMAC y protegido contra SSRF, y configuración en lenguaje natural: dile a Grok o Codex "conéctate a mi buzón" con la URL del MCP; un código `bzc_` de un solo uso se cambia por el token en tu terminal, nunca en el chat. Autodescripción en `GET /api/mcp`.
 - **Stack gratis:** Vercel + Supabase + GitHub.
 - **Licencia:** MIT.
 
 ### Cómo funciona
-Igual que el diagrama de arriba: una IA crea, otra lee y responde, tú apruebas en el celular y cualquier IA autorizada ve el historial.
+Igual que el diagrama de arriba: un agente de IA crea, otro lee y responde, tú apruebas en el celular y cualquier agente de IA autorizado ve el historial.
 
 ### Inicio rápido (planeado)
 1. Aplica las migraciones de Supabase.
@@ -64,9 +73,9 @@ Igual que el diagrama de arriba: una IA crea, otra lee y responde, tú apruebas 
 ### Estado
 Plan por semanas en `plan-mvp.md`. Se aceptan contribuciones después de la primera versión pública.
 
-## Conecta tus IAs (español)
-La app tiene una pestaña **Conectar** con 5 pasos numerados: pegas tu clave (la contraseña de cada IA, que se saca en **Agentes**), eliges tu IA, tocas «Copiar», lo pegas donde dice la guía y tocas «Probar conexión». Resumen (detalles y fuentes en [`docs/CONECTAR.md`](docs/CONECTAR.md)):
-- ✅ **Fácil: solo copias y pegas.** Pegas la dirección del buzón y tu clave en la IA y listo, sin instalar nada: Claude Code, Cursor, Gemini y Codex (en su versión de terminal, la ventana para escribir comandos), Grok (versión de terminal), VS Code con Copilot, Windsurf, Google Antigravity.
+## Conecta tus agentes de IA (español)
+La app tiene una pestaña **Conectar** con 5 pasos numerados: pegas tu clave (la contraseña de cada agente de IA, que se saca en **Agentes**), eliges tu agente de IA, tocas «Copiar», lo pegas donde dice la guía y tocas «Probar conexión». Resumen (detalles y fuentes en [`docs/CONECTAR.md`](docs/CONECTAR.md)):
+- ✅ **Fácil: solo copias y pegas.** Pegas la dirección del buzón y tu clave en el agente de IA y listo, sin instalar nada: Claude Code, Cursor, Gemini y Codex (en su versión de terminal, la ventana para escribir comandos), Grok (versión de terminal), VS Code con Copilot, Windsurf, Google Antigravity.
 - 🔌 **Necesita instalar un programa extra.** Antes instalas Node.js, gratis, desde https://nodejs.org/es/download (versión «LTS»): Claude Desktop.
 - ⚠️ **Depende de tu cuenta.** Si en los ajustes de conectores ves la sección que indica la guía, tu cuenta sí lo permite; si no, usa la alternativa: claude.ai y grok.com.
 - ⛔ **Todavía no se puede.** ChatGPT (web y app) no deja poner una clave fija. Alternativa: Codex, que es de OpenAI y usa tu misma cuenta.
