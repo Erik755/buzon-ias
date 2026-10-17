@@ -50,12 +50,12 @@ async function pintar() {
   const v = $('#vista'); v.innerHTML = '<p class="meta">Cargando…</p>';
   if (vista === 'agentes') return pintarAgentes(v);
   if (vista === 'conectar') { v.innerHTML = ''; return pintarGuias(v, true); }
-  let q = sb.from('hilos').select('*, agentes!hilos_creado_por_agente_fkey(nombre)').eq('buzon_id', buzon.id).order('creado_en', { ascending: false }).limit(50);
+  let q = sb.from('hilos').select('*, agentes!hilos_creado_por_agente_fkey(nombre,eliminado_en)').eq('buzon_id', buzon.id).order('creado_en', { ascending: false }).limit(50);
   if (vista === 'pendientes') q = q.eq('estado', 'pide_aprobacion');
   const { data, error } = await q;
   if (error) return v.innerHTML = !navigator.onLine || /fetch|network/i.test(error.message) ? '<div class="vacio"><b>📡 Sin conexión</b>Se cargará cuando vuelva internet.</div>' : esc(error.message);
   if (!data.length) {
-    const { count } = await sb.from('agentes').select('id', { count: 'exact', head: true }).eq('buzon_id', buzon.id);
+    const { count } = await sb.from('agentes').select('id', { count: 'exact', head: true }).eq('buzon_id', buzon.id).is('eliminado_en', null);
     v.innerHTML = !count
       ? `<div class="vacio"><b>👋 Empecemos</b>Todavía no conectas ninguna IA.<br>1) Crea un agente en <b>Agentes</b> (uno por IA).<br>2) Sigue la guía en <b>Conectar</b>.<br>3) Pídele a tu IA: <i>"Deja una tarea en mi buzón"</i>.<br><br><button class="ok" id="ir-agentes">Crear mi primer agente</button></div>`
       : vista === 'pendientes'
@@ -68,7 +68,7 @@ async function pintar() {
   for (const h of data) {
     const d = document.createElement('div'); d.className = 'tarjeta';
     d.innerHTML = `<span class="estado">${esc(h.estado)}</span><b>${esc(h.titulo)}</b>
-      <div class="meta">${esc(h.tipo)} · ${esc(h.agentes?.nombre ?? '—')} · ${fecha(h.creado_en)}</div>`;
+      <div class="meta">${esc(h.tipo)} · ${esc(nombreAutor(h.agentes, '—'))} · ${fecha(h.creado_en)}</div>`;
     d.onclick = () => abrirHilo(h.id); v.append(d);
   }
 }
@@ -76,14 +76,14 @@ async function pintar() {
 async function abrirHilo(id) {
   const [{ data: h }, { data: ms }, { data: ap }, { data: adj }] = await Promise.all([
     sb.from('hilos').select('*').eq('id', id).single(),
-    sb.from('mensajes').select('*, agentes(nombre)').eq('hilo_id', id).order('creado_en'),
+    sb.from('mensajes').select('*, agentes(nombre,eliminado_en)').eq('hilo_id', id).order('creado_en'),
     sb.from('aprobaciones').select('*').eq('hilo_id', id).order('creado_en'),
     sb.from('adjuntos').select('id,nombre,tipo,tamano,creado_en').eq('hilo_id', id).order('creado_en'),
   ]);
   if (!h) return;
   const c = $('#dlg-cuerpo');
   c.innerHTML = `<h3>${esc(h.titulo)}</h3><p class="meta">${esc(h.estado)}</p><div class="msg">${esc(h.contexto)}</div>
-    ${ms.map((m) => `<div class="msg"><span class="meta">${esc(m.agentes?.nombre ?? 'Tú')} · ${fecha(m.creado_en)}</span><br>${esc(m.cuerpo)}</div>`).join('')}
+    ${ms.map((m) => `<div class="msg"><span class="meta">${esc(nombreAutor(m.agentes, 'Tú'))} · ${fecha(m.creado_en)}</span><br>${esc(m.cuerpo)}</div>`).join('')}
     ${adj?.length ? `<div class="msg"><b>📎 Adjuntos</b>${adj.map((a) => `<div class="fila-adj"><span>${ICONO[a.tipo] ?? '📄'} ${esc(a.nombre)} <span class="meta">${kb(a.tamano)}</span></span><button class="copiar" data-adj="${a.id}">Descargar</button></div>`).join('')}<p class="meta">Se descargan a tu teléfono; la app no los abre ni los ejecuta. El enlace dura 5 minutos.</p></div>` : ''}
     ${ap.map((a) => `<p>✅ ${esc(a.decision)} · ${esc(a.nota)} <span class="meta">${fecha(a.creado_en)}</span></p>`).join('')}
     <textarea id="nota" placeholder="Nota (opcional)"></textarea>
@@ -130,9 +130,20 @@ function nuevoToken() {
   return 'bz_' + btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+const nombreAutor = (ag, sin) => (!ag ? sin : ag.eliminado_en ? 'agente eliminado' : ag.nombre);
+const DIAS_INACTIVO = 30;
+const esInactivo = (u) => !u || Date.now() - new Date(u) > DIAS_INACTIVO * 864e5;
+let soloActivos = false;
+
+async function borrarAgentes(ids) {
+  const { data, error } = await sb.rpc('borrar_agentes', { p_agentes: ids });
+  if (error) { alert('No se pudo borrar: ' + error.message); return false; }
+  return data;
+}
+
 async function pintarAgentes(v) {
   const [{ data: ags }, { data: est }] = await Promise.all([
-    sb.from('agentes').select('id,nombre,creado_en,webhook_url, tokens(id,alcances,vence_en,revocado_en,ultimo_uso)').eq('buzon_id', buzon.id).order('creado_en'),
+    sb.from('agentes').select('id,nombre,creado_en,webhook_url, tokens(id,alcances,vence_en,revocado_en,ultimo_uso)').eq('buzon_id', buzon.id).is('eliminado_en', null).order('creado_en'),
     sb.from('estado_agentes').select('agente_id,ultimo_uso,ultima_accion,accion').eq('buzon_id', buzon.id),
   ]);
   const estado = Object.fromEntries((est ?? []).map((e) => [e.agente_id, e]));
@@ -145,13 +156,18 @@ async function pintarAgentes(v) {
     <input id="nl-nombre" required maxlength="60" placeholder="Nombre de la IA (Grok, Codex…)">
     <select id="nl-min"><option value="5">Dura 5 min</option><option value="10" selected>Dura 10 min</option><option value="15">Dura 15 min</option></select>
     <button class="ok">Generar código</button><div id="nl-lista"></div></form>
+    <div class="tarjeta"><b>Tus agentes</b> <span class="meta">(${ags.length})</span>
+    <label class="meta"><input type="checkbox" id="solo-act" ${soloActivos ? 'checked' : ''}> Mostrar solo activos</label>
+    <button class="secundario" id="limpiar">🧹 Limpiar inactivos</button><div id="limpiar-lista"></div>
+    <p class="meta">Inactivo = no se ha usado en ${DIAS_INACTIVO} días o nunca se conectó. Borrar un agente quita su acceso para siempre; sus hilos y mensajes se quedan como "agente eliminado".</p></div>
     <div class="tarjeta"><b>🔔 Avisos en este teléfono</b><p class="meta">Te avisamos cuando una IA te pida aprobación o deje un hilo nuevo. El aviso solo trae el título, nunca el contenido.</p><div id="push-caja"></div></div>`;
   for (const a of ags) {
+    if (soloActivos && esInactivo(estado[a.id]?.ultimo_uso)) continue;
     const d = document.createElement('div'); d.className = 'tarjeta';
     const e = estado[a.id];
     d.innerHTML = `<b>${esc(a.nombre)}</b> <span class="estado">${conexion(e?.ultimo_uso)}</span>
       <div class="meta">${e?.ultima_accion ? 'Última acción: ' + esc(e.accion) + ' · ' + hace(e.ultima_accion) : 'Todavía no ha usado el buzón'}</div>
-      <button class="copiar" data-probar="${a.id}">Probar conexión</button>
+      <div class="fila"><button class="copiar" data-probar="${a.id}">Probar conexión</button><button class="no" data-borrar="${a.id}">Borrar</button></div>
       <details class="guia"><summary>Webhook (opcional)</summary><p class="meta">Si esta IA tiene una dirección https que recibe avisos, le mandamos solo el id de la tarea nueva, firmado con HMAC. Nunca el contenido.</p>
       <input data-wh="${a.id}" type="url" placeholder="https://…" value="${esc(a.webhook_url ?? '')}" maxlength="500"><div class="fila"><button data-whg="${a.id}">Guardar</button><button data-whs="${a.id}" class="secundario">Generar secreto</button></div></details>` + a.tokens.map((t) => `<div class="meta">${t.revocado_en ? '⛔ revocado' : new Date(t.vence_en) < new Date() ? '⌛ vencido' : '🟢 activo'}
       · vence ${fecha(t.vence_en)} · último uso ${t.ultimo_uso ? fecha(t.ultimo_uso) : 'nunca'}
@@ -159,6 +175,24 @@ async function pintarAgentes(v) {
     v.append(d);
   }
   v.querySelectorAll('[data-probar]').forEach((b) => b.onclick = () => probarConexion(ags.find((a) => a.id === b.dataset.probar), estado[b.dataset.probar]?.ultimo_uso));
+  $('#solo-act').onchange = (e) => { soloActivos = e.target.checked; pintar(); };
+  v.querySelectorAll('[data-borrar]').forEach((b) => b.onclick = async () => {
+    const a = ags.find((x) => x.id === b.dataset.borrar);
+    if (!confirm(`¿Borrar "${a.nombre}"?\n\nSe revocan sus claves y códigos, se quita su webhook y ya no podrá entrar. Sus hilos y mensajes se quedan como "agente eliminado". No se puede deshacer.`)) return;
+    if (await borrarAgentes([a.id])) pintar();
+  });
+  $('#limpiar').onclick = () => {
+    const inact = ags.filter((a) => esInactivo(estado[a.id]?.ultimo_uso));
+    const caja = $('#limpiar-lista');
+    if (!inact.length) { caja.innerHTML = '<p class="meta">✓ No hay agentes inactivos.</p>'; return; }
+    caja.innerHTML = `<p class="meta">Se borrarán estos ${inact.length}:</p><ul>${inact.map((a) => `<li>${esc(a.nombre)} · ${estado[a.id]?.ultimo_uso ? 'último uso ' + fecha(estado[a.id].ultimo_uso) : 'nunca se conectó'}</li>`).join('')}</ul>
+      <div class="fila"><button class="no" id="limpiar-ok">Borrar ${inact.length}</button><button class="secundario" id="limpiar-no">Cancelar</button></div>`;
+    $('#limpiar-no').onclick = () => (caja.innerHTML = '');
+    $('#limpiar-ok').onclick = async () => {
+      if (!confirm(`¿Borrar ${inact.length} agente(s) inactivo(s)? No se puede deshacer.`)) return;
+      if (await borrarAgentes(inact.map((a) => a.id))) pintar();
+    };
+  };
   v.querySelectorAll('[data-rev]').forEach((b) => b.onclick = async () => {
     if (!confirm('¿Revocar este token? Tiene efecto inmediato.')) return;
     const { data, error } = await sb.from('tokens').update({ revocado_en: new Date().toISOString() }).eq('id', b.dataset.rev).select('id');

@@ -166,6 +166,55 @@ do $$ declare j jsonb; begin
   if (public.canjear_codigo_config(j->>'codigo') ->> 'error') like '403:%' then perform pg_temp.ok('85 código anulado desde la PWA ya no sirve'); else perform pg_temp.falla('85'); end if;
 end $$;
 reset role;
+-- 90-99 Borrar agentes
+reset role;
+insert into public.agentes(id,buzon_id,nombre) values ('bbbbbbbb-0000-0000-0000-0000000000e1','aaaaaaaa-0000-0000-0000-000000000001','Viejo1');
+insert into public.tokens(agente_id,hash_token) values ('bbbbbbbb-0000-0000-0000-0000000000e1', encode(sha256(convert_to('bz_'||repeat('e',30),'UTF8')),'hex'));
+insert into public.mensajes(hilo_id,autor_agente,cuerpo) values ('cccccccc-0000-0000-0000-000000000002','bbbbbbbb-0000-0000-0000-0000000000e1','mensaje de Viejo1');
+update public.agentes set webhook_url='https://ejemplo.com/v1', webhook_secreto='whsec_x' where id='bbbbbbbb-0000-0000-0000-0000000000e1';
+insert into public.codigos_config(buzon_id,nombre_agente,hash_codigo,vence_en,creado_por) values
+  ('aaaaaaaa-0000-0000-0000-000000000001','viejo1',repeat('f',64),now()+interval '5 min','11111111-1111-1111-1111-111111111111');
+-- una IA no puede borrar: no hay herramienta y la RPC exige sesión
+set role anon;
+do $$ begin
+  begin perform public.borrar_agentes(array['bbbbbbbb-0000-0000-0000-0000000000e1'::uuid]); perform pg_temp.falla('90');
+    exception when insufficient_privilege then perform pg_temp.ok('90 anon (una IA con su clave) no puede borrar agentes'); end;
+end $$;
+reset role;
+set role authenticated; select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$ begin
+  begin perform public.borrar_agentes(array['bbbbbbbb-0000-0000-0000-0000000000e1'::uuid]); perform pg_temp.falla('91');
+    exception when insufficient_privilege then perform pg_temp.ok('91 intruso no borra agentes de Erik'); end;
+  begin perform public.borrar_agentes(array['bbbbbbbb-0000-0000-0000-000000000009'::uuid,'bbbbbbbb-0000-0000-0000-0000000000e1'::uuid]); perform pg_temp.falla('92');
+    exception when insufficient_privilege then perform pg_temp.ok('92 lista mixta (propio + ajeno) se rechaza completa'); end;
+end $$;
+select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ begin
+  begin delete from public.agentes where id='bbbbbbbb-0000-0000-0000-0000000000e1'; perform pg_temp.falla('93');
+    exception when insufficient_privilege then perform pg_temp.ok('93 ni el dueño borra directo: solo con borrar_agentes'); end;
+  if exists (select 1 from public.agentes_inactivos('aaaaaaaa-0000-0000-0000-000000000001') where id='bbbbbbbb-0000-0000-0000-0000000000e1')
+    then perform pg_temp.ok('94 agente que nunca se conectó sale en inactivos'); else perform pg_temp.falla('94'); end if;
+  if public.borrar_agentes(array['bbbbbbbb-0000-0000-0000-0000000000e1'::uuid]) = 1 then perform pg_temp.ok('95 Erik borra su agente'); else perform pg_temp.falla('95'); end if;
+  begin insert into public.tokens(agente_id,hash_token) values ('bbbbbbbb-0000-0000-0000-0000000000e1', repeat('1',64)); perform pg_temp.falla('96');
+    exception when insufficient_privilege then perform pg_temp.ok('96 no se pueden crear claves para un agente eliminado'); end;
+end $$;
+select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$ begin
+  if (select count(*) from public.agentes_inactivos('aaaaaaaa-0000-0000-0000-000000000001'))=0 then perform pg_temp.ok('97 intruso no ve los inactivos de Erik'); else perform pg_temp.falla('97'); end if;
+end $$;
+reset role;
+do $$ begin
+  begin perform public.mcp_leer('bz_'||repeat('e',30)); perform pg_temp.falla('98');
+    exception when others then if sqlerrm like '403:%' then perform pg_temp.ok('98 la clave del agente borrado queda revocada'); else raise; end if; end;
+  if (select eliminado_en is not null and webhook_url is null and webhook_secreto is null from public.agentes where id='bbbbbbbb-0000-0000-0000-0000000000e1')
+     and (select vence_en <= now() from public.codigos_config where hash_codigo=repeat('f',64))
+     and (select count(*) from public.auditoria where accion='agente:borrar' and objeto_id='bbbbbbbb-0000-0000-0000-0000000000e1')=1
+    then perform pg_temp.ok('99 webhook quitado, código pendiente anulado y borrado auditado'); else perform pg_temp.falla('99'); end if;
+  if exists (select 1 from public.mensajes where cuerpo='mensaje de Viejo1')
+     and (public.mcp_leer('bz_'||repeat('v',30),'cccccccc-0000-0000-0000-000000000002') -> 'mensajes') @> '[{"autor":"agente eliminado","cuerpo":"mensaje de Viejo1"}]'
+    then perform pg_temp.ok('100 hilos y mensajes se conservan como "agente eliminado"'); else perform pg_temp.falla('100'); end if;
+end $$;
+reset role;
 -- 84 sin bloqueo global: 100 fallos anónimos no impiden canjear un código válido
 set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
 create temp table if not exists _c2(codigo text); grant all on _c2 to public;

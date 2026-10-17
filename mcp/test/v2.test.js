@@ -222,3 +222,33 @@ test('adjuntos: la cuota se revisa ANTES de subir (nada llega al bucket) y mensa
   await pool.query("delete from adjuntos where ruta like 'relleno2/%'");
   assert.equal((await manejar({ accion: 'subir', hilo_id: hilo, mensaje_id: "x' or 1=1", nombre: 'a.pdf', base64: PDF.toString('base64') }, { token: T.a }, dd)).status, 400);
 });
+
+test('borrar agente: solo el dueño; su clave deja de servir por MCP; el hilo sigue como "agente eliminado"', async () => {
+  const comoUsuario = async (uid, sql, params) => {
+    const c = await pool.connect();
+    try {
+      await c.query('begin'); await c.query('set local role authenticated');
+      await c.query(`select set_config('request.jwt.claim.sub', $1, true)`, [uid]);
+      const r = await c.query(sql, params); await c.query('commit'); return r;
+    } catch (e) { await c.query('rollback'); throw e; } finally { c.release(); }
+  };
+  const A = await cliente(T.a);
+  const h = await tool(A, 'crear', { tipo: 'tarea', titulo: 'Hilo de A antes de borrarlo' });
+  assert.equal(h.error, false, h.texto);
+  // un intruso (otro dueño) no puede
+  await assert.rejects(comoUsuario(OTRO, 'select borrar_agentes($1)', [['bbbbbbbb-0000-0000-0000-00000000000a']]), /sin permiso/);
+  // una IA tampoco: no hay herramienta para borrar
+  const { tools } = await A.listTools();
+  assert.ok(!tools.some((t) => /borr|elimin|delete/i.test(t.name)), tools.map((t) => t.name).join());
+  const r = await comoUsuario(ERIK, 'select borrar_agentes($1) n', [['bbbbbbbb-0000-0000-0000-00000000000a']]);
+  assert.equal(r.rows[0].n, 1);
+  const A2 = await cliente(T.a);
+  const l = await tool(A2, 'leer', {});
+  assert.equal(l.error, true, 'la clave revocada ya no debe funcionar');
+  const B = await cliente(T.b);
+  const visto = await tool(B, 'leer', { hilo_id: h.json.id });
+  assert.equal(visto.error, false, visto.texto);
+  assert.equal(visto.json.hilo.titulo, 'Hilo de A antes de borrarlo');
+  const aud = await pool.query(`select count(*)::int n from auditoria where accion='agente:borrar' and objeto_id=$1`, ['bbbbbbbb-0000-0000-0000-00000000000a']);
+  assert.equal(aud.rows[0].n, 1);
+});
