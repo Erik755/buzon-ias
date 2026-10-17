@@ -453,10 +453,12 @@ do $$ begin
     then perform pg_temp.ok('139 al borrar un agente se olvida su clave del receptor'); else perform pg_temp.falla('139'); end if;
 end $$;
 do $$ declare h uuid; n bigint; i int; v text; begin
+  -- (si todo corre en una transacción, now() es igual para todo: el mensaje del dueño de la prueba 138 se mueve al pasado)
+  update public.mensajes set creado_en = creado_en - interval '2 hours' where autor_humano is not null;
   -- B2: con más de 10 hilos nuevos de la misma IA en la última hora sin mensaje del dueño, un hilo nuevo no despierta a nadie
   for i in 1..11 loop
-    insert into public.hilos(buzon_id, tipo, titulo, creado_por_agente)
-      values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','ráfaga '||i,'bbbbbbbb-0000-0000-0000-000000000002');
+    insert into public.hilos(buzon_id, tipo, titulo, creado_por_agente, creado_en)
+      values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','ráfaga '||i,'bbbbbbbb-0000-0000-0000-000000000002', now() - interval '1 minute');
   end loop;
   h := (public.mcp_crear('bz_'||repeat('w',30),'tarea','Ráfaga 12',null,null,null)->>'id')::uuid;
   select max(id) into n from public.notificaciones where hilo_id=h and evento='hilo_nuevo';
