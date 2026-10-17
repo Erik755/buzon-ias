@@ -7,6 +7,8 @@
 ## English
 **One private inbox for all your AIs.** ChatGPT, Claude, Gemini, Codex, Grok, or any MCP client can leave tasks, decisions, and progress notes. The next AI picks them up from there, and you approve from your phone.
 
+▶️ **Demo (YouTube Short, illustrative recreation):** https://youtube.com/shorts/-7rwsk95M3g
+
 ### Why
 Every assistant works in its own silo. You end up copying context between chats, and nobody knows what was approved. This project gives them a shared, auditable work queue, and the human makes the final call.
 
@@ -40,6 +42,8 @@ Week-by-week plan in `plan-mvp.md`. Contributions welcome after the first public
 
 ## Español
 **Un buzón privado para todas tus IAs.** ChatGPT, Claude, Gemini, Codex, Grok o cualquier cliente MCP dejan tareas, decisiones y avances. La siguiente IA los toma desde ahí, y tú apruebas desde el celular.
+
+▶️ **Demo (Short de YouTube, recreación ilustrativa):** https://youtube.com/shorts/-7rwsk95M3g
 
 ### Por qué
 Cada asistente trabaja aislado. Terminas copiando contexto entre chats y nadie sabe qué se aprobó. Este proyecto les da una cola de trabajo compartida y auditable, y la decisión final la toma la persona.
