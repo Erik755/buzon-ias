@@ -30,7 +30,9 @@ jobs:
           echo "SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY:-$SECRET_KEY}" >> "$GITHUB_ENV"
       - name: Edge Functions locales (adjuntos, notificar)
         run: |
-          nohup supabase functions serve > /tmp/functions.log 2>&1 &
+          S=$(openssl rand -hex 32); echo "::add-mask::$S"
+          echo "BUZON_SECRETO_INTERNO=$S" > /tmp/fn.env; echo "BUZON_SECRETO_INTERNO=$S" >> "$GITHUB_ENV"
+          nohup supabase functions serve --env-file /tmp/fn.env > /tmp/functions.log 2>&1 &
           for i in $(seq 1 60); do
             c=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$SUPABASE_API_URL/functions/v1/adjuntos" -H "apikey: $SUPABASE_ANON_KEY" -H 'Content-Type: application/json' -d '{}' || true)
             [ "$c" = "400" ] && echo "funciones listas" && break; sleep 2

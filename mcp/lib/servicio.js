@@ -48,16 +48,17 @@ export function crearServicio(rpc, funciones = null) {
 }
 
 // Edge Functions de Supabase. Se identifican con la clave pública + el token bz_ en X-Buzon-Token.
-export function funcionesSupabase(url = process.env.SUPABASE_URL, key = process.env.SUPABASE_ANON_KEY, f = fetch) {
+// BUZON_SECRETO_INTERNO (Vercel, mismo valor que el secret de Supabase) autentica al MCP ante las funciones.
+export function funcionesSupabase(url = process.env.SUPABASE_URL, key = process.env.SUPABASE_ANON_KEY, f = fetch, interno = process.env.BUZON_SECRETO_INTERNO) {
   if (!url || !key) return null;
   const llamar = async (nombre, cuerpo, token, ip) => {
     const r = await f(`${url}/functions/v1/${nombre}`, { method: 'POST', signal: AbortSignal.timeout(20000), headers: {
       'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}`,
-      ...(token ? { 'X-Buzon-Token': token } : {}), ...(ip ? { 'X-Buzon-IP': ip } : {}) }, body: JSON.stringify(cuerpo ?? {}) });
+      ...(token ? { 'X-Buzon-Token': token } : {}), ...(interno ? { 'X-Buzon-Interno': interno, ...(ip ? { 'X-Buzon-IP': ip } : {}) } : {}) }, body: JSON.stringify(cuerpo ?? {}) });
     const j = await r.json().catch(() => ({ error: 'respuesta invalida' }));
     return r.ok ? j : { status: r.status, error: j.error || 'error' };
   };
-  return { adjuntos: (c, t, ip) => llamar('adjuntos', c, t, ip), notificar: () => llamar('notificar', {}) };
+  return { adjuntos: (c, t, ip) => llamar('adjuntos', c, t, ip), notificar: async () => (interno ? llamar('notificar', {}) : { omitido: true }) };
 }
 
 export function rpcSupabase(createClient, url = process.env.SUPABASE_URL, key = process.env.SUPABASE_ANON_KEY) {

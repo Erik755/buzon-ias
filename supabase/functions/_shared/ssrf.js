@@ -35,6 +35,7 @@ export function ipv6Bloqueada(ip) {
   if ((g[0] & 0xff00) === 0xff00) return true;                                 // multicast
   if (g[0] === 0x2001 && g[1] === 0x0db8) return true;                         // documentación
   if (g[0] === 0x2002) return true;                                            // 6to4 (puede envolver IPv4 privada)
+  if (g[0] === 0x2001 && g[1] === 0x0000) return true;                         // Teredo 2001::/32 (envuelve IPv4)
   return false;
 }
 export const HOSTS_BLOQUEADOS = /(^|\.)(localhost|local|internal|localdomain|home\.arpa)$|^metadata(\.google\.internal)?$/i;

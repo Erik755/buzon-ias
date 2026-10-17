@@ -1,3 +1,4 @@
+import { validarDestino } from './ssrf.js';
 // Web Push sin dependencias (WebCrypto): cifrado RFC 8291 (aes128gcm) + VAPID RFC 8292 (ES256). Deno y Node 22.
 const enc = new TextEncoder();
 export const b64u = {
@@ -44,15 +45,22 @@ export async function vapid(endpoint, { publica, privada, sujeto }, ahora = Math
   return `vapid t=${h}.${p}.${firma}, k=${publica}`;
 }
 
-// Notificación mínima: solo un título corto y la ruta a abrir. Nunca el contenido.
-export function payloadPush(evento, titulo, hiloId) {
-  const t = String(titulo || '').slice(0, 80);
-  return JSON.stringify({ titulo: evento === 'pide_aprobacion' ? 'Te piden aprobación' : 'Hilo nuevo en tu buzón', cuerpo: t, url: `./?hilo=${hiloId}` });
+// Solo servicios de push conocidos (mismo filtro que el CHECK de la BD).
+export const ENDPOINT_PERMITIDO = /^https:\/\/(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|[a-z0-9.-]+\.push\.apple\.com|[a-z0-9.-]+\.notify\.windows\.com)\//;
+
+// Notificación genérica: nada del hilo (ni título) para que no se lea en la pantalla de bloqueo.
+export function payloadPush(evento, hiloId) {
+  return JSON.stringify({ titulo: 'Buzón de IAs', cuerpo: evento === 'pide_aprobacion' ? 'Tienes una aprobación pendiente' : 'Tienes un hilo nuevo', url: `./?hilo=${hiloId}` });
 }
 
-export async function enviarPush(sub, payload, claves, fetchFn = fetch) {
+// enviar(url, ip, headers, body) -> status. Se valida el host, se resuelve UNA vez y se envía a esa IP.
+export async function enviarPush(sub, payload, claves, { resolver, enviar }) {
+  if (!ENDPOINT_PERMITIDO.test(sub.endpoint)) return { ok: false, motivo: 'endpoint_no_permitido' };
+  const v = await validarDestino(sub.endpoint, resolver);
+  if (!v.ok) return v;
   const cuerpo = await cifrar(payload, sub);
-  return fetchFn(sub.endpoint, { method: 'POST', redirect: 'manual', headers: {
+  const status = await enviar(sub.endpoint, v.ips[0], {
     Authorization: await vapid(sub.endpoint, claves), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: '86400', Urgency: 'normal',
-  }, body: cuerpo });
+  }, cuerpo);
+  return { ok: status >= 200 && status < 300, status };
 }

@@ -5,7 +5,8 @@ create table public.push_suscripciones (
   id uuid primary key default gen_random_uuid(),
   buzon_id uuid not null references public.buzones(id) on delete cascade,
   humano_id uuid not null references auth.users(id) on delete cascade,
-  endpoint text not null unique check (endpoint ~ '^https://' and length(endpoint) <= 1000),
+  -- Solo servicios de push conocidos (anti-SSRF): FCM, Mozilla, Apple y Windows. Mismo filtro en enviarPush.
+  endpoint text not null unique check (length(endpoint) <= 1000 and endpoint ~ '^https://(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|[a-z0-9.-]+\.push\.apple\.com|[a-z0-9.-]+\.notify\.windows\.com)/'),
   p256dh text not null check (length(p256dh) between 80 and 100),
   auth text not null check (length(auth) between 16 and 30),
   creado_en timestamptz not null default now()
@@ -62,6 +63,7 @@ create table public.notificaciones (
   proximo_intento timestamptz not null default now(),
   estado text not null default 'pendiente' check (estado in ('pendiente', 'enviada', 'fallida')),
   ultimo_error text,
+  entregados text[] not null default '{}', -- destinos ya avisados ('push:<id>', 'wh:<agente>'): los reintentos no duplican
   creado_en timestamptz not null default now()
 );
 create index on public.notificaciones(estado, proximo_intento);
@@ -86,7 +88,7 @@ create trigger hilos_notificar after insert or update of estado on public.hilos
 
 -- El notificador (Edge Function con service_role) toma lotes sin pisarse.
 create or replace function public._tomar_notificaciones(p_limite int default 20)
-returns table(id bigint, buzon_id uuid, hilo_id uuid, evento text, intentos int, titulo text, creado_por_agente uuid)
+returns table(id bigint, buzon_id uuid, hilo_id uuid, evento text, intentos int, creado_por_agente uuid, entregados text[])
 language sql security definer set search_path = public as $$
   update public.notificaciones n set intentos = n.intentos + 1,
          proximo_intento = now() + (interval '1 minute' * power(4, n.intentos))
@@ -94,7 +96,7 @@ language sql security definer set search_path = public as $$
   where n.id in (select id from public.notificaciones where estado = 'pendiente' and proximo_intento <= now()
                  order by id limit least(p_limite, 50) for update skip locked)
     and h.id = n.hilo_id
-  returning n.id, n.buzon_id, n.hilo_id, n.evento, n.intentos, h.titulo, h.creado_por_agente;
+  returning n.id, n.buzon_id, n.hilo_id, n.evento, n.intentos, h.creado_por_agente, n.entregados;
 $$;
 create or replace function public._cerrar_notificacion(p_id bigint, p_ok boolean, p_error text default null)
 returns void language sql security definer set search_path = public as $$
@@ -102,6 +104,13 @@ returns void language sql security definer set search_path = public as $$
     estado = case when p_ok then 'enviada' when intentos >= 3 then 'fallida' else 'pendiente' end,
     ultimo_error = left(p_error, 300) where id = p_id;
 $$;
+create or replace function public._marcar_entregado(p_id bigint, p_destino text)
+returns void language sql security definer set search_path = public as $$
+  update public.notificaciones set entregados = array_append(entregados, left(p_destino, 80))
+   where id = p_id and not (left(p_destino, 80) = any(entregados));
+$$;
+revoke all on function public._marcar_entregado(bigint, text) from public, anon, authenticated;
+grant execute on function public._marcar_entregado(bigint, text) to service_role;
 revoke all on function public._tomar_notificaciones(int), public._cerrar_notificacion(bigint, boolean, text),
   public.encolar_notificacion(), public.limite_push() from public, anon, authenticated;
 grant execute on function public._tomar_notificaciones(int), public._cerrar_notificacion(bigint, boolean, text) to service_role;
@@ -165,6 +174,20 @@ begin
             case when p_ip ~ '^[0-9a-fA-F:.]+$' then p_ip::inet end);
   return query select a.ruta, a.nombre, a.tipo;
 end $$;
+-- Pre-chequeo ANTES de subir a Storage: hilo/mensaje del buzón del agente y cuota disponible.
+create or replace function public._verificar_adjunto(p_agente uuid, p_hilo uuid, p_mensaje uuid, p_tamano int)
+returns void language plpgsql security definer set search_path = public as $$
+declare b uuid;
+begin
+  select a.buzon_id into b from public.agentes a join public.hilos h on h.buzon_id = a.buzon_id where a.id = p_agente and h.id = p_hilo;
+  if b is null then raise exception '404:Hilo no encontrado en tu buzon'; end if;
+  if p_mensaje is not null and not exists (select 1 from public.mensajes where id = p_mensaje and hilo_id = p_hilo) then
+    raise exception '404:Mensaje no encontrado en ese hilo'; end if;
+  if (select coalesce(sum(tamano),0) from public.adjuntos where buzon_id = b) + p_tamano > 104857600 then
+    raise exception '413:Cuota de adjuntos del buzon llena (100 MB)'; end if;
+end $$;
+revoke all on function public._verificar_adjunto(uuid,uuid,uuid,int) from public, anon, authenticated;
+grant execute on function public._verificar_adjunto(uuid,uuid,uuid,int) to service_role;
 revoke all on function public._registrar_adjunto(uuid,uuid,uuid,text,text,int,text,text,text),
   public._autorizar_descarga(uuid,uuid,uuid,text) from public, anon, authenticated;
 grant execute on function public._registrar_adjunto(uuid,uuid,uuid,text,text,int,text,text,text),

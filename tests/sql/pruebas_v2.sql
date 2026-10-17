@@ -39,6 +39,18 @@ do $$ begin
   begin insert into public.push_suscripciones(buzon_id,humano_id,endpoint,p256dh,auth) values
     ('aaaaaaaa-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','http://inseguro/x', repeat('B',87), repeat('a',22));
     perform pg_temp.falla('45'); exception when check_violation then perform pg_temp.ok('45 endpoint push sin https rechazado'); end;
+  declare u text; begin
+    foreach u in array array['https://10.0.0.5:8443/x','https://metadata.google.internal/x','https://fcm.googleapis.com.evil.com/x','https://evil.com/fcm.googleapis.com/','https://fcm.googleapis.com:8443/x','https://push.apple.com.evil.com/x'] loop
+      begin insert into public.push_suscripciones(buzon_id,humano_id,endpoint,p256dh,auth) values
+        ('aaaaaaaa-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111',u, repeat('B',87), repeat('a',22));
+        perform pg_temp.falla('45b '||u); exception when check_violation then null; end;
+    end loop;
+    insert into public.push_suscripciones(buzon_id,humano_id,endpoint,p256dh,auth) values
+      ('aaaaaaaa-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','https://web.push.apple.com/abc', repeat('B',87), repeat('a',22)),
+      ('aaaaaaaa-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','https://updates.push.services.mozilla.com/wpush/v2/x', repeat('B',87), repeat('a',22)),
+      ('aaaaaaaa-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','https://wns2-par02p.notify.windows.com/w/?token=x', repeat('B',87), repeat('a',22));
+    perform pg_temp.ok('45b push solo a FCM, Mozilla, Apple y Windows (IPs, metadata, puertos y dominios parecidos rechazados)');
+  end;
   begin perform public._tomar_notificaciones(1); perform pg_temp.falla('46'); exception when insufficient_privilege then perform pg_temp.ok('46 el dueño no puede tomar la cola del notificador'); end;
   begin update public.agentes set webhook_secreto='x'; perform pg_temp.falla('47'); exception when insufficient_privilege then perform pg_temp.ok('47 nadie escribe el secreto HMAC directo'); end;
   begin perform webhook_secreto from public.agentes; perform pg_temp.falla('48'); exception when insufficient_privilege then perform pg_temp.ok('48 el secreto HMAC no se puede leer'); end;
@@ -132,9 +144,9 @@ reset role;
 do $$ declare c text; i uuid; begin
   if (select usado_en is not null and intentos_fallidos=1 and agente_creado is not null from public.codigos_config where id=(select id from _c))
     then perform pg_temp.ok('80 código queda usado, con el reintento contado'); else perform pg_temp.falla('80'); end if;
-  if (select count(*) from public.auditoria where accion='codigo_config:canje_ok')=1 and (select count(*) from public.auditoria where accion='codigo_config:canje_fallido')=3
+  if (select count(*) from public.auditoria where accion='codigo_config:canje_ok')=1 and (select count(*) from public.auditoria where accion='codigo_config:canje_fallido')=2
      and (select count(*) from public.auditoria where accion='codigo_config:crear')=1
-    then perform pg_temp.ok('81 creación, canje y fallos quedan en auditoría'); else perform pg_temp.falla('81'); end if;
+    then perform pg_temp.ok('81 creación, canje y fallos (no los de formato) quedan en auditoría'); else perform pg_temp.falla('81'); end if;
   -- código vencido
   c := 'bzc_' || repeat('1',64);
   insert into public.codigos_config(buzon_id,nombre_agente,hash_codigo,vence_en,creado_por) values
@@ -154,10 +166,33 @@ do $$ declare j jsonb; begin
   if (public.canjear_codigo_config(j->>'codigo') ->> 'error') like '403:%' then perform pg_temp.ok('85 código anulado desde la PWA ya no sirve'); else perform pg_temp.falla('85'); end if;
 end $$;
 reset role;
--- 84 límite global (al final: la auditoría no se puede borrar)
-do $$ begin
-  insert into public.auditoria(actor,accion) select 'anonimo','codigo_config:canje_fallido' from generate_series(1,30);
-  begin perform public.canjear_codigo_config('bzc_' || repeat('3',64)); perform pg_temp.falla('84');
-    exception when others then if sqlerrm like '429:%' then perform pg_temp.ok('84 límite global de intentos fallidos por minuto'); else raise; end if; end;
+-- 84 sin bloqueo global: 100 fallos anónimos no impiden canjear un código válido
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+create temp table if not exists _c2(codigo text); grant all on _c2 to public;
+do $$ begin insert into _c2 select public.crear_codigo_config('aaaaaaaa-0000-0000-0000-000000000001','Tras ataque',5)->>'codigo'; end $$;
+reset role;
+create temp table _n0 as select count(*) n from public.auditoria where accion='codigo_config:canje_fallido';
+set role anon;
+do $$ declare i int; begin
+  for i in 1..60 loop perform public.canjear_codigo_config('basura'||i); end loop;
+  for i in 1..40 loop perform public.canjear_codigo_config('bzc_' || lpad(i::text,64,'9')); end loop;
+  if (public.canjear_codigo_config((select codigo from _c2)) ? 'token') then perform pg_temp.ok('84 sin bloqueo global: tras 100 fallos un código válido sí se canjea'); else perform pg_temp.falla('84'); end if;
 end $$;
+reset role;
+do $$ begin
+  if (select count(*) from public.auditoria where accion='codigo_config:canje_fallido') - (select n from _n0) = 40 then perform pg_temp.ok('86 fallos de formato no se auditan; los de códigos con formato válido sí'); else perform pg_temp.falla('86'); end if;
+end $$;
+reset role;
+-- 87-89 reintentos sin duplicar y pre-chequeo de adjuntos
+set role service_role;
+do $$ declare i bigint; begin
+  select id into i from public.notificaciones order by id desc limit 1;
+  perform public._marcar_entregado(i, 'push:x'); perform public._marcar_entregado(i, 'push:x');
+  if (select entregados = '{push:x}' from public.notificaciones where id=i) then perform pg_temp.ok('87 destino entregado se marca una sola vez'); else perform pg_temp.falla('87'); end if;
+  begin perform public._verificar_adjunto('bbbbbbbb-0000-0000-0000-000000000001','cccccccc-0000-0000-0000-000000000002',null,3000000); perform pg_temp.falla('88');
+    exception when others then if sqlerrm like '413:%' then perform pg_temp.ok('88 la cuota se revisa antes de subir'); else raise; end if; end;
+  begin perform public._verificar_adjunto('bbbbbbbb-0000-0000-0000-000000000001','cccccccc-0000-0000-0000-000000000009',null,10); perform pg_temp.falla('89');
+    exception when others then if sqlerrm like '404:%' then perform pg_temp.ok('89 pre-chequeo rechaza hilo de otro buzón'); else raise; end if; end;
+end $$;
+reset role;
 \echo TODAS_LAS_PRUEBAS_PASARON

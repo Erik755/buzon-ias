@@ -1,5 +1,5 @@
 // Service worker: carcasa de la app disponible sin conexión. Nunca cachea datos del buzón (Supabase ni MCP).
-const C = 'buzon-v7';
+const C = 'buzon-v8';
 const CASCARA = ['./', 'index.html', 'app.js', 'config.js', 'guias.js', 'estilo.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png',
   'vendor/supabase.js', 'offline.html', 'privacidad.html', 'terminos.html'];
 self.addEventListener('install', (e) => e.waitUntil(caches.open(C).then((c) => c.addAll(CASCARA)).then(() => self.skipWaiting())));
@@ -33,6 +33,7 @@ self.addEventListener('push', (e) => {
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   const destino = new URL(e.notification.data?.url || './', self.registration.scope).href;
+  if (!destino.startsWith(self.registration.scope)) return; // solo URLs del propio sitio
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
     for (const c of cs) if (c.url.startsWith(self.registration.scope)) return c.navigate(destino).then((w) => w?.focus());
     return self.clients.openWindow(destino);

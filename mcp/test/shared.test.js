@@ -3,7 +3,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validarDestino, ipv4Bloqueada, ipv6Bloqueada } from '../../supabase/functions/_shared/ssrf.js';
 import { firmar, verificar, payloadTarea } from '../../supabase/functions/_shared/hmac.js';
-import { cifrar, vapid, b64u, payloadPush } from '../../supabase/functions/_shared/webpush.js';
+import { cifrar, vapid, b64u, payloadPush, enviarPush, ENDPOINT_PERMITIDO } from '../../supabase/functions/_shared/webpush.js';
+import { postFijo } from '../../supabase/functions/_shared/http_fijo.js';
+import { secretoValido } from '../../supabase/functions/_shared/interno.js';
 import { detectarTipo, deBase64, nombreSeguro, MAX_BYTES } from '../../supabase/functions/_shared/tipos.js';
 
 const dns = (mapa) => async (h) => { if (!(h in mapa)) throw new Error('nx'); return mapa[h]; };
@@ -49,8 +51,8 @@ test('Web Push: JWT VAPID ES256 válido y payload solo con título', async () =>
   const [, jwt] = /t=([^,]+),/.exec(h); const [a, b, c] = jwt.split('.');
   assert.ok(await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, kp.publicKey, b64u.dec(c), new TextEncoder().encode(`${a}.${b}`)));
   assert.equal(JSON.parse(new TextDecoder().decode(b64u.dec(b))).aud, 'https://fcm.googleapis.com');
-  const p = JSON.parse(payloadPush('pide_aprobacion', 'x'.repeat(500), 'id'));
-  assert.equal(p.cuerpo.length, 80); assert.deepEqual(Object.keys(p).sort(), ['cuerpo', 'titulo', 'url']);
+  const p = JSON.parse(payloadPush('pide_aprobacion', 'id'));
+  assert.deepEqual(p, { titulo: 'Buzón de IAs', cuerpo: 'Tienes una aprobación pendiente', url: './?hilo=id' }, 'texto genérico: nada del hilo en la pantalla de bloqueo');
 });
 test('Adjuntos: tipo real por bytes mágicos; rechaza disfraces, SVG y HTML', () => {
   const B = (s) => new TextEncoder().encode(s), H = (...x) => new Uint8Array(x);
@@ -71,4 +73,43 @@ test('Adjuntos: tipo real por bytes mágicos; rechaza disfraces, SVG y HTML', ()
   assert.equal(deBase64('no*es*base64'), null);
   assert.equal(nombreSeguro('../../etc/passwd'), '_.._etc_passwd'.replace(/^_/, '_'));
   assert.ok(!/[\\/]/.test(nombreSeguro('a/b\\c.pdf')));
+});
+
+test('SSRF: Teredo 2001::/32 bloqueado', () => {
+  assert.equal(ipv6Bloqueada('2001:0:4136:e378:8000:63bf:3fff:fdd2'), true);
+  assert.equal(ipv6Bloqueada('2001:4860::8888'), false);
+});
+test('Push: solo FCM, Mozilla, Apple y Windows; valida IP y envía a la IP ya resuelta', async () => {
+  for (const u of ['https://fcm.googleapis.com/fcm/send/x', 'https://updates.push.services.mozilla.com/wpush/v2/x', 'https://web.push.apple.com/x', 'https://wns2-par02p.notify.windows.com/w/?t=1'])
+    assert.ok(ENDPOINT_PERMITIDO.test(u), u);
+  for (const u of ['https://10.0.0.5:8443/x', 'https://metadata.google.internal/x', 'https://fcm.googleapis.com.evil.com/x', 'https://evil.com/fcm.googleapis.com/', 'https://fcm.googleapis.com:8443/x', 'http://fcm.googleapis.com/x'])
+    assert.ok(!ENDPOINT_PERMITIDO.test(u), u);
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const sub = { p256dh: b64u.enc(await crypto.subtle.exportKey('raw', kp.publicKey)), auth: b64u.enc(new Uint8Array(16)) };
+  const vk = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
+  const claves = { publica: b64u.enc(await crypto.subtle.exportKey('raw', vk.publicKey)), privada: (await crypto.subtle.exportKey('jwk', vk.privateKey)).d, sujeto: 'mailto:a@b.c' };
+  const llamadas = []; const enviar = async (url, ip) => { llamadas.push({ url, ip }); return 201; };
+  assert.equal((await enviarPush({ ...sub, endpoint: 'https://evil.example/x' }, '{}', claves, { resolver: async () => ['8.8.8.8'], enviar })).motivo, 'endpoint_no_permitido');
+  assert.equal((await enviarPush({ ...sub, endpoint: 'https://fcm.googleapis.com/x' }, '{}', claves, { resolver: async () => ['169.254.169.254'], enviar })).motivo, 'resuelve_a_ip_privada');
+  let n = 0; const rebind = async () => (n++ === 0 ? ['142.250.1.1'] : ['127.0.0.1']);
+  assert.equal((await enviarPush({ ...sub, endpoint: 'https://fcm.googleapis.com/x' }, '{}', claves, { resolver: rebind, enviar })).ok, true);
+  assert.deepEqual(llamadas, [{ url: 'https://fcm.googleapis.com/x', ip: '142.250.1.1' }]);
+  assert.equal(n, 1, 'DNS se resuelve una sola vez');
+});
+test('postFijo: conecta a la IP validada con SNI/Host originales y lee solo el estado', async () => {
+  let visto, escrito = '';
+  const conectar = async (ip, puerto, nombre) => { visto = { ip, puerto, nombre };
+    return { writable: new WritableStream({ write(c) { escrito += new TextDecoder().decode(c); } }),
+      readable: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('HTTP/1.1 202 Accepted\r\nX: y\r\n\r\ncuerpo')); c.close(); } }), close() {} }; };
+  const st = await postFijo({ url: 'https://hooks.ejemplo.dev/a?b=1', ip: '93.184.216.34', headers: { 'X-F': 'v\r\nInyectada: 1', Host: 'otro' }, body: '{"a":1}', conectar });
+  assert.equal(st, 202); assert.deepEqual(visto, { ip: '93.184.216.34', puerto: 443, nombre: 'hooks.ejemplo.dev' });
+  assert.match(escrito, /^POST \/a\?b=1 HTTP\/1\.1\r\nHost: hooks\.ejemplo\.dev\r\n/);
+  assert.ok(!/\r\nInyectada/.test(escrito) && !/Host: otro/.test(escrito), 'sin inyección de cabeceras');
+  assert.match(escrito, /Content-Length: 7\r\n/);
+  await assert.rejects(postFijo({ url: 'https://h.dev/', ip: '1.1.1.1', conectar: () => new Promise(() => {}), timeoutMs: 50 }), /timeout/);
+});
+test('secreto interno: tiempo constante, longitud mínima y sin secreto configurado = rechazo', () => {
+  const s = 'x'.repeat(40);
+  assert.equal(secretoValido(s, s), true); assert.equal(secretoValido('y'.repeat(40), s), false);
+  assert.equal(secretoValido('', ''), false); assert.equal(secretoValido('corto', 'corto'), false); assert.equal(secretoValido(undefined, s), false);
 });

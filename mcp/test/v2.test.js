@@ -122,29 +122,29 @@ test('notificador: push al dueño, webhook firmado a los otros agentes, SSRF blo
   await pool.query("update agentes set webhook_url='https://interno.ejemplo.dev/a', webhook_secreto='whsec_a' where nombre='Ajeno'");
   const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
   const p256dh = Buffer.from(await crypto.subtle.exportKey('raw', kp.publicKey)).toString('base64url');
-  await pool.query(`insert into push_suscripciones(buzon_id,humano_id,endpoint,p256dh,auth) values ('${BZ}','${ERIK}','https://push.ejemplo.dev/e1',$1,$2),('${BZ}','${ERIK}','https://push.ejemplo.dev/viejo',$1,$2)`,
+  await pool.query(`insert into push_suscripciones(buzon_id,humano_id,endpoint,p256dh,auth) values ('${BZ}','${ERIK}','https://fcm.googleapis.com/fcm/send/e1',$1,$2),('${BZ}','${ERIK}','https://updates.push.services.mozilla.com/wpush/v2/viejo',$1,$2)`,
     [p256dh, Buffer.alloc(16, 7).toString('base64url')]);
   const vk = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
   const claves = { publica: Buffer.from(await crypto.subtle.exportKey('raw', vk.publicKey)).toString('base64url'), privada: (await crypto.subtle.exportKey('jwk', vk.privateKey)).d, sujeto: 'mailto:t@t.t' };
   await pool.query('update notificaciones set estado=\'enviada\'');
   const nuevo = await servicio.crear(T.a, { tipo: 'tarea', titulo: 'Secreto: clave del banco 1234 y más texto largo' });
   const llamadas = [];
-  const fakeFetch = async (url, o) => { llamadas.push({ url, o }); return { status: url.endsWith('viejo') ? 410 : 201, ok: !url.endsWith('viejo') }; };
+  const enviar = async (url, ip, headers, body) => { llamadas.push({ url, ip, o: { headers, body } }); return url.endsWith('viejo') ? 410 : 201; };
   const r = await procesar({
-    rpc: rpcPg(pool, 'service_role'), claves, fetch: fakeFetch,
+    rpc: rpcPg(pool, 'service_role'), claves, enviar,
     suscripciones: async (b) => (await pool.query('select id,endpoint,p256dh,auth from push_suscripciones where buzon_id=$1', [b])).rows,
     borrarSuscripcion: async (id) => { await pool.query('delete from push_suscripciones where id=$1', [id]); },
     webhooks: async (b, ex) => (await pool.query('select id,webhook_url,webhook_secreto from agentes where buzon_id=$1 and webhook_url is not null and id is distinct from $2', [b, ex])).rows,
-    resolver: async (h) => ({ 'hooks.ejemplo.dev': ['93.184.216.34'], 'interno.ejemplo.dev': ['10.0.0.5'] })[h] ?? [],
+    resolver: async (h) => ({ 'hooks.ejemplo.dev': ['93.184.216.34'], 'interno.ejemplo.dev': ['10.0.0.5'], 'fcm.googleapis.com': ['142.250.1.1'], 'updates.push.services.mozilla.com': ['34.1.1.1'] })[h] ?? [],
   });
   assert.deepEqual(r, { procesadas: 1, ok: 1, errores: 0 });
-  const push = llamadas.filter((l) => l.url.startsWith('https://push.'));
+  const push = llamadas.filter((l) => /fcm|mozilla/.test(l.url));
   assert.equal(push.length, 2); assert.equal(push[0].o.headers['Content-Encoding'], 'aes128gcm'); assert.match(push[0].o.headers.Authorization, /^vapid t=/);
   assert.ok(!Buffer.from(push[0].o.body).toString('latin1').includes('banco'), 'el push va cifrado');
   assert.equal((await pool.query('select count(*)::int n from push_suscripciones')).rows[0].n, 1, 'la suscripción 410 se borró');
   const wh = llamadas.filter((l) => l.url.startsWith('https://hooks.'));
   assert.equal(wh.length, 1, 'solo el agente B (no el creador A ni el de otro buzón)');
-  assert.equal(wh[0].o.redirect, 'manual');
+  assert.equal(wh[0].ip, '93.184.216.34', 'se envía a la IP validada');
   assert.ok(await verificar('whsec_b', wh[0].o.body, wh[0].o.headers['X-Buzon-Firma']));
   assert.deepEqual(JSON.parse(wh[0].o.body).hilo_id, nuevo.id); assert.ok(!wh[0].o.body.includes('banco'));
   assert.ok(!llamadas.some((l) => l.url.includes('interno')));
@@ -153,11 +153,11 @@ test('webhook: destino que resuelve a IP privada falla y se reintenta como máxi
   await pool.query("update agentes set webhook_url='https://rebind.ejemplo.dev/x' where nombre='Agente B'");
   await pool.query("update notificaciones set estado='enviada'");
   await servicio.crear(T.a, { tipo: 'avance', titulo: 'otro' });
-  const d = { rpc: rpcPg(pool, 'service_role'), claves: null, fetch: async () => assert.fail('no debe llamar'), suscripciones: async () => [], borrarSuscripcion: async () => {},
+  const d = { rpc: rpcPg(pool, 'service_role'), claves: null, enviar: async () => assert.fail('no debe llamar'), suscripciones: async () => [], borrarSuscripcion: async () => {},
     webhooks: async () => (await pool.query("select id,webhook_url,webhook_secreto from agentes where nombre='Agente B'")).rows, resolver: async () => ['169.254.169.254'] };
   for (let i = 0; i < 4; i++) { await procesar(d); await pool.query("update notificaciones set proximo_intento=now() where estado='pendiente'"); }
   const { rows } = await pool.query("select estado, intentos, ultimo_error from notificaciones where estado<>'enviada'");
-  assert.equal(rows.length, 1); assert.equal(rows[0].estado, 'fallida'); assert.equal(rows[0].intentos, 3); assert.match(rows[0].ultimo_error, /resuelve_a_ip_privada/);
+  assert.equal(rows.length, 1); assert.equal(rows[0].estado, 'fallida'); assert.equal(rows[0].intentos, 3); assert.equal(rows[0].ultimo_error, 'webhook_fallo', 'sin detalle ni código HTTP');
 });
 
 // ---- Configuración en lenguaje natural ----
@@ -190,4 +190,35 @@ test('canje: código vencido no sirve', async () => {
   const { codigo, id } = await codigoDeErik(1);
   await pool.query("update codigos_config set vence_en=now()-interval '1 s' where id=$1", [id]);
   assert.equal((await http(crearCanje(rpcPg(pool)), { codigo })).status, 403);
+});
+
+test('reintentos: solo se reenvía a los destinos que fallaron (sin duplicados); error sin código HTTP', async () => {
+  await pool.query("update notificaciones set estado='enviada'");
+  await pool.query("update agentes set webhook_url='https://hooks.ejemplo.dev/b' where nombre='Agente B'");
+  await pool.query("update agentes set webhook_url='https://caido.ejemplo.dev/c', webhook_secreto='whsec_c' where nombre='Ajeno'");
+  await pool.query(`insert into agentes(id,buzon_id,nombre,webhook_url,webhook_secreto) values ('bbbbbbbb-0000-0000-0000-00000000000d','${BZ}','Agente D','https://caido.ejemplo.dev/d','whsec_d')`);
+  await servicio.crear(T.a, { tipo: 'tarea', titulo: 'reintento' });
+  const llamadas = []; let caido = true;
+  const d = { rpc: rpcPg(pool, 'service_role'), claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+    webhooks: async (b, ex) => (await pool.query('select id,webhook_url,webhook_secreto from agentes where buzon_id=$1 and webhook_url is not null and id is distinct from $2', [b, ex])).rows,
+    resolver: async () => ['93.184.216.34'],
+    enviar: async (url) => { llamadas.push(url); return url.includes('caido') && caido ? 500 : 200; } };
+  await procesar(d);
+  assert.deepEqual(llamadas.sort(), ['https://caido.ejemplo.dev/d', 'https://hooks.ejemplo.dev/b']);
+  const { rows } = await pool.query("select estado, ultimo_error from notificaciones where estado='pendiente'");
+  assert.deepEqual(rows, [{ estado: 'pendiente', ultimo_error: 'webhook_fallo' }]);
+  caido = false; llamadas.length = 0;
+  await pool.query("update notificaciones set proximo_intento=now() where estado='pendiente'");
+  await procesar(d);
+  assert.deepEqual(llamadas, ['https://caido.ejemplo.dev/d'], 'B ya recibido no se repite');
+  assert.equal((await pool.query("select count(*)::int n from notificaciones where estado='pendiente'")).rows[0].n, 0);
+});
+test('adjuntos: la cuota se revisa ANTES de subir (nada llega al bucket) y mensaje_id inválido se rechaza', async () => {
+  await pool.query(`insert into adjuntos(buzon_id,hilo_id,nombre,tipo,tamano,sha256,ruta) select '${BZ}','${hilo}','r.pdf','application/pdf',3145728,repeat('b',64),'relleno2/'||g from generate_series(1,33) g`);
+  const antes = bucket.size; let subidas = 0;
+  const dd = { ...deps(), subir: async () => { subidas++; } };
+  const r = await manejar({ accion: 'subir', hilo_id: hilo, nombre: 'c.pdf', base64: Buffer.concat([PDF, Buffer.alloc(2_000_000)]).toString('base64') }, { token: T.a }, dd);
+  assert.equal(r.status, 413); assert.equal(subidas, 0); assert.equal(bucket.size, antes);
+  await pool.query("delete from adjuntos where ruta like 'relleno2/%'");
+  assert.equal((await manejar({ accion: 'subir', hilo_id: hilo, mensaje_id: "x' or 1=1", nombre: 'a.pdf', base64: PDF.toString('base64') }, { token: T.a }, dd)).status, 400);
 });

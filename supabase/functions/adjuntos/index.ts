@@ -2,8 +2,10 @@
 // Usa SUPABASE_SERVICE_ROLE_KEY (la inyecta Supabase; nunca sale de aquí).
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { manejar } from '../_shared/adjuntos_core.js';
+import { secretoValido } from '../_shared/interno.js';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
+const SECRETO = Deno.env.get('BUZON_SECRETO_INTERNO') ?? '';
 const ORIGENES = (Deno.env.get('BUZON_ORIGENES') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 const bucket = db.storage.from('adjuntos');
 const deps = {
@@ -24,7 +26,9 @@ Deno.serve(async (req) => {
   if (Number(req.headers.get('content-length') ?? 0) > 4_500_000) return Response.json({ error: 'Peticion demasiado grande' }, { status: 413, headers: cors });
   const auth = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
   const token = req.headers.get('x-buzon-token') ?? undefined;
-  const ip = (req.headers.get('x-buzon-ip') ?? req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
+  // x-buzon-ip (IP real de la IA) solo se cree si viene del MCP con el secreto interno; si no, la del borde.
+  const interno = secretoValido(req.headers.get('x-buzon-interno') ?? '', SECRETO);
+  const ip = ((interno ? req.headers.get('x-buzon-ip') : null) ?? req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
   let entrada; try { entrada = await req.json(); } catch { return Response.json({ error: 'JSON invalido' }, { status: 400, headers: cors }); }
   const r = await manejar(entrada, { token, jwt: token ? undefined : auth, ip }, deps);
   return Response.json(r.cuerpo, { status: r.status, headers: { ...cors, 'Cache-Control': 'no-store' } });

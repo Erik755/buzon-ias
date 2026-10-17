@@ -55,18 +55,16 @@ end $$;
 
 -- Canje: lo llama el servidor MCP (POST /api/canje) con la clave anon. Sin sesión: la credencial es el código.
 -- * Un solo uso, caduca en <=15 min, 5 intentos fallidos lo anulan (si el código existe).
--- * Fallos con códigos inexistentes: límite global de 30 por minuto (no se puede confiar en p_ip para limitar por IP
---   porque quien llama directo a la RPC puede inventarla; el código tiene 244 bits aleatorios, no es adivinable).
+-- * Sin límite global (sería un DoS para todos): con 244 bits no hay fuerza bruta posible. El abuso se frena
+--   por IP en el borde (regla de Vercel Firewall para /api/canje, ver docs/DESPLIEGUE.md).
+-- * Los fallos de formato no se auditan (evita inflar la auditoría con basura anónima).
 -- * Todo queda en auditoria. Los fallos devuelven {error} en vez de lanzar excepción para que
 --   el contador y la auditoría no se deshagan con la transacción.
 create or replace function public.canjear_codigo_config(p_codigo text, p_ip text default null)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare r public.codigos_config; ag uuid; t text; ip inet := case when p_ip ~ '^[0-9a-fA-F:.]+$' then p_ip::inet end;
 begin
-  if (select count(*) from public.auditoria where accion = 'codigo_config:canje_fallido' and creado_en > now() - interval '1 minute') >= 30 then
-    raise exception '429:Demasiados intentos, espera un minuto'; end if;
   if p_codigo is null or p_codigo !~ '^bzc_[0-9a-f]{64}$' then
-    insert into public.auditoria(actor, accion, ip) values ('anonimo', 'codigo_config:canje_fallido', ip);
     return jsonb_build_object('error', '400:Codigo con formato invalido'); end if;
   select * into r from public.codigos_config where hash_codigo = encode(sha256(convert_to(p_codigo, 'UTF8')), 'hex') for update;
   if not found then

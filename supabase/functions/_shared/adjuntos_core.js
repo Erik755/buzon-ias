@@ -24,6 +24,7 @@ async function agente(token, alcance, ip, deps) {
 async function subir({ hilo_id, mensaje_id, nombre, base64 }, token, ip, deps) {
   const a = await agente(token, mensaje_id ? 'responder' : 'crear', ip, deps);
   if (!/^[0-9a-f-]{36}$/i.test(hilo_id || '')) return err(400, 'hilo_id invalido');
+  if (mensaje_id != null && !/^[0-9a-f-]{36}$/i.test(mensaje_id)) return err(400, 'mensaje_id invalido');
   const bytes = deBase64(base64);
   if (bytes === 'grande' || (bytes && bytes.length > MAX_BYTES)) return err(413, `Archivo mayor a ${MAX_BYTES / 1048576} MB`);
   if (!bytes || bytes.length === 0) return err(400, 'base64 invalido o vacio');
@@ -31,6 +32,8 @@ async function subir({ hilo_id, mensaje_id, nombre, base64 }, token, ip, deps) {
   const tipo = detectarTipo(bytes, limpio);
   if (!tipo) return err(415, 'Tipo no permitido o no coincide con el contenido. Permitidos: pdf, png, jpg, webp, txt, md');
   const sha = hex(await crypto.subtle.digest('SHA-256', bytes));
+  // Hilo, mensaje y cuota se revisan ANTES de subir; _registrar_adjunto lo repite con candado (carreras).
+  await deps.rpc('_verificar_adjunto', { p_agente: a.id, p_hilo: hilo_id, p_mensaje: mensaje_id ?? null, p_tamano: bytes.length });
   const ruta = `${a.buzon_id}/${deps.uuid()}`;
   await deps.subir(ruta, bytes, tipo);
   try {

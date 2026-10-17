@@ -77,3 +77,20 @@ test('API real: Erik genera código y se canjea una vez por la clave pública', 
   assert.equal((await pedir(data.codigo)).status, 403);
   const { error: e2 } = await intruso.c.rpc('crear_codigo_config', { p_buzon: buzon, p_nombre: 'Malo' }); assert.ok(e2);
 });
+
+const INTERNO = process.env.BUZON_SECRETO_INTERNO;
+const post = (fn, body, headers = {}) => fetch(`${URL_}/functions/v1/${fn}`, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: ANON, Authorization: `Bearer ${ANON}`, ...headers }, body: JSON.stringify(body) });
+test('notificar exige el secreto interno', opts, async () => {
+  assert.equal((await post('notificar', {})).status, 401);
+  assert.equal((await post('notificar', {}, { 'X-Buzon-Interno': 'x'.repeat(INTERNO.length) })).status, 401);
+  assert.equal((await post('notificar', {}, { 'X-Buzon-Interno': INTERNO })).status, 200);
+});
+test('adjuntos ignora X-Buzon-IP sin el secreto interno (la auditoría no se falsifica)', opts, async () => {
+  const sube = (h) => post('adjuntos', { accion: 'subir', hilo_id: hilo, nombre: 'n.txt', base64: Buffer.from('hola').toString('base64') }, { 'X-Buzon-Token': A, ...h });
+  assert.equal((await sube({ 'X-Buzon-IP': '6.6.6.6' })).status, 200);
+  assert.equal((await sube({ 'X-Buzon-IP': '7.7.7.7', 'X-Buzon-Interno': INTERNO })).status, 200);
+  const { data } = await erik.c.from('auditoria').select('ip').eq('accion', 'adjunto:subir');
+  const ips = data.map((r) => String(r.ip));
+  assert.ok(!ips.some((i) => i.startsWith('6.6.6.6')), 'IP falsificada no registrada');
+  assert.ok(ips.some((i) => i.startsWith('7.7.7.7')), 'IP del MCP con secreto sí');
+});

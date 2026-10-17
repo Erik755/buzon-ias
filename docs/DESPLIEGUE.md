@@ -8,19 +8,22 @@
 5. En cada IA, agrega el conector MCP con URL `…/api/mcp` y cabecera `Authorization: Bearer bz_…`.
 
 ## v2: push, webhooks, adjuntos y configuración en lenguaje natural (SOLO tras aprobación del Auditor)
-1. Migraciones aditivas: `20261016000008_push_webhooks_adjuntos.sql` y `20261016000009_codigos_config.sql` (crean el bucket privado `adjuntos`).
-   ⚠️ La 008 restringe las columnas que `authenticated` puede leer de `agentes` (oculta `webhook_secreto`): la PWA vieja usa `select('*')` y dejaría de listar agentes. **Aplicar la migración y desplegar la PWA v2 juntas.**
-2. Edge Functions: `supabase functions deploy adjuntos notificar` (plan gratis). `verify_jwt=false` está en `supabase/config.toml` porque cada función autentica por su cuenta.
-3. Claves VAPID: `npx web-push generate-vapid-keys` en tu compu (no en git).
-   - Secretos de Supabase: `supabase secrets set VAPID_PUBLIC_KEY=… VAPID_PRIVATE_KEY=… VAPID_SUBJECT=mailto:tu@correo BUZON_ORIGENES=https://buzon-ias-pwa.vercel.app`
-   - Vercel (proyecto PWA): `VAPID_PUBLIC_KEY` (es pública).
-4. (Opcional) pg_cron cada minuto para reintentos: Integrations → Cron → job que hace `net.http_post` a `…/functions/v1/notificar`. El MCP ya la llama tras cada crear/responder.
-5. Vercel MCP: sin variables nuevas. Expone `GET /api/mcp` (autodescubrimiento), `/.well-known/buzon-ias` y `POST /api/canje`.
+**Orden obligatorio** (la 008 quita `select *` sobre `agentes` y la PWA v1 dejaría de listar agentes):
+1. **PWA v2 primero** (Vercel, proyecto `buzon-ias-pwa`): agrega `VAPID_PUBLIC_KEY` (pública) y despliega. Es compatible con el esquema v1: lee columnas explícitas y las secciones nuevas solo fallan en silencio hasta el paso 2.
+2. **Migraciones 008 y 009** en `gatito` (SQL Editor o `supabase db push`). Crean el bucket privado `adjuntos`.
+3. **Funciones y MCP al final**:
+   - Genera un secreto interno: `openssl rand -hex 32`.
+   - `supabase secrets set BUZON_SECRETO_INTERNO=… VAPID_PUBLIC_KEY=… VAPID_PRIVATE_KEY=… VAPID_SUBJECT=mailto:tu@correo BUZON_ORIGENES=https://buzon-ias-pwa.vercel.app`
+     (claves VAPID con `npx web-push generate-vapid-keys` en tu compu; nunca en git).
+   - `supabase functions deploy adjuntos notificar`. Tienen `verify_jwt=false` porque autentican ellas: `notificar` exige la cabecera `x-buzon-interno`; `adjuntos` exige token `bz_` o sesión, y solo cree `x-buzon-ip` si trae el secreto interno.
+   - Vercel, proyecto `buzon-ias-mcp`: variable `BUZON_SECRETO_INTERNO` (mismo valor) y despliegue. Sin ella el MCP no llama a `notificar`.
+4. **Firewall de Vercel** (gratis), proyecto `buzon-ias-mcp` → Firewall → *Rate limit*: ruta `/api/canje`, **10 peticiones/min por IP**, acción *Deny/429*. Recomendado también `/api/mcp` a 120/min por IP. Sustituye al límite global de la BD (que permitía un DoS).
+5. (Opcional) reintentos con pg_cron cada minuto: `select net.http_post('https://<proyecto>.supabase.co/functions/v1/notificar', '{}'::jsonb, headers := jsonb_build_object('x-buzon-interno', '<secreto>', 'apikey', '<anon>'))` guardando el secreto en Vault, no en el SQL del repo.
 
 ## Pruebas locales
 ```bash
-PGHOST=... PGUSER=postgres ./tests/run-local.sh        # 79 pruebas SQL
-cd mcp && npm ci && PGHOST=... PGUSER=postgres npm test  # 29 pruebas MCP/Node (+13 que requieren Supabase local, en CI)
+PGHOST=... PGUSER=postgres ./tests/run-local.sh        # 84 pruebas SQL
+cd mcp && npm ci && PGHOST=... PGUSER=postgres npm test  # 35 pruebas MCP/Node (+15 que requieren Supabase local, en CI)
 ```
 
 ## Producción actual
