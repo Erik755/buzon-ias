@@ -49,9 +49,11 @@ revoke all on function public.mcp_crear(text,text,text,text,text,text) from publ
 grant execute on function public.mcp_crear(text,text,text,text,text,text) to anon, authenticated, service_role;
 
 -- leer:
---  * sin filtros -> solo lo pendiente para esta IA (no cerrado/aprobado/rechazado): primero lo dirigido a ella
+--  * sin filtros -> solo lo pendiente para esta IA (no cerrado/aprobado/rechazado): primero lo dirigido a ella,
+--    luego lo que ella tomó,
 --    (el más antiguo primero), luego hilos con mensajes de otros que todavía no ha visto y hilos nuevos
---    sin destinatario que nunca ha abierto.
+--    sin destinatario que nunca ha abierto. Lo dirigido a OTRA IA no aparece salvo que esta IA lo haya tomado
+--    o ya haya escrito en él.
 --  * estado 'todos' -> todo; otro estado -> ese estado.
 --  * la lista es un resumen corto (sin historial) con horas ISO con desfase y legibles en hora de CDMX.
 --  * abrir un hilo registra la lectura.
@@ -65,22 +67,25 @@ begin
       select hh.*, l.leido_en,
              greatest(hh.creado_en, coalesce((select max(m.creado_en) from public.mensajes m where m.hilo_id = hh.id), hh.creado_en)) ultima,
              (select count(*) from public.mensajes m where m.hilo_id = hh.id and m.autor_agente is distinct from a.id
-                 and (l.leido_en is null or m.creado_en > l.leido_en)) sin_leer
+                 and (l.leido_en is null or m.creado_en > l.leido_en)) sin_leer,
+             exists (select 1 from public.mensajes m where m.hilo_id = hh.id and m.autor_agente = a.id) escribi
         from public.hilos hh left join public.lecturas l on l.hilo_id = hh.id and l.agente_id = a.id
        where hh.buzon_id = a.buzon_id
     ), sel as (
       select b.*, row_number() over (order by
-               case when p_estado is null then (case when b.para_agente = a.id then 0 else 1 end) else 0 end,
+               case when p_estado is null then (case when b.para_agente = a.id then 0 when b.tomado_por_agente = a.id then 1 else 2 end) else 0 end,
                case when p_estado is null and b.para_agente = a.id then extract(epoch from b.creado_en) else -extract(epoch from b.ultima) end,
                b.creado_en, b.id) orden,
-             case when b.para_agente = a.id then 'para_ti' when b.sin_leer > 0 then 'mensajes_nuevos'
+             case when b.para_agente = a.id then 'para_ti' when b.tomado_por_agente = a.id then 'tomado_por_ti' when b.sin_leer > 0 then 'mensajes_nuevos'
                        when b.leido_en is null and b.para_agente is null and b.creado_por_agente is distinct from a.id then 'hilo_nuevo' end motivo
         from base b
        where case when p_estado = 'todos' then true
                   when p_estado is not null then b.estado = p_estado
                   else b.estado not in ('cerrado','aprobado','rechazado')
-                       and (b.para_agente = a.id or b.sin_leer > 0
-                            or (b.leido_en is null and b.para_agente is null and b.creado_por_agente is distinct from a.id)) end
+                       and (b.para_agente = a.id or b.tomado_por_agente = a.id
+                            -- lo dirigido a OTRA IA no es mío, salvo que ya haya escrito en él
+                            or ((b.para_agente is null or b.escribi)
+                                and (b.sin_leer > 0 or (b.leido_en is null and b.para_agente is null and b.creado_por_agente is distinct from a.id)))) end
        order by orden
        limit lim
     )
@@ -104,10 +109,12 @@ begin
     on conflict (agente_id, hilo_id) do update set leido_en = excluded.leido_en;
   perform public._mcp_audit(a, 'leer:hilo', h.id, p_ip);
   return jsonb_build_object('hilo', to_jsonb(h) || jsonb_build_object('estado_texto', public.estado_texto(h.estado),
+      'creado_en_cdmx', to_char(h.creado_en, 'DD/MM/YYYY HH24:MI') || ' (hora de CDMX)',
       'para', (select nombre from public.agentes where id = h.para_agente)),
     'mensajes', (select coalesce(jsonb_agg(jsonb_build_object('id', m.id,
                    'autor', case when m.autor_agente is null then 'humano' when ag.eliminado_en is not null then 'agente eliminado' else ag.nombre end,
-                   'cuerpo', m.cuerpo, 'creado_en', m.creado_en) order by m.creado_en), '[]')
+                   'cuerpo', m.cuerpo, 'creado_en', to_char(m.creado_en, 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM'),
+                   'creado_en_cdmx', to_char(m.creado_en, 'DD/MM/YYYY HH24:MI') || ' (hora de CDMX)') order by m.creado_en), '[]')
                  from public.mensajes m left join public.agentes ag on ag.id = m.autor_agente where m.hilo_id = h.id),
     'aprobaciones', (select coalesce(jsonb_agg(jsonb_build_object('decision', decision, 'nota', nota, 'creado_en', creado_en) order by creado_en), '[]')
                  from public.aprobaciones where hilo_id = h.id),

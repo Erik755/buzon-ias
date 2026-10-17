@@ -81,24 +81,24 @@ const estadoTxt = (e) => ESTADO[e] ?? e;
 
 async function abrirHilo(id) {
   const [{ data: h }, { data: ms }, { data: ap }, { data: adj }] = await Promise.all([
-    sb.from('hilos').select('*, destino:agentes!hilos_para_agente_fkey(nombre,eliminado_en)').eq('id', id).single(),
+    sb.from('hilos').select('*, creador:agentes!hilos_creado_por_agente_fkey(nombre,eliminado_en), destino:agentes!hilos_para_agente_fkey(nombre,eliminado_en)').eq('id', id).single(),
     sb.from('mensajes').select('*, agentes(nombre,eliminado_en)').eq('hilo_id', id).order('creado_en'),
     sb.from('aprobaciones').select('*').eq('hilo_id', id).order('creado_en'),
     sb.from('adjuntos').select('id,nombre,tipo,tamano,creado_en').eq('hilo_id', id).order('creado_en'),
   ]);
   if (!h) return;
   const c = $('#dlg-cuerpo');
-  c.innerHTML = `<h3 id="dlg-titulo">${esc(h.titulo)}</h3><p class="meta">${esc(estadoTxt(h.estado))} · Para: ${h.destino ? esc(nombreAutor(h.destino, '')) : 'cualquier IA'} · 🕒 ${fecha(h.creado_en)}</p><div class="msg">${esc(h.contexto)}</div>
+  c.innerHTML = `<h3 id="dlg-titulo">${esc(h.titulo)}</h3><p class="meta">${esc(estadoTxt(h.estado))} · De: ${esc(nombreAutor(h.creador, 'ti'))} · Para: ${h.destino ? esc(nombreAutor(h.destino, '')) : 'cualquier IA'} · 🕒 ${fecha(h.creado_en)}</p><div class="msg">${esc(h.contexto)}</div>
     ${ms.map((m) => `<div class="msg"><span class="meta">${esc(nombreAutor(m.agentes, 'Tú'))} · ${fecha(m.creado_en)}</span><br>${esc(m.cuerpo)}</div>`).join('')}
     ${adj?.length ? `<div class="msg"><b>📎 Adjuntos</b>${adj.map((a) => `<div class="fila-adj"><span>${ICONO[a.tipo] ?? '📄'} ${esc(a.nombre)} <span class="meta">${kb(a.tamano)}</span></span><button class="copiar" data-adj="${a.id}">Descargar</button></div>`).join('')}<p class="meta">Se descargan a tu teléfono; la app no los abre ni los ejecuta. El enlace dura 5 minutos.</p></div>` : ''}
     ${ap.map((a) => `<p>✅ ${esc(a.decision)} · ${esc(a.nota)} <span class="meta">${fecha(a.creado_en)}</span></p>`).join('')}
+    <div class="pie">
     ${h.estado !== 'cerrado' ? `<label for="nota" class="meta">${h.estado === 'pide_cierre' ? 'Tu mensaje (opcional): se agrega al hilo y lo leen las IAs. Sirve para «Comentar» o para explicar por qué cierras o sigues.' : 'Tu mensaje: se agrega al hilo y lo leen las IAs.'}</label>
     <textarea id="nota" placeholder="Escribe aquí…"></textarea>` : ''}
-    <div class="pie">
+    <p id="nota-aviso" class="aviso" role="status" hidden></p>
     ${h.estado === 'pide_aprobacion' ? '<div class="fila"><button class="ok" id="aprobar">Aprobar</button><button class="no" id="rechazar">Rechazar</button></div>' : ''}
     ${h.estado === 'pide_cierre' ? '<p class="aviso">Una IA dice que el trabajo ya terminó. ¿Lo cerramos? Al cerrarlo, las IAs ya no podrán escribir en él.</p><div class="fila acciones"><button class="ok" id="cerrar-si">Sí,&nbsp;cerrar</button><button id="cerrar-no">Seguir trabajando</button></div>' : ''}
-    ${h.estado !== 'cerrado' && h.estado !== 'pide_cierre' ? '<button class="secundario" id="cerrar-ya">Cerrar este hilo</button>' : ''}
-    ${h.estado !== 'cerrado' ? '<button id="comentar">Comentar</button>' : '<p class="meta">🔒 Hilo cerrado. Ya nadie puede escribir aquí.</p>'}
+    ${h.estado === 'cerrado' ? '<p class="meta">🔒 Hilo cerrado. Ya nadie puede escribir aquí.</p>' : `<div class="fila">${h.estado !== 'pide_cierre' ? '<button class="secundario" id="cerrar-ya">Cerrar hilo</button>' : ''}<button id="comentar">Comentar</button></div>`}
     </div>`;
   const botonesCierre = () => [$('#cerrar-si'), $('#cerrar-no'), $('#cerrar-ya'), $('#comentar')];
   const cierre = (cerrar) => conBotones(botonesCierre(), async () => {
@@ -119,7 +119,8 @@ async function abrirHilo(id) {
   $('#aprobar') && ($('#aprobar').onclick = () => decidir('aprobado'));
   $('#rechazar') && ($('#rechazar').onclick = () => decidir('rechazado'));
   if ($('#comentar')) $('#comentar').onclick = () => conBotones(botonesCierre(), async () => {
-    const cuerpo = $('#nota').value.trim(); if (!cuerpo) return;
+    const cuerpo = $('#nota').value.trim();
+    if (!cuerpo) { const av = $('#nota-aviso'); av.textContent = 'Escribe tu mensaje en el cuadro de arriba antes de tocar «Comentar».'; av.hidden = false; $('#nota').focus(); return; }
     const { error } = await sb.from('mensajes').insert({ hilo_id: id, autor_humano: usuario.id, cuerpo });
     if (error) return alert('No se pudo enviar: ' + mensajeAmable(error, navigator.onLine)); abrirHilo(id);
   });

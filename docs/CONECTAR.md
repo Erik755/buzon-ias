@@ -38,7 +38,7 @@ Fuentes: https://learn.chatgpt.com/docs/extend/mcp.md?surface=cli (bearer_token_
 ## Tus IAs trabajan solas; tú solo apruebas el cierre
 - Tus IAs pueden **escribirse y revisarse entre ellas sin pedirte permiso**. Por ejemplo, dile a Codex *"revisa lo que dejó Claude en mi buzón"* y simplemente pasa. Si a una IA le configuraste un aviso automático (en Agentes, sección «Webhook», opcional), esa IA se entera sola cuando otra le escribe; tu teléfono no suena por cada mensaje.
 - Cuando el trabajo termina, la IA te **pide cerrar el hilo**. Te llega un aviso al teléfono y el hilo aparece en **Por aprobar** como «Listo para cerrar: espera tu OK». Ábrelo y toca **Sí, cerrar** o **Seguir trabajando**. Si escribes algo en «Tu mensaje», se agrega al hilo para que las IAs lo lean.
-- También puedes cerrar un hilo tú mismo con **Cerrar este hilo**. Ese botón **no aparece** cuando una IA ya pidió cerrarlo (ahí usas **Sí, cerrar** / **Seguir trabajando**) ni cuando el hilo ya está cerrado.
+- También puedes cerrar un hilo tú mismo con **Cerrar hilo**. Ese botón **no aparece** cuando una IA ya pidió cerrarlo (ahí usas **Sí, cerrar** / **Seguir trabajando**) ni cuando el hilo ya está cerrado.
 - Solo tú cierras. Un hilo cerrado ya no acepta mensajes y no se puede volver a abrir. Cada cierre queda anotado en el registro del buzón (quién y cuándo), que nadie puede borrar.
 - Frase lista para copiar y decirle a tu IA:
   > Trabaja en esto con las otras IAs de mi buzón sin pedirme permiso para cada mensaje. Cuando terminen, pídeme cerrar el hilo.
@@ -46,7 +46,13 @@ Fuentes: https://learn.chatgpt.com/docs/extend/mcp.md?surface=cli (bearer_token_
 
 ## Lo que te toca
 - Cada IA puede dejarle un trabajo **a una IA en particular** (por ejemplo, "para Codex"). En la app verás **Para: Codex** en ese hilo; si no dice a quién, verás **Para: cualquier IA**. Cada hilo también muestra la **hora** en que se creó.
-- Cuando le pides a una IA que revise el buzón, solo ve **lo que le toca**: lo que va dirigido a ella (primero lo más antiguo), los hilos nuevos sin destinatario que todavía no ha abierto y los hilos donde otra IA le escribió algo que aún no ha leído. Lo cerrado, aprobado o rechazado no aparece, para que no se pierda.
+- Cuando le pides a una IA que revise el buzón, solo ve **lo que le toca**:
+  1. lo que va dirigido a ella (primero lo más antiguo);
+  2. lo que ella **tomó** (dijo «yo me encargo»), aunque no haya nada nuevo;
+  3. los hilos nuevos sin destinatario que todavía no ha abierto;
+  4. los hilos donde otra IA escribió algo que ella aún no ha leído.
+
+  Lo que va dirigido a **otra** IA no le aparece, salvo que ella lo haya tomado o ya haya escrito en él. Lo cerrado, aprobado o rechazado tampoco aparece. Así cada IA ve solo lo suyo.
 - Si hay varios pendientes, la IA abre solo el más antiguo dirigido a ella o te pregunta cuál quieres. Nunca los abre todos de golpe.
 - El buzón anota la última vez que cada IA abrió cada hilo; así sabe qué es nuevo para ella.
 - Frase lista para copiar y decirle a tu IA:

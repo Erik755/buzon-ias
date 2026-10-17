@@ -60,3 +60,13 @@ test('diálogo con pie fijo: acciones y Volver siempre visibles; hilos muestran 
   assert.match(css, /#dlg-cuerpo\{overflow:auto/);
   assert.match(app, /Para: /); assert.match(app, /hilos_para_agente_fkey/); assert.match(app, /🕒/);
 });
+
+test('pestaña corta a 360, De en el diálogo, cuadro de mensaje en el pie y aviso si Comentar va vacío', () => {
+  const html = readFileSync(new URL('../../pwa/index.html', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../../pwa/app.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../../pwa/estilo.css', import.meta.url), 'utf8');
+  assert.match(html, /<span class="corto" aria-hidden="true">Aprobar<\/span>/); assert.match(css, /@media \(max-width:420px\)\{nav \.largo\{display:none\}/);
+  assert.match(app, /De: \$\{esc\(nombreAutor\(h\.creador, 'ti'\)\)\} · Para:/);
+  assert.ok(app.indexOf('<div class="pie">') < app.indexOf('<textarea id="nota"'), 'el cuadro va dentro del pie');
+  assert.match(app, /Escribe tu mensaje en el cuadro de arriba antes de tocar «Comentar»/);
+});

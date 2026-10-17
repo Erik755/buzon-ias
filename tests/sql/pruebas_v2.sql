@@ -357,4 +357,32 @@ do $$ begin
   if (select count(*) from public.lecturas)=0 then perform pg_temp.ok('123 un intruso no ve las lecturas de Erik'); else perform pg_temp.falla('123'); end if;
 end $$;
 reset role;
+-- 124-128 Lo tomado se queda; lo dirigido a otra IA no es mío; horas en el historial
+reset role;
+insert into public.agentes(id,buzon_id,nombre) values ('bbbbbbbb-0000-0000-0000-0000000000a3','aaaaaaaa-0000-0000-0000-000000000001','Gemini');
+insert into public.tokens(agente_id,hash_token) values ('bbbbbbbb-0000-0000-0000-0000000000a3', encode(sha256(convert_to('bz_'||repeat('g',30),'UTF8')),'hex'));
+do $$ declare y uuid; z uuid; l jsonb; m jsonb; begin
+  y := (public.mcp_crear('bz_'||repeat('v',30),'tarea','Para tomar')->>'id')::uuid;
+  perform public.mcp_leer('bz_'||repeat('w',30), y);
+  perform public.mcp_responder('bz_'||repeat('w',30), y, 'Lo tomo', 'tomar');
+  if exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('w',30))->'hilos') x where (x->>'id')::uuid=y and x->>'motivo'='tomado_por_ti')
+    then perform pg_temp.ok('124 lo que la IA tomó sigue en su lista aunque no haya nada nuevo'); else perform pg_temp.falla('124'); end if;
+  z := (public.mcp_crear('bz_'||repeat('v',30),'tarea','Solo para Codex',null,null,'Codex')->>'id')::uuid;
+  perform public.mcp_responder('bz_'||repeat('w',30), z, 'Codex trabajando');
+  if not exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('g',30))->'hilos') x where (x->>'id')::uuid=z)
+    then perform pg_temp.ok('125 lo dirigido a otra IA no aparece aunque tenga mensajes nuevos'); else perform pg_temp.falla('125'); end if;
+  perform public.mcp_responder('bz_'||repeat('g',30), z, 'Gemini opina');
+  update public.lecturas set leido_en = now() - interval '1 minute' where hilo_id = z;
+  update public.mensajes set creado_en = now() - interval '2 minutes' where hilo_id = z;
+  perform public.mcp_responder('bz_'||repeat('w',30), z, 'Codex responde a Gemini');
+  if exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('g',30))->'hilos') x where (x->>'id')::uuid=z and x->>'motivo'='mensajes_nuevos')
+    then perform pg_temp.ok('126 si la IA ya escribió en un hilo ajeno, sí le avisan las respuestas'); else perform pg_temp.falla('126'); end if;
+  perform public.mcp_responder('bz_'||repeat('g',30), y, 'Gemini mete su cuchara');
+  if exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('w',30))->'hilos') x where (x->>'id')::uuid=y and x->>'motivo'='tomado_por_ti')
+    then perform pg_temp.ok('127 lo tomado se ordena antes que lo demás y conserva su motivo'); else perform pg_temp.falla('127'); end if;
+  m := public.mcp_leer('bz_'||repeat('w',30), z);
+  if m->'mensajes'->0->>'creado_en_cdmx' like '% (hora de CDMX)' and m->'mensajes'->0->>'creado_en' ~ '[-+]\d\d:\d\d$' and m->'hilo'->>'creado_en_cdmx' like '% (hora de CDMX)'
+    then perform pg_temp.ok('128 al abrir un hilo, cada mensaje trae la hora legible de CDMX'); else perform pg_temp.falla('128'); end if;
+end $$;
+reset role;
 \echo TODAS_LAS_PRUEBAS_PASARON

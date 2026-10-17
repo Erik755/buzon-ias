@@ -147,6 +147,16 @@ test('lo que me toca: crear con para, leer sin argumentos da resumen corto con h
   assert.ok(!('mensajes' in h) && !('contexto' in h), 'sin historial');
   assert.ok(!(await llamar(gpt, 'leer', {})).json.hilos.some((x) => x.id === r.json.id), 'a ChatGPT no le toca lo que mandó a Claude');
   assert.ok((await llamar(gpt, 'leer', { estado: 'todos' })).json.hilos.some((x) => x.id === r.json.id));
+  const otro = await llamar(claude, 'crear', { tipo: 'tarea', titulo: 'Solo para Gepeto', para: 'Gepeto' });
+  await llamar(gpt, 'responder', { hilo_id: otro.json.id, cuerpo: 'Gepeto trabajando' });
+  assert.ok(!(await llamar(claude, 'leer', {})).json.hilos.some((x) => x.id === otro.json.id), 'lo dirigido a otra IA no le toca');
+  const libre = await llamar(gpt, 'crear', { tipo: 'tarea', titulo: 'Sin dueño' });
+  await llamar(claude, 'leer', { hilo_id: libre.json.id });
+  await llamar(claude, 'responder', { hilo_id: libre.json.id, cuerpo: 'Lo tomo', accion: 'tomar' });
+  const tomado = (await llamar(claude, 'leer', {})).json.hilos.find((x) => x.id === libre.json.id);
+  assert.equal(tomado?.motivo, 'tomado_por_ti');
+  const abierto = (await llamar(claude, 'leer', { hilo_id: libre.json.id })).json;
+  assert.match(abierto.mensajes[0].creado_en_cdmx, /hora de CDMX/);
   const ins = claude.getInstructions();
   assert.match(ins, /nunca los abras todos/); assert.match(ins, /Nunca uses leer sin argumentos como prueba/);
   const { tools } = await claude.listTools();
