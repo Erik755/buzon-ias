@@ -7,11 +7,13 @@ export async function postFijo({ url, ip, headers = {}, body, conectar, timeoutM
   const cuerpo = typeof body === 'string' ? enc.encode(body) : new Uint8Array(body ?? []);
   const lineas = [`POST ${u.pathname}${u.search} HTTP/1.1`, `Host: ${u.host}`, 'Connection: close', `Content-Length: ${cuerpo.length}`,
     ...Object.entries(headers).filter(([k]) => !/^(host|connection|content-length)$/i.test(k)).map(([k, v]) => `${k}: ${String(v).replace(/[\r\n]/g, '')}`)];
-  let c, timer;
-  const tiempo = new Promise((_, no) => { timer = setTimeout(() => no(new Error('timeout')), timeoutMs); });
+  let c, timer, vencido = false;
+  const tiempo = new Promise((_, no) => { timer = setTimeout(() => { vencido = true; no(new Error('timeout')); }, timeoutMs); });
   try {
     return await Promise.race([tiempo, (async () => {
       c = await conectar(ip, Number(u.port || 443), u.hostname);
+      // Si la conexión terminó de abrir después del timeout, se cierra de inmediato (no queda colgada).
+      if (vencido) { try { c.close(); } catch {} throw new Error('timeout'); }
       const w = c.writable.getWriter();
       await w.write(enc.encode(lineas.join('\r\n') + '\r\n\r\n')); await w.write(cuerpo); w.releaseLock();
       const r = c.readable.getReader(); let txt = '';

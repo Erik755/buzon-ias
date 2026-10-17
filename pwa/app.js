@@ -165,7 +165,7 @@ async function borrarAgentes(ids) {
 
 async function pintarAgentes(v) {
   const [{ data: ags }, { data: est }] = await Promise.all([
-    sb.from('agentes').select('id,nombre,creado_en,webhook_url, tokens(id,alcances,vence_en,revocado_en,ultimo_uso)').eq('buzon_id', buzon.id).is('eliminado_en', null).order('creado_en'),
+    sb.from('agentes').select('id,nombre,creado_en,webhook_url,webhook_tiene_clave,webhook_tiene_secreto, tokens(id,alcances,vence_en,revocado_en,ultimo_uso)').eq('buzon_id', buzon.id).is('eliminado_en', null).order('creado_en'),
     sb.from('estado_agentes').select('agente_id,ultimo_uso,ultima_accion,accion').eq('buzon_id', buzon.id),
   ]);
   const estado = Object.fromEntries((est ?? []).map((e) => [e.agente_id, e]));
@@ -182,7 +182,7 @@ async function pintarAgentes(v) {
     <label class="meta" style="display:flex;align-items:center;gap:8px;margin:8px 0"><input type="checkbox" id="solo-act" style="width:20px;height:20px;margin:0;flex:none" ${soloActivos ? 'checked' : ''}> Mostrar solo activos</label>
     <button class="secundario" id="limpiar">🧹 Limpiar inactivos</button><div id="limpiar-lista"></div>
     <p class="meta">Inactivo = no se ha usado en ${DIAS_INACTIVO} días o nunca se conectó. Borrar un agente quita su acceso para siempre; sus hilos y mensajes se quedan como "agente eliminado".</p></div>
-    <div class="tarjeta"><b>🔔 Avisos en este teléfono</b><p class="meta">Te avisamos cuando una IA te pida aprobación o deje un hilo nuevo. El aviso solo trae el título, nunca el contenido.</p><div id="push-caja"></div></div>`;
+    <div class="tarjeta"><b>🔔 Avisos en este teléfono</b><p class="meta">Te avisamos cuando una IA te pida aprobación o deje un hilo nuevo. El aviso no muestra el título ni el contenido: ábrelo para verlo.</p><div id="push-caja"></div></div>`;
   for (const a of ags) {
     if (soloActivos && esInactivo(estado[a.id]?.ultimo_uso)) continue;
     const d = document.createElement('div'); d.className = 'tarjeta';
@@ -190,8 +190,12 @@ async function pintarAgentes(v) {
     d.innerHTML = `<b>${esc(a.nombre)}</b> <span class="estado">${conexion(e?.ultimo_uso)}</span>
       <div class="meta">${e?.ultima_accion ? 'Última acción: ' + esc(e.accion) + ' · ' + hace(e.ultima_accion) : 'Todavía no ha usado el buzón'}</div>
       <div class="fila"><button class="copiar" data-probar="${a.id}">Probar conexión</button><button class="no" data-borrar="${a.id}">Borrar</button></div>
-      <details class="guia"><summary>Webhook (opcional)</summary><p class="meta">Si esta IA tiene una dirección https que recibe avisos, le mandamos solo el id de la tarea nueva, firmado con HMAC. Nunca el contenido.</p>
-      <input data-wh="${a.id}" type="url" placeholder="https://…" value="${esc(a.webhook_url ?? '')}" maxlength="500"><div class="fila"><button data-whg="${a.id}">Guardar</button><button data-whs="${a.id}" class="secundario">Generar secreto</button></div></details>` + a.tokens.map((t) => `<div class="meta">${t.revocado_en ? '⛔ revocado' : new Date(t.vence_en) < new Date() ? '⌛ vencido' : '🟢 activo'}
+      <details class="guia"><summary>Despertar a esta IA (webhook, opcional)</summary><p class="meta">Cuando haya algo para esta IA te avisamos a su dirección https, solo con el número del hilo; nunca el contenido.</p>
+      <p class="meta"><b>Grok Bot:</b> en su rutina copia <i>Webhook URL</i> y pégala en Dirección; copia <i>Webhook key</i> y pégala en Clave. Luego toca Guardar.</p>
+      <label class="meta" for="wh-${a.id}">Dirección (https)</label><input id="wh-${a.id}" data-wh="${a.id}" type="url" inputmode="url" autocomplete="off" placeholder="https://…" value="${esc(a.webhook_url ?? '')}" maxlength="500">
+      <label class="meta" for="whk-${a.id}">Clave del receptor ${a.webhook_tiene_clave ? '(✔ ya hay una guardada; escribe otra para cambiarla)' : '(opcional)'}</label><input id="whk-${a.id}" data-whk="${a.id}" type="password" autocomplete="off" spellcheck="false" placeholder="${a.webhook_tiene_clave ? '••••••••' : 'Pega aquí la Webhook key'}" maxlength="500">
+      <div class="fila"><button data-whg="${a.id}">Guardar</button>${a.webhook_tiene_clave ? `<button data-whq="${a.id}" class="secundario">Quitar clave</button>` : ''}<button data-whs="${a.id}" class="secundario">${a.webhook_tiene_secreto ? 'Cambiar firma' : 'Generar firma (avanzado)'}</button></div>
+      <p class="meta">${a.webhook_url ? (a.webhook_tiene_clave || a.webhook_tiene_secreto ? '🟢 Listo: esta IA recibe avisos.' : '⚠️ Falta la clave o la firma: sin una de las dos no se envían avisos.') : 'Sin dirección: esta IA no recibe avisos.'}</p></details>` + a.tokens.map((t) => `<div class="meta">${t.revocado_en ? '⛔ revocado' : new Date(t.vence_en) < new Date() ? '⌛ vencido' : '🟢 activo'}
       · vence ${fecha(t.vence_en)} · último uso ${t.ultimo_uso ? fecha(t.ultimo_uso) : 'nunca'}
       ${!t.revocado_en ? `<button data-rev="${t.id}" class="no">Revocar</button>` : ''}</div>`).join('');
     v.append(d);
@@ -221,18 +225,28 @@ async function pintarAgentes(v) {
     if (error || !data?.length) return avisar('No se pudo revocar la clave', error ?? { message: 'sin permiso' });
     pintar();
   });
-  v.querySelectorAll('[data-whg]').forEach((b) => b.onclick = async () => {
-    const url = v.querySelector(`[data-wh="${b.dataset.whg}"]`).value.trim() || null;
+  v.querySelectorAll('[data-whg]').forEach((b) => b.onclick = () => conBotones([b], async () => {
+    const id = b.dataset.whg;
+    const url = v.querySelector(`[data-wh="${id}"]`).value.trim() || null;
+    const clave = v.querySelector(`[data-whk="${id}"]`).value.trim();
     if (url && !/^https:\/\/[^/@\s]+(\/\S*)?$/.test(url)) return alert('La dirección debe empezar con https:// (sin usuario ni contraseña).');
-    const { data, error } = await sb.from('agentes').update({ webhook_url: url }).eq('id', b.dataset.whg).select('id');
+    if (clave && (clave.length < 8 || /\s/.test(clave))) return alert('La clave parece incompleta: cópiala otra vez completa, sin espacios.');
+    const { data, error } = await sb.from('agentes').update({ webhook_url: url }).eq('id', id).select('id');
     if (error || !data?.length) return avisar('No se pudo guardar', error ?? { message: 'sin permiso' });
-    b.textContent = '✔ Guardado'; setTimeout(() => (b.textContent = 'Guardar'), 1500);
-  });
+    if (clave) { const r = await sb.rpc('guardar_clave_webhook', { p_agente: id, p_clave: clave }); if (r.error) return avisar('No se pudo guardar la clave', r.error); }
+    pintar();
+  }));
+  v.querySelectorAll('[data-whq]').forEach((b) => b.onclick = () => conBotones([b], async () => {
+    if (!confirm('¿Quitar la clave? Esta IA dejará de recibir avisos hasta que pegues otra.')) return;
+    const { error } = await sb.rpc('guardar_clave_webhook', { p_agente: b.dataset.whq, p_clave: null });
+    if (error) return avisar('No se pudo quitar la clave', error);
+    pintar();
+  }));
   v.querySelectorAll('[data-whs]').forEach((b) => b.onclick = async () => {
-    if (!confirm('¿Generar un secreto nuevo? El anterior deja de servir.')) return;
+    if (!confirm('¿Generar una firma nueva? La anterior deja de servir.')) return;
     const { data, error } = await sb.rpc('rotar_secreto_webhook', { p_agente: b.dataset.whs });
-    if (error) return avisar('No se pudo generar el secreto', error);
-    $('#dlg-cuerpo').innerHTML = `<h3>Secreto del webhook</h3><p>Cópialo ahora: <b>no se vuelve a mostrar</b>. Tu IA lo usa para verificar la cabecera <code>X-Buzon-Firma</code> (HMAC-SHA256 de "t.cuerpo").</p><code>${esc(data)}</code><div class="fila"><button class="ok" id="cp-whs">Copiar secreto</button></div>`;
+    if (error) return avisar('No se pudo generar la firma', error);
+    $('#dlg-cuerpo').innerHTML = `<h3>Firma del webhook</h3><p>Cópiala ahora: <b>no se vuelve a mostrar</b>. Solo la necesita un receptor que tú programes para comprobar que el aviso viene del Buzón (técnico: cabecera <code>X-Buzon-Firma</code>, HMAC-SHA256 de "t.cuerpo"). Grok Bot no la necesita: usa la Clave.</p><code>${esc(data)}</code><div class="fila"><button class="ok" id="cp-whs">Copiar secreto</button></div>`;
     $('#cp-whs').onclick = () => copiar(data, $('#cp-whs')); $('#dlg').showModal();
   });
   pintarCodigos(); pintarPush();

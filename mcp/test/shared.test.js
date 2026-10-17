@@ -113,3 +113,59 @@ test('secreto interno: tiempo constante, longitud mínima y sin secreto configur
   assert.equal(secretoValido(s, s), true); assert.equal(secretoValido('y'.repeat(40), s), false);
   assert.equal(secretoValido('', ''), false); assert.equal(secretoValido('corto', 'corto'), false); assert.equal(secretoValido(undefined, s), false);
 });
+
+// ---- Avisos confiables (migración 013) ----
+import { enviarWebhook, procesar } from '../../supabase/functions/_shared/notificar_core.js';
+test('webhook con clave del receptor (Grok Bot): Authorization Bearer, sin firma si no hay secreto, sin contenido', async () => {
+  const llamadas = [];
+  const deps = { resolver: dns({ 'api.grok.ejemplo': ['93.184.216.34'] }), enviar: async (url, ip, headers, body) => { llamadas.push({ url, ip, headers, body }); return 200; } };
+  const r = await enviarWebhook({ id: 'g', webhook_url: 'https://api.grok.ejemplo/v1/hooks/abc', webhook_clave: 'clave-grok-123456' }, 'hilo-1', deps);
+  assert.deepEqual(r, { ok: true });
+  assert.equal(llamadas[0].headers.Authorization, 'Bearer clave-grok-123456');
+  assert.equal(llamadas[0].headers['X-Buzon-Firma'], undefined);
+  assert.deepEqual(Object.keys(JSON.parse(llamadas[0].body)).sort(), ['aviso', 'evento', 'hilo_id']);
+  llamadas.length = 0;
+  await enviarWebhook({ id: 'g', webhook_url: 'https://api.grok.ejemplo/x', webhook_clave: 'clave-grok-123456', webhook_secreto: 'whsec_z' }, 'h', deps, 'mensaje_nuevo');
+  assert.ok(await verificar('whsec_z', llamadas[0].body, llamadas[0].headers['X-Buzon-Firma']), 'con ambas: firma + clave');
+  assert.equal(llamadas[0].headers.Authorization, 'Bearer clave-grok-123456');
+  assert.deepEqual(await enviarWebhook({ id: 'g', webhook_url: 'https://api.grok.ejemplo/x' }, 'h', deps), { ok: false, motivo: 'sin_secreto' });
+});
+test('webhook: si la primera IP no responde se prueba la siguiente (todas validadas)', async () => {
+  const ips = [];
+  const deps = { resolver: dns({ 'h.ejemplo.dev': ['93.184.216.34', '93.184.216.35'] }), enviar: async (u, ip) => { ips.push(ip); if (ip.endsWith('34')) throw new Error('timeout'); return 204; } };
+  assert.deepEqual(await enviarWebhook({ webhook_url: 'https://h.ejemplo.dev/', webhook_secreto: 'whsec_a' }, 'h', deps), { ok: true });
+  assert.deepEqual(ips, ['93.184.216.34', '93.184.216.35']);
+});
+test('push: un fallo de DNS se reintenta (no se marca entregado); un destino prohibido no', async () => {
+  const vk = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
+  const claves = { publica: Buffer.from(await crypto.subtle.exportKey('raw', vk.publicKey)).toString('base64url'), privada: (await crypto.subtle.exportKey('jwk', vk.privateKey)).d, sujeto: 'mailto:t@t.t' };
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const p256dh = Buffer.from(await crypto.subtle.exportKey('raw', kp.publicKey)).toString('base64url');
+  const correr = async (resolver) => {
+    const rpcs = [];
+    await procesar({ claves, resolver, enviar: async () => 201, suscripciones: async () => [{ id: 's1', endpoint: 'https://fcm.googleapis.com/fcm/send/x', p256dh, auth: Buffer.alloc(16, 1).toString('base64url') }],
+      borrarSuscripcion: async () => {}, webhooks: async () => [],
+      rpc: async (fn, a) => { rpcs.push([fn, a]); return fn === '_tomar_notificaciones' ? [{ id: 1, buzon_id: 'b', hilo_id: 'h', evento: 'pide_aprobacion', entregados: [] }] : null; } });
+    return rpcs;
+  };
+  let r = await correr(async () => { throw new Error('SERVFAIL'); });
+  assert.ok(!r.some(([f]) => f === '_marcar_entregado'));
+  assert.equal(r.find(([f]) => f === '_cerrar_notificacion')[1].p_ok, false, 'queda pendiente para reintentar');
+  r = await correr(async () => ['10.0.0.1']);
+  assert.ok(r.some(([f]) => f === '_marcar_entregado'), 'IP privada: se descarta, no se reintenta');
+});
+test('notificador: si falla la consulta de destinos, el aviso queda para reintento (no se pierde)', async () => {
+  const rpcs = [];
+  const res = await procesar({ claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {}, resolver: dns({}), enviar: async () => 200,
+    webhooks: async () => { throw new Error('destinos'); },
+    rpc: async (fn, a) => { rpcs.push([fn, a]); return fn === '_tomar_notificaciones' ? [{ id: 9, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [] }] : null; } });
+  assert.deepEqual(res, { procesadas: 1, ok: 0, errores: 1 });
+  assert.equal(rpcs.find(([f]) => f === '_cerrar_notificacion')[1].p_ok, false);
+});
+test('postFijo: una conexión que abre después del timeout se cierra (no queda colgada)', async () => {
+  let cerrada = false, abrir;
+  const p = postFijo({ url: 'https://h.dev/', ip: '1.1.1.1', timeoutMs: 30, conectar: () => new Promise((ok) => { abrir = () => ok({ close() { cerrada = true; } }); }) });
+  await assert.rejects(p, /timeout/);
+  abrir(); await new Promise((r) => setTimeout(r, 10));
+  assert.equal(cerrada, true);
+});

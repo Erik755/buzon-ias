@@ -18,7 +18,7 @@
    - `supabase functions deploy adjuntos notificar`. Tienen `verify_jwt=false` porque autentican ellas: `notificar` exige la cabecera `x-buzon-interno`; `adjuntos` exige token `bz_` o sesión, y solo cree `x-buzon-ip` si trae el secreto interno.
    - Vercel, proyecto `buzon-ias-mcp`: variable `BUZON_SECRETO_INTERNO` (mismo valor) y despliegue. Sin ella el MCP no llama a `notificar`.
 4. **Firewall de Vercel** (gratis), proyecto `buzon-ias-mcp` → Firewall → *Rate limit*: ruta `/api/canje`, **10 peticiones/min por IP**, acción *Deny/429*. Recomendado también `/api/mcp` a 120/min por IP. Sustituye al límite global de la BD (que permitía un DoS).
-5. (Opcional) reintentos con pg_cron cada minuto: `select net.http_post('https://<proyecto>.supabase.co/functions/v1/notificar', '{}'::jsonb, headers := jsonb_build_object('x-buzon-interno', '<secreto>', 'apikey', '<anon>'))` guardando el secreto en Vault, no en el SQL del repo.
+5. Reintentos con pg_cron: los deja listos la migración 013 (ver abajo).
 
 ## Pruebas locales
 ```bash
@@ -43,3 +43,10 @@ Orden: 1) migración `20261017000011_aprobar_solo_cierre.sql`; 2) función `noti
 
 ## Lo que me toca (migración 012, SOLO tras QA-Ops y Auditor; depende de la 011)
 Orden: 1) migración `20261017000012_lo_que_me_toca.sql` (reemplaza `mcp_crear` por la versión con `para`); 2) MCP (campo `para`, `leer` por defecto = lo pendiente para esa IA) de inmediato después, porque el MCP viejo llama a `mcp_crear` sin `p_para` y sigue funcionando (es opcional); 3) PWA.
+
+## Avisos confiables (migración 013, SOLO tras QA-Ops y Auditor; depende de 011 y 012)
+Orden: 1) migraciones 011, 012 y 013; 2) en el SQL Editor, una sola vez (la URL no es secreta):
+`select public._configurar_notificador('https://<proyecto>.supabase.co/functions/v1/notificar');`
+(crea el job `buzon-notificar` de pg_cron cada minuto; el secreto `buzon_secreto_bd` ya lo generó la 013 en Vault, nadie lo copia);
+3) `supabase functions deploy notificar` (acepta `x-buzon-bd` y usa `_destinos_webhook`); 4) MCP; 5) PWA (lee `webhook_tiene_clave`: **no** desplegar la PWA antes de la 013).
+Revertir sin perder datos: `select cron.unschedule('buzon-notificar');` y volver a desplegar la función anterior; las columnas nuevas son opcionales.
