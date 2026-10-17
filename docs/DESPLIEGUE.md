@@ -10,7 +10,7 @@
 ## v2: push, webhooks, adjuntos y configuración en lenguaje natural (SOLO tras aprobación del Auditor)
 **Orden obligatorio** (la 008 quita `select *` sobre `agentes` y la PWA v1 dejaría de listar agentes):
 1. **PWA v2 primero** (Vercel, proyecto `buzon-ias-pwa`): agrega `VAPID_PUBLIC_KEY` (pública) y despliega. Es compatible con el esquema v1: lee columnas explícitas y las secciones nuevas solo fallan en silencio hasta el paso 2.
-2. **Migraciones 008 y 009** en `gatito` (SQL Editor o `supabase db push`). Crean el bucket privado `adjuntos`.
+2. **Migraciones 008, 009 y 010** en `gatito` (proyecto Supabase `buzon-IAs`, SQL Editor o `supabase db push`). Crean el bucket privado `adjuntos`; la 010 es necesaria para la pestaña Agentes (borrar agentes).
 3. **Funciones y MCP al final**:
    - Genera un secreto interno: `openssl rand -hex 32`.
    - `supabase secrets set BUZON_SECRETO_INTERNO=… VAPID_PUBLIC_KEY=… VAPID_PRIVATE_KEY=… VAPID_SUBJECT=mailto:tu@correo BUZON_ORIGENES=https://buzon-ias-pwa.vercel.app`
