@@ -149,15 +149,15 @@ test('notificador: push al dueño, webhook firmado a los otros agentes, SSRF blo
   assert.deepEqual(JSON.parse(wh[0].o.body).hilo_id, nuevo.id); assert.ok(!wh[0].o.body.includes('banco'));
   assert.ok(!llamadas.some((l) => l.url.includes('interno')));
 });
-test('webhook: destino que resuelve a IP privada falla y se reintenta como máximo 3 veces', async () => {
+test('webhook: destino que resuelve a IP privada no se reintenta (error permanente)', async () => {
   await pool.query("update agentes set webhook_url='https://rebind.ejemplo.dev/x' where nombre='Agente B'");
   await pool.query("update notificaciones set estado='enviada'");
   await servicio.crear(T.a, { tipo: 'avance', titulo: 'otro' });
   const d = { rpc: rpcPg(pool, 'service_role'), claves: null, enviar: async () => assert.fail('no debe llamar'), suscripciones: async () => [], borrarSuscripcion: async () => {},
     webhooks: async () => (await pool.query("select id,webhook_url,webhook_secreto from agentes where nombre='Agente B'")).rows, resolver: async () => ['169.254.169.254'] };
   for (let i = 0; i < 4; i++) { await procesar(d); await pool.query("update notificaciones set proximo_intento=now() where estado='pendiente'"); }
-  const { rows } = await pool.query("select estado, intentos, ultimo_error from notificaciones where estado<>'enviada'");
-  assert.equal(rows.length, 1); assert.equal(rows[0].estado, 'fallida'); assert.equal(rows[0].intentos, 3); assert.equal(rows[0].ultimo_error, 'webhook_fallo', 'sin detalle ni código HTTP');
+  const { rows } = await pool.query("select estado, intentos from notificaciones order by id desc limit 1");
+  assert.deepEqual(rows, [{ estado: 'enviada', intentos: 1 }], 'un destino prohibido se descarta en el primer intento');
 });
 
 // ---- Configuración en lenguaje natural ----

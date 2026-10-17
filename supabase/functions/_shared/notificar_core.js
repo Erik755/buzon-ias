@@ -17,7 +17,10 @@ export async function procesar(deps, limite = 20) {
     const hechos = new Set(n.entregados || []), fallos = new Set();
     const marcar = (d) => deps.rpc('_marcar_entregado', { p_id: n.id, p_destino: d });
     // Los mensajes entre IAs no hacen sonar el teléfono del dueño: solo avisan a las otras IAs.
-    if (deps.claves && n.evento !== 'mensaje_nuevo') {
+    // Tope de push (QA): máx. 10 push de hilos nuevos por hora y buzón; si la consulta falla, se envía.
+    let pushOk = true;
+    if (n.evento === 'hilo_nuevo') { try { pushOk = (await deps.rpc('_permitir_push', { p_id: n.id })) !== false; } catch { pushOk = true; } }
+    if (deps.claves && n.evento !== 'mensaje_nuevo' && pushOk) {
       for (const s of await deps.suscripciones(n.buzon_id)) {
         const d = `push:${s.id}`; if (hechos.has(d)) continue;
         try {
@@ -35,7 +38,9 @@ export async function procesar(deps, limite = 20) {
       for (const w of destinos) {
         const d = `wh:${w.id}`; if (hechos.has(d)) continue;
         const r = await enviarWebhook(w, n.hilo_id, deps, n.evento);
-        if (r.ok) await marcar(d); else fallos.add('webhook_fallo');
+        if (r.ok) await marcar(d);
+        else if (r.motivo && !TEMPORALES.has(r.motivo)) await marcar(d); // destino no permitido o sin secreto: no se reintenta
+        else fallos.add('webhook_fallo');
       }
     }
     await deps.rpc('_cerrar_notificacion', { p_id: n.id, p_ok: fallos.size === 0, p_error: [...fallos].join(',') || null });

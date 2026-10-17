@@ -54,9 +54,9 @@ do $$ begin
   begin perform public._tomar_notificaciones(1); perform pg_temp.falla('46'); exception when insufficient_privilege then perform pg_temp.ok('46 el dueño no puede tomar la cola del notificador'); end;
   begin update public.agentes set webhook_secreto='x'; perform pg_temp.falla('47'); exception when insufficient_privilege then perform pg_temp.ok('47 nadie escribe el secreto HMAC directo'); end;
   begin perform webhook_secreto from public.agentes; perform pg_temp.falla('48'); exception when insufficient_privilege then perform pg_temp.ok('48 el secreto HMAC no se puede leer'); end;
-  begin update public.agentes set webhook_url='http://169.254.169.254/' where id='bbbbbbbb-0000-0000-0000-000000000002';
+  begin perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', 'http://169.254.169.254/', null);
     perform pg_temp.falla('49'); exception when check_violation then perform pg_temp.ok('49 webhook sin https rechazado en BD'); end;
-  update public.agentes set webhook_url='https://ejemplo.com/hook' where id='bbbbbbbb-0000-0000-0000-000000000002';
+  perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', 'https://ejemplo.com/hook', null);
   if public.rotar_secreto_webhook('bbbbbbbb-0000-0000-0000-000000000002') ~ '^whsec_[0-9a-f]{64}$' then perform pg_temp.ok('50 Erik rota el secreto y lo ve una vez'); else perform pg_temp.falla('50'); end if;
 end $$;
 select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
@@ -66,8 +66,8 @@ do $$ begin
     ('aaaaaaaa-0000-0000-0000-000000000001','22222222-2222-2222-2222-222222222222','https://fcm.googleapis.com/fcm/send/e2', repeat('B',87), repeat('a',22));
     perform pg_temp.falla('52'); exception when insufficient_privilege then perform pg_temp.ok('52 intruso no suscribe su navegador al buzón de Erik'); end;
   begin perform public.rotar_secreto_webhook('bbbbbbbb-0000-0000-0000-000000000002'); perform pg_temp.falla('53'); exception when insufficient_privilege then perform pg_temp.ok('53 intruso no rota secretos de webhook de Erik'); end;
-  update public.agentes set webhook_url='https://evil.example/x' where id='bbbbbbbb-0000-0000-0000-000000000002';
-  if not found then perform pg_temp.ok('54 intruso no cambia el webhook de Erik'); else perform pg_temp.falla('54'); end if;
+  begin perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', 'https://evil.example/x', null); perform pg_temp.falla('54');
+    exception when insufficient_privilege then perform pg_temp.ok('54 intruso no cambia el webhook de Erik'); end;
 end $$;
 reset role;
 
@@ -452,5 +452,88 @@ do $$ begin
   if (select webhook_clave is null and webhook_url is null from public.agentes where id='bbbbbbbb-0000-0000-0000-000000000001')
     then perform pg_temp.ok('139 al borrar un agente se olvida su clave del receptor'); else perform pg_temp.falla('139'); end if;
 end $$;
+do $$ declare h uuid; n bigint; i int; v text; begin
+  -- (si todo corre en una transacción, now() es igual para todo: el mensaje del dueño de la prueba 138 se mueve al pasado)
+  update public.mensajes set creado_en = creado_en - interval '2 hours' where autor_humano is not null;
+  -- B2: con más de 10 hilos nuevos de la misma IA en la última hora sin mensaje del dueño, un hilo nuevo no despierta a nadie
+  for i in 1..11 loop
+    insert into public.hilos(buzon_id, tipo, titulo, creado_por_agente, creado_en)
+      values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','ráfaga '||i,'bbbbbbbb-0000-0000-0000-000000000002', now() - interval '1 minute');
+  end loop;
+  h := (public.mcp_crear('bz_'||repeat('w',30),'tarea','Ráfaga 12',null,null,null)->>'id')::uuid;
+  select max(id) into n from public.notificaciones where hilo_id=h and evento='hilo_nuevo';
+  if not exists (select 1 from public._destinos_webhook(n)) then perform pg_temp.ok('140 B2: ráfaga de hilos nuevos de una IA ya no despierta a nadie'); else perform pg_temp.falla('140'); end if;
+  -- B3: un despertar hace menos de 5 s no se repite
+  insert into public.config_interna values ('notificar_url','https://demo.supabase.co/functions/v1/notificar') on conflict (clave) do update set valor = excluded.valor;
+  v := (clock_timestamp() - interval '1 second')::text;
+  insert into public.config_interna values ('ultimo_despertar', v) on conflict (clave) do update set valor = excluded.valor;
+  perform public._despertar_notificador();
+  if (select valor from public.config_interna where clave='ultimo_despertar') = v then perform pg_temp.ok('141 B3: el despertar se limita a uno cada 5 s'); else perform pg_temp.falla('141'); end if;
+  delete from public.config_interna where clave in ('notificar_url','ultimo_despertar');
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ begin
+  begin perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', 'https://nuevo.ejemplo.dev/hook', 'con espacio x'); perform pg_temp.falla('142');
+    exception when others then null; end;
+  if (select webhook_url is distinct from 'https://nuevo.ejemplo.dev/hook' from public.agentes where id='bbbbbbbb-0000-0000-0000-000000000002')
+    then perform pg_temp.ok('142 guardar_webhook: si la clave no vale, tampoco se guarda la dirección'); else perform pg_temp.falla('142 b'); end if;
+  perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', 'https://nuevo.ejemplo.dev/hook', 'clave-buena-12345');
+  if (select webhook_url = 'https://nuevo.ejemplo.dev/hook' and webhook_tiene_clave from public.agentes where id='bbbbbbbb-0000-0000-0000-000000000002')
+    then perform pg_temp.ok('143 guardar_webhook guarda dirección y clave juntas'); else perform pg_temp.falla('143 ');  end if;
+end $$;
+select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$ begin
+  begin perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', 'https://intruso.dev/x', null); perform pg_temp.falla('144');
+    exception when insufficient_privilege then perform pg_temp.ok('144 guardar_webhook: solo el dueño'); end;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ begin
+  -- I3: sin dirección se olvida la clave y queda en la auditoría
+  perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', null, null);
+  if (select webhook_url is null and not webhook_tiene_clave from public.agentes where id='bbbbbbbb-0000-0000-0000-000000000002')
+    then perform pg_temp.ok('146 I3: quitar la dirección también quita la clave'); else perform pg_temp.falla('146'); end if;
+  -- I5: authenticated ya no puede cambiar webhook_url directo
+  begin update public.agentes set webhook_url = 'https://directo.dev/x' where id='bbbbbbbb-0000-0000-0000-000000000002'; perform pg_temp.falla('147');
+    exception when insufficient_privilege then perform pg_temp.ok('147 I5: webhook_url solo se cambia con guardar_webhook'); end;
+end $$;
+reset role;
+do $$ begin
+  if exists (select 1 from public.auditoria where accion = 'webhook:guardar_url' and objeto_id = 'bbbbbbbb-0000-0000-0000-000000000002')
+    then perform pg_temp.ok('148 I3: webhook:guardar_url queda en la auditoría'); else perform pg_temp.falla('148'); end if;
+  if to_regclass('public.hilos_buzon_agente_creado_idx') is not null then perform pg_temp.ok('149 I4: índice hilos(buzon_id, creado_por_agente, creado_en)'); else perform pg_temp.falla('149'); end if;
+end $$;
+-- B4: el dueño (authenticated) escribe y el aviso igual entra a la cola de pg_net (el definer sí puede usar net)
+create temp table _q(n bigint, activo boolean); grant all on _q to authenticated;
+do $$ declare activo boolean := to_regclass('net.http_request_queue') is not null and public._secreto_bd() is not null; begin
+  insert into public.config_interna values ('notificar_url','https://demo.supabase.co/functions/v1/notificar') on conflict (clave) do update set valor = excluded.valor;
+  delete from public.config_interna where clave = 'ultimo_despertar';
+  if activo then execute 'insert into _q select count(*), true from net.http_request_queue'; else insert into _q values (0, false); end if;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+insert into public.mensajes(hilo_id, autor_humano, cuerpo) select id, '11111111-1111-1111-1111-111111111111', 'Erik: ¿cómo va?' from _d where k = 'h';
+reset role;
+do $$ declare q _q; c bigint; begin
+  select * into q from _q;
+  if not q.activo then perform pg_temp.ok('151 sin pg_net/Vault (se omite)');
+  elsif (select (xpath('/row/c/text()', query_to_xml('select count(*) as c from net.http_request_queue', false, true, '')))[1]::text::bigint) > q.n then perform pg_temp.ok('151 un mensaje del dueño (authenticated) sigue encolando en net.http_request_queue');
+  else perform pg_temp.falla('151'); end if;
+  delete from public.config_interna where clave in ('notificar_url','ultimo_despertar');
+end $$;
+do $$ declare h uuid; n bigint; i int; begin
+  -- Tope de push: con 10 push de hilos nuevos en la última hora, el 11.º no suena; pide_cierre siempre suena
+  for i in 1..10 loop
+    insert into public.notificaciones(buzon_id, hilo_id, evento, entregados)
+      select 'aaaaaaaa-0000-0000-0000-000000000001', id, 'hilo_nuevo', array['push:x'] from _d where k = 'h';
+  end loop;
+  insert into public.notificaciones(buzon_id, hilo_id, evento) select 'aaaaaaaa-0000-0000-0000-000000000001', id, 'hilo_nuevo' from _d where k = 'h' returning id into n;
+  if not public._permitir_push(n) then perform pg_temp.ok('152 tope de push: el 11.º hilo nuevo en una hora no suena'); else perform pg_temp.falla('152'); end if;
+  insert into public.notificaciones(buzon_id, hilo_id, evento) select 'aaaaaaaa-0000-0000-0000-000000000001', id, 'pide_cierre' from _d where k = 'h' returning id into n;
+  if public._permitir_push(n) then perform pg_temp.ok('153 pide_cierre siempre suena'); else perform pg_temp.falla('153'); end if;
+  update public.notificaciones set creado_en = creado_en - interval '2 hours' where 'push:x' = any(entregados);
+  insert into public.notificaciones(buzon_id, hilo_id, evento) select 'aaaaaaaa-0000-0000-0000-000000000001', id, 'hilo_nuevo' from _d where k = 'h' returning id into n;
+  if public._permitir_push(n) then perform pg_temp.ok('154 pasada la hora, el push de hilo nuevo vuelve a sonar'); else perform pg_temp.falla('154'); end if;
+  update public.notificaciones set estado = 'enviada' where estado = 'pendiente';
+end $$;
 reset role;
 \echo TODAS_LAS_PRUEBAS_PASARON
+

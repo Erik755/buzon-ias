@@ -169,3 +169,16 @@ test('postFijo: una conexión que abre después del timeout se cierra (no queda 
   abrir(); await new Promise((r) => setTimeout(r, 10));
   assert.equal(cerrada, true);
 });
+
+test('tope de push: si _permitir_push dice que no, el hilo nuevo no suena; pide_cierre no se consulta', async () => {
+  const { procesar } = await import('../../supabase/functions/_shared/notificar_core.js');
+  for (const [evento, permitido, esperaSubs, esperaConsulta] of [['hilo_nuevo', false, 0, 1], ['hilo_nuevo', true, 1, 1], ['pide_cierre', false, 1, 0]]) {
+    let subs = 0, consultas = 0;
+    const deps = { claves: { pub: 'x' }, webhooks: async () => [], borrarSuscripcion: async () => {},
+      suscripciones: async () => { subs++; return []; },
+      rpc: async (f) => { if (f === '_tomar_notificaciones') return [{ id: 1, buzon_id: 'b', hilo_id: 'h', evento, entregados: [] }];
+        if (f === '_permitir_push') { consultas++; return permitido; } return null; } };
+    await procesar(deps);
+    assert.equal(subs, esperaSubs, `${evento}/${permitido}`); assert.equal(consultas, esperaConsulta);
+  }
+});
