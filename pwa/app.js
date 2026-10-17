@@ -1,6 +1,6 @@
 import { createClient } from './vendor/supabase.js';
 import * as CFG from './config.js';
-import { GUIAS, ETIQUETA } from './guias.js';
+import { GUIAS, ETIQUETA, QUE_HACER } from './guias.js';
 
 const { SUPABASE_URL, SUPABASE_ANON_KEY, MCP_URL } = CFG;
 const VAPID = CFG.VAPID_PUBLIC_KEY || '';
@@ -139,7 +139,7 @@ async function pintarAgentes(v) {
   v.innerHTML = (ags.length ? '' : `<div class="vacio"><b>Crea un agente por cada IA</b>Un "agente" es la llave de una IA para entrar a tu buzón. Ponle el nombre de la IA (ej. "Claude"). Te daremos un token para pegar en esa IA; si un día no quieres que entre, lo revocas aquí.</div>`)
     + `<form id="f-ag" class="tarjeta"><b>Nuevo agente</b><input id="ag-nombre" required placeholder="Claude, ChatGPT, Grok…">
     <select id="ag-dias"><option value="7">7 días</option><option value="30" selected>30 días</option><option value="90">90 días</option></select>
-    <button class="ok">Crear y generar token</button></form>
+    <button class="ok">Crear y generar clave</button></form>
     <form id="f-nl" class="tarjeta"><b>🗣️ Conectar con lenguaje natural (Grok, Codex)</b>
     <p class="meta">Genera un <b>código de un solo uso</b> que dura pocos minutos. Tu IA te guía para cambiarlo por su token en tu terminal, sin pegar nada en el chat. Guía en <b>Conectar</b>.</p>
     <input id="nl-nombre" required maxlength="60" placeholder="Nombre de la IA (Grok, Codex…)">
@@ -202,8 +202,8 @@ async function pintarAgentes(v) {
     const vence = new Date(Date.now() + +$('#ag-dias').value * 864e5).toISOString();
     const r = await sb.from('tokens').insert({ agente_id: ag.id, hash_token: await sha256hex(token), vence_en: vence });
     if (r.error) return alert(r.error.message);
-    $('#dlg-cuerpo').innerHTML = `<h3>Token de ${esc(ag.nombre)}</h3><p>Cópialo ahora: <b>no se vuelve a mostrar</b>. Es como una contraseña: no lo compartas ni lo pongas en capturas.</p><code id="tok">${esc(token)}</code>
-      <div class="fila"><button class="ok" id="cp-tok">Copiar token</button><button id="usar-tok">Ver dónde pegarlo</button></div>`;
+    $('#dlg-cuerpo').innerHTML = `<h3>Clave de ${esc(ag.nombre)}</h3><p>Cópialo ahora: <b>no se vuelve a mostrar</b>. Es como una contraseña: no lo compartas ni lo pongas en capturas.</p><code id="tok">${esc(token)}</code>
+      <div class="fila"><button class="ok" id="cp-tok">Copiar clave</button><button id="usar-tok">Ver dónde pegarlo</button></div>`;
     $('#cp-tok').onclick = () => copiar(token, $('#cp-tok'));
     $('#usar-tok').onclick = () => { tokenGuia = token; $('#dlg').close(); irA('conectar'); };
     $('#dlg').showModal(); pintar();
@@ -254,25 +254,43 @@ async function copiar(texto, boton) {
 
 function pintarGuias(v, conSesion) {
   const caja = document.createElement('div');
-  caja.innerHTML = `<div class="tarjeta"><b>Conecta tus IAs</b>
-    <p class="meta">Cada IA necesita 2 cosas: la <b>dirección del buzón</b> y su <b>token</b>.</p>
-    <p>1) Dirección del buzón (MCP):</p><pre id="url-mcp">${esc(URL_MCP)}</pre><button class="copiar" id="cp-url">Copiar dirección</button>
-    <p>2) Token: ${conSesion ? 'créalo en <b>Agentes</b> (uno por IA) y pégalo aquí para que las instrucciones salgan listas para copiar. No se guarda en ningún lado.' : 'entra y créalo en <b>Agentes</b>. Aquí abajo verás TU_TOKEN donde va.'}</p>
-    ${conSesion ? '<input id="tok-guia" type="password" placeholder="bz_… (pega el token aquí)" autocomplete="off">' : ''}
-    <p class="meta">✅ funciona directo · 🔌 necesita un pequeño puente en tu compu · ⚠️ depende de tu cuenta · ⛔ no compatible</p></div>
+  caja.innerHTML = `<div class="tarjeta"><b>Conecta tus IAs en 5 pasos</b>
+    <p class="meta">Cada IA necesita dos cosas: la <b>dirección del buzón</b> (el lugar donde se conecta) y <b>tu clave</b> (una contraseña que empieza con bz_, una por IA).</p>
+    <ol class="pasos">
+      <li><b>Pega tu clave aquí.</b> ${conSesion ? 'Se saca en la pestaña <a href="#" id="ir-ag">Agentes</a> (botón «Crear y generar clave»).' : 'Primero entra con tu correo; la clave se saca en la pestaña Agentes. Mientras, verás TU_CLAVE donde va.'}
+        ${conSesion ? '<input id="tok-guia" type="password" placeholder="bz_… (pega tu clave aquí)" autocomplete="off" aria-describedby="tok-nota"><p id="tok-ok" class="ok-msg" role="status" hidden>✓ Listo, tu clave ya quedó puesta en las guías de abajo</p><p id="tok-nota" class="meta">No se guarda; si recargas, pégala otra vez.</p>' : ''}</li>
+      <li><b>Elige tu IA</b> en la lista de abajo y ábrela.</li>
+      <li><b>Toca «Copiar»</b> en el recuadro gris.</li>
+      <li><b>Pégalo donde dice la guía</b> de esa IA.</li>
+      <li><b>Toca «Probar conexión»</b> en la pestaña Agentes para confirmar que quedó.</li>
+    </ol>
+    <p>Dirección del buzón:</p><pre id="url-mcp">${esc(URL_MCP)}</pre><button class="copiar" id="cp-url">Copiar dirección</button></div>
+    <div class="tarjeta" id="leyenda"><b>¿Qué tan fácil es cada IA?</b>
+    ${Object.keys(ETIQUETA).map((k) => `<p><b>${esc(ETIQUETA[k])}</b><br><span class="meta">${esc(QUE_HACER[k])}</span></p>`).join('')}
+    <p class="meta">Palabras que verás: <b>terminal</b> = la ventana negra para escribir comandos; <b>versión de terminal</b> = la IA usada desde esa ventana; <b>archivo de configuración</b> = un archivo de texto donde la IA guarda sus ajustes.</p></div>
     <div id="lista-guias"></div>`;
   v.append(caja);
   caja.querySelector('#cp-url').onclick = (e) => copiar(URL_MCP, e.target);
+  const irAg = caja.querySelector('#ir-ag'); if (irAg) irAg.onclick = (e) => { e.preventDefault(); irA('agentes'); };
   const inp = caja.querySelector('#tok-guia');
-  if (inp) { inp.value = tokenGuia; inp.oninput = () => { tokenGuia = inp.value.trim(); lista(); }; }
+  const valida = () => /^bz_[A-Za-z0-9_-]{20,}$/.test(tokenGuia);
+  if (inp) {
+    inp.value = tokenGuia;
+    const ok = caja.querySelector('#tok-ok'); ok.hidden = !valida();
+    inp.oninput = () => {
+      const antes = valida(); tokenGuia = inp.value.trim(); lista(); ok.hidden = !valida();
+      if (valida() && !antes) caja.querySelector('#lista-guias').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+  }
   const lista = () => {
-    const tok = /^bz_[A-Za-z0-9_-]{20,}$/.test(tokenGuia) ? tokenGuia : 'TU_TOKEN';
+    const tok = valida() ? tokenGuia : 'TU_CLAVE';
     const r = (t) => t.replaceAll('{URL}', URL_MCP).replaceAll('{CANJE}', URL_MCP.replace(/\/api\/mcp$/, '/api/canje')).replaceAll('{TOKEN}', tok);
     const abiertas = new Set([...caja.querySelectorAll('details[open]')].map((d) => d.dataset.id));
-    const cont = caja.querySelector('#lista-guias'); cont.innerHTML = '';
+    const cont = caja.querySelector('#lista-guias'); cont.innerHTML = '<h3>Elige tu IA</h3>';
     for (const g of GUIAS) {
       const d = document.createElement('details'); d.className = 'guia'; d.dataset.id = g.id; if (abiertas.has(g.id)) d.open = true;
       d.innerHTML = `<summary>${esc(g.nombre)}<span class="etq">${ETIQUETA[g.estado]}</span></summary>
+        <p class="meta">${esc(QUE_HACER[g.estado])}</p>
         <p><b>Dónde:</b> ${esc(r(g.donde))}</p><ol>${g.pasos.map((p) => `<li>${esc(r(p))}</li>`).join('')}</ol>
         ${g.codigo ? `<pre>${esc(r(g.codigo))}</pre><button class="copiar" data-c="1">Copiar</button>` : ''}
         ${g.nota ? `<p class="aviso">${esc(r(g.nota))}</p>` : ''}
