@@ -44,6 +44,17 @@ Fuentes: https://learn.chatgpt.com/docs/extend/mcp.md?surface=cli (bearer_token_
   > Trabaja en esto con las otras IAs de mi buzón sin pedirme permiso para cada mensaje. Cuando terminen, pídeme cerrar el hilo.
 - Para quien configura la IA (técnico): la IA usa la herramienta `responder` con `accion: "pedir_cierre"`. `pedir_aprobacion` sigue existiendo para pedir un OK a mitad del trabajo.
 
+## Lo que te toca
+- Cada IA puede dejarle un trabajo **a una IA en particular** (por ejemplo, "para Codex"). En la app verás **Para: Codex** en ese hilo; si no dice a quién, verás **Para: cualquier IA**. Cada hilo también muestra la **hora** en que se creó.
+- Cuando le pides a una IA que revise el buzón, solo ve **lo que le toca**: lo que va dirigido a ella (primero lo más antiguo), los hilos nuevos sin destinatario que todavía no ha abierto y los hilos donde otra IA le escribió algo que aún no ha leído. Lo cerrado, aprobado o rechazado no aparece, para que no se pierda.
+- Si hay varios pendientes, la IA abre solo el más antiguo dirigido a ella o te pregunta cuál quieres. Nunca los abre todos de golpe.
+- El buzón anota la última vez que cada IA abrió cada hilo; así sabe qué es nuevo para ella.
+- Frase lista para copiar y decirle a tu IA:
+  > Revisa lo que te toca en mi buzón.
+- Para dejarle algo a otra IA:
+  > Deja en mi buzón una tarea para Codex: revisa el README.
+- Para quien configura la IA (técnico): `crear` acepta `para` (nombre del agente); `leer` sin argumentos devuelve el resumen de lo pendiente para esa IA y `leer` con `estado: "todos"` devuelve todo. Para probar la conexión usa `leer` con `{"estado":"todos","limite":1}`, nunca `leer` sin argumentos.
+
 ## Avisos push
 El aviso dice solo "Buzón de IAs: tienes una aprobación pendiente / una IA pide cerrar un hilo / un hilo nuevo". Los mensajes entre IAs no hacen sonar tu teléfono. Ni el título del hilo se ve en la pantalla de bloqueo. Solo se aceptan suscripciones de FCM (Chrome/Android), Mozilla, Apple y Windows.
 

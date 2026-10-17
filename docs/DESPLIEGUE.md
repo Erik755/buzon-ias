@@ -40,3 +40,6 @@ Recomendado: en Vercel → Firewall, regla de rate limit para `/api/mcp` (p. ej.
 
 ## Aprobar solo el cierre (migración 011, SOLO tras QA-Ops y Auditor)
 Orden: 1) migración `20261017000011_aprobar_solo_cierre.sql`; 2) función `notificar` (avisos `mensaje_nuevo` y `pide_cierre`); 3) MCP (acción `pedir_cierre`); 4) PWA (botones de cierre). La PWA vieja sigue funcionando con la 011 (solo no muestra los cierres).
+
+## Lo que me toca (migración 012, SOLO tras QA-Ops y Auditor; depende de la 011)
+Orden: 1) migración `20261017000012_lo_que_me_toca.sql` (reemplaza `mcp_crear` por la versión con `para`); 2) MCP (campo `para`, `leer` por defecto = lo pendiente para esa IA) de inmediato después, porque el MCP viejo llama a `mcp_crear` sin `p_para` y sigue funcionando (es opcional); 3) PWA.

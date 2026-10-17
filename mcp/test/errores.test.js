@@ -44,3 +44,19 @@ test('diálogo accesible y botones claros', () => {
   assert.match(css, /button,a\.boton\{min-height:44px\}/);
   assert.match(css, /nav button\{flex:1 1 0;min-width:0/);
 });
+
+test('ninguna alerta de la PWA muestra el texto crudo del servidor', () => {
+  const app = readFileSync(new URL('../../pwa/app.js', import.meta.url), 'utf8');
+  const crudas = app.split('\n').filter((l) => /alert\(/.test(l) && /\.message/.test(l) && !/mensajeAmable/.test(l));
+  assert.deepEqual(crudas, []);
+  assert.match(mensajeAmable({ code: '23505', message: 'duplicate key value violates unique constraint' }), /Ya existe uno con ese nombre/);
+  assert.match(mensajeAmable({ message: 'NotAllowedError: permission denied by user' }), /permiso/);
+});
+
+test('diálogo con pie fijo: acciones y Volver siempre visibles; hilos muestran Para y hora', () => {
+  const app = readFileSync(new URL('../../pwa/app.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../../pwa/estilo.css', import.meta.url), 'utf8');
+  assert.match(app, /<div class="pie">/); assert.match(css, /\.pie\{position:sticky;bottom:0/);
+  assert.match(css, /#dlg-cuerpo\{overflow:auto/);
+  assert.match(app, /Para: /); assert.match(app, /hilos_para_agente_fkey/); assert.match(app, /🕒/);
+});

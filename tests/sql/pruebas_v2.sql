@@ -298,4 +298,63 @@ do $$ declare h uuid := (select id from _h); begin
     then perform pg_temp.ok('112 cierre y rechazo auditados como humano; la nota queda en el hilo'); else perform pg_temp.falla('112'); end if;
 end $$;
 reset role;
+-- 113-122 Lo que me toca (para, lecturas, lista corta)
+reset role;
+create temp table _t (k text primary key, id uuid);
+grant select on _t to anon, authenticated;
+do $$ declare r jsonb; l jsonb; e text; begin
+  insert into _t values ('t1', (public.mcp_crear('bz_'||repeat('v',30),'tarea','Para Codex 1',null,null,'codex')->>'id')::uuid);
+  update public.hilos set creado_en = now() - interval '1 hour' where id=(select id from _t where k='t1');
+  insert into _t values ('t2', (public.mcp_crear('bz_'||repeat('v',30),'tarea','Para Codex 2',null,null,'Codex')->>'id')::uuid);
+  if (select para_agente from public.hilos where id=(select id from _t where k='t1'))='bbbbbbbb-0000-0000-0000-000000000002'
+    then perform pg_temp.ok('113 crear con para guarda el destinatario (sin importar mayúsculas)'); else perform pg_temp.falla('113'); end if;
+  foreach e in array array['Nadie','Viejo1','AgenteAjeno'] loop
+    begin perform public.mcp_crear('bz_'||repeat('v',30),'tarea','x',null,null,e); perform pg_temp.falla('114 '||e);
+      exception when others then if sqlerrm not like '400:%' then raise; end if; end;
+  end loop;
+  perform pg_temp.ok('114 para inexistente, eliminado o de otro buzón se rechaza');
+  l := public.mcp_leer('bz_'||repeat('w',30)) -> 'hilos';
+  if (l->0->>'id')::uuid = (select id from _t where k='t1') and (l->1->>'id')::uuid = (select id from _t where k='t2') and l->0->>'motivo'='para_ti'
+    then perform pg_temp.ok('115 sin filtros: primero lo dirigido a mí, el más antiguo primero'); else perform pg_temp.falla('115 '||l::text); end if;
+  r := l->0;
+  if not r ? 'mensajes' and r->>'estado_texto'='Abierto' and r->>'para'='Codex' and r->>'creado_por'='Claude'
+     and r->>'creado_en' ~ '^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d-06:00$' and r->>'ultima_actividad_cdmx' like '% (hora de CDMX)'
+    then perform pg_temp.ok('116 resumen corto: título, estado sencillo, para, creador y horas ISO con desfase y CDMX'); else perform pg_temp.falla('116 '||r::text); end if;
+  if not exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('v',30))->'hilos') x where (x->>'id')::uuid in (select id from _t))
+    then perform pg_temp.ok('117 a Claude no le toca lo que dirigió a Codex'); else perform pg_temp.falla('117'); end if;
+  insert into _t values ('x', (public.mcp_crear('bz_'||repeat('v',30),'tarea','Sin destinatario')->>'id')::uuid);
+  if exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('w',30))->'hilos') x where (x->>'id')::uuid=(select id from _t where k='x') and x->>'motivo'='hilo_nuevo')
+    then perform pg_temp.ok('118 hilo nuevo sin destinatario aparece hasta que lo abro'); else perform pg_temp.falla('118'); end if;
+  perform public.mcp_leer('bz_'||repeat('w',30), (select id from _t where k='x'));
+  perform public.mcp_responder('bz_'||repeat('w',30), (select id from _t where k='x'), 'mi propio mensaje');
+  if not exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('w',30))->'hilos') x where (x->>'id')::uuid=(select id from _t where k='x'))
+     and exists (select 1 from public.lecturas where agente_id='bbbbbbbb-0000-0000-0000-000000000002' and hilo_id=(select id from _t where k='x'))
+    then perform pg_temp.ok('119 abrirlo registra la lectura; mis propios mensajes no me lo regresan'); else perform pg_temp.falla('119'); end if;
+  update public.lecturas set leido_en = now() - interval '1 minute' where hilo_id=(select id from _t where k='x');
+  update public.mensajes set creado_en = now() - interval '2 minutes' where hilo_id=(select id from _t where k='x');
+  perform public.mcp_responder('bz_'||repeat('v',30), (select id from _t where k='x'), 'respuesta de Claude');
+  if exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('w',30))->'hilos') x where (x->>'id')::uuid=(select id from _t where k='x') and x->>'motivo'='mensajes_nuevos' and (x->>'mensajes_sin_leer')::int=1)
+    then perform pg_temp.ok('120 un mensaje nuevo de otra IA lo regresa a mi lista'); else perform pg_temp.falla('120'); end if;
+  perform public.mcp_responder('bz_'||repeat('w',30), (select id from _t where k='t2'), 'terminé', 'pedir_cierre');
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ begin perform public.decidir_cierre((select id from _t where k='t2'), true); end $$;
+reset role;
+do $$ declare l jsonb; begin
+  l := public.mcp_leer('bz_'||repeat('w',30)) -> 'hilos';
+  if not exists (select 1 from jsonb_array_elements(l) x where (x->>'id')::uuid=(select id from _t where k='t2'))
+     and exists (select 1 from jsonb_array_elements(public.mcp_leer('bz_'||repeat('w',30), null, 'todos', 100)->'hilos') x where (x->>'id')::uuid=(select id from _t where k='t2') and x->>'estado_texto'='Cerrado')
+    then perform pg_temp.ok('121 lo cerrado no sale por defecto; con estado "todos" sí'); else perform pg_temp.falla('121'); end if;
+end $$;
+set role anon;
+do $$ begin
+  begin perform 1 from public.lecturas limit 1; perform pg_temp.falla('122');
+    exception when insufficient_privilege then perform pg_temp.ok('122 anon (una IA) no lee el registro de lecturas'); end;
+end $$;
+reset role;
+set role authenticated; select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$ begin
+  if (select count(*) from public.lecturas)=0 then perform pg_temp.ok('123 un intruso no ve las lecturas de Erik'); else perform pg_temp.falla('123'); end if;
+end $$;
+reset role;
 \echo TODAS_LAS_PRUEBAS_PASARON

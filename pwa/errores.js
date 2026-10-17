@@ -7,6 +7,10 @@ export function mensajeAmable(error, enLinea = true) {
   if (/ya esta cerrado|ya está cerrado|cerrado no se reabre/i.test(t)) return 'Este hilo ya está cerrado. Actualiza la pantalla para ver su estado.';
   if (/jwt|expired|sesi[oó]n/i.test(t)) return 'Tu sesión venció. Sal y vuelve a entrar.';
   if (c === '42501' || /permission denied|sin permiso|row-level security|solo el due/i.test(t)) return 'No tienes permiso para hacer esto. Si es tu buzón, sal y vuelve a entrar.';
+  if (c === '23505' || /duplicate key|already exists|ya existe/i.test(t)) return 'Ya existe uno con ese nombre. Usa otro nombre.';
+  if (c === '23514' || c === '22023' || c === '22001' || /violates check|invalid input|too long|demasiado/i.test(t)) return 'Algún dato no es válido. Revísalo e inténtalo de nuevo.';
+  if (/rate|l[ií]mite|too many/i.test(t)) return 'Demasiados intentos seguidos. Espera un minuto e inténtalo otra vez.';
+  if (/denied|notallowed|permiso del navegador|permission/i.test(t)) return 'El teléfono no dio permiso. Actívalo en los ajustes del navegador.';
   return 'Algo salió mal. Inténtalo de nuevo en un momento.';
 }
 

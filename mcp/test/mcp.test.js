@@ -126,3 +126,30 @@ test('todo queda en auditoría', async () => {
   const { rows } = await pool.query("select count(*)::int n from auditoria where actor like 'agente:%'");
   assert.ok(rows[0].n >= 8);
 });
+
+test('lo que me toca: crear con para, leer sin argumentos da resumen corto con horas; estado "todos"; reglas en las instrucciones', async () => {
+  // Agentes nuevos: los de arriba ya gastaron su límite de 60/min en la prueba de tasa.
+  const tg = nuevoToken(), tc = nuevoToken();
+  for (const [id, n, t] of [['bbbbbbbb-0000-0000-0000-0000000000d1', 'Gepeto', tg], ['bbbbbbbb-0000-0000-0000-0000000000d2', 'Clara', tc]]) {
+    await pool.query('insert into agentes(id,buzon_id,nombre) values($1,$2,$3)', [id, 'aaaaaaaa-0000-0000-0000-000000000001', n]);
+    await pool.query('insert into tokens(agente_id,hash_token) values($1,$2)', [id, hashToken(t)]);
+  }
+  const gpt = await cliente(tg), claude = await cliente(tc);
+  const r = await llamar(gpt, 'crear', { tipo: 'tarea', titulo: 'Revisa el capítulo 4', para: 'clara' });
+  assert.equal(r.error, false, r.texto); assert.equal(r.json.para, 'Clara');
+  const mal = await llamar(gpt, 'crear', { tipo: 'tarea', titulo: 'x', para: 'Nadie' });
+  assert.equal(mal.error, true); assert.match(mal.texto, /^\[400\]/);
+  const l = (await llamar(claude, 'leer', {})).json;
+  const h = l.hilos.find((x) => x.id === r.json.id);
+  assert.equal(l.hilos[0].motivo, 'para_ti'); assert.ok(h);
+  assert.equal(h.para, 'Clara'); assert.equal(h.creado_por, 'Gepeto'); assert.equal(h.estado_texto, 'Abierto');
+  assert.match(h.creado_en, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[-+]\d\d:\d\d$/); assert.match(h.ultima_actividad_cdmx, /hora de CDMX/);
+  assert.ok(!('mensajes' in h) && !('contexto' in h), 'sin historial');
+  assert.ok(!(await llamar(gpt, 'leer', {})).json.hilos.some((x) => x.id === r.json.id), 'a ChatGPT no le toca lo que mandó a Claude');
+  assert.ok((await llamar(gpt, 'leer', { estado: 'todos' })).json.hilos.some((x) => x.id === r.json.id));
+  const ins = claude.getInstructions();
+  assert.match(ins, /nunca los abras todos/); assert.match(ins, /Nunca uses leer sin argumentos como prueba/);
+  const { tools } = await claude.listTools();
+  assert.ok(tools.find((t) => t.name === 'crear').inputSchema.properties.para);
+  assert.ok(tools.find((t) => t.name === 'leer').inputSchema.properties.estado.enum.includes('todos'));
+});

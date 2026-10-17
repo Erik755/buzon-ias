@@ -2,6 +2,7 @@ import { createClient } from './vendor/supabase.js';
 import * as CFG from './config.js';
 import { GUIAS, ETIQUETA, QUE_HACER } from './guias.js';
 import { mensajeAmable, conBotones } from './errores.js';
+const avisar = (que, error) => alert(`${que}: ${mensajeAmable(error, navigator.onLine)}`);
 
 const { SUPABASE_URL, SUPABASE_ANON_KEY, MCP_URL } = CFG;
 const VAPID = CFG.VAPID_PUBLIC_KEY || '';
@@ -51,7 +52,7 @@ async function pintar() {
   const v = $('#vista'); v.innerHTML = '<p class="meta">Cargando…</p>';
   if (vista === 'agentes') return pintarAgentes(v);
   if (vista === 'conectar') { v.innerHTML = ''; return pintarGuias(v, true); }
-  let q = sb.from('hilos').select('*, agentes!hilos_creado_por_agente_fkey(nombre,eliminado_en)').eq('buzon_id', buzon.id).order('creado_en', { ascending: false }).limit(50);
+  let q = sb.from('hilos').select('*, creador:agentes!hilos_creado_por_agente_fkey(nombre,eliminado_en), destino:agentes!hilos_para_agente_fkey(nombre,eliminado_en)').eq('buzon_id', buzon.id).order('creado_en', { ascending: false }).limit(50);
   if (vista === 'pendientes') q = q.in('estado', ['pide_aprobacion', 'pide_cierre']);
   const { data, error } = await q;
   if (error) return v.innerHTML = !navigator.onLine || /fetch|network/i.test(error.message) ? '<div class="vacio"><b>📡 Sin conexión</b>Se cargará cuando vuelva internet.</div>' : `<div class="vacio"><b>No pudimos cargar tus hilos</b>${esc(mensajeAmable(error))}</div>`;
@@ -69,7 +70,8 @@ async function pintar() {
   for (const h of data) {
     const d = document.createElement('div'); d.className = 'tarjeta';
     d.innerHTML = `<span class="estado">${esc(estadoTxt(h.estado))}</span><b>${esc(h.titulo)}</b>
-      <div class="meta">${esc(h.tipo)} · ${esc(nombreAutor(h.agentes, '—'))} · ${fecha(h.creado_en)}</div>`;
+      <div class="meta">De: ${esc(nombreAutor(h.creador, 'ti'))}${h.destino ? ' · <b>Para: ' + esc(nombreAutor(h.destino, '')) + '</b>' : ' · Para: cualquier IA'}</div>
+      <div class="meta">🕒 ${fecha(h.creado_en)} (hora de tu teléfono)</div>`;
     d.onclick = () => abrirHilo(h.id); v.append(d);
   }
 }
@@ -79,23 +81,25 @@ const estadoTxt = (e) => ESTADO[e] ?? e;
 
 async function abrirHilo(id) {
   const [{ data: h }, { data: ms }, { data: ap }, { data: adj }] = await Promise.all([
-    sb.from('hilos').select('*').eq('id', id).single(),
+    sb.from('hilos').select('*, destino:agentes!hilos_para_agente_fkey(nombre,eliminado_en)').eq('id', id).single(),
     sb.from('mensajes').select('*, agentes(nombre,eliminado_en)').eq('hilo_id', id).order('creado_en'),
     sb.from('aprobaciones').select('*').eq('hilo_id', id).order('creado_en'),
     sb.from('adjuntos').select('id,nombre,tipo,tamano,creado_en').eq('hilo_id', id).order('creado_en'),
   ]);
   if (!h) return;
   const c = $('#dlg-cuerpo');
-  c.innerHTML = `<h3 id="dlg-titulo">${esc(h.titulo)}</h3><p class="meta">${esc(estadoTxt(h.estado))}</p><div class="msg">${esc(h.contexto)}</div>
+  c.innerHTML = `<h3 id="dlg-titulo">${esc(h.titulo)}</h3><p class="meta">${esc(estadoTxt(h.estado))} · Para: ${h.destino ? esc(nombreAutor(h.destino, '')) : 'cualquier IA'} · 🕒 ${fecha(h.creado_en)}</p><div class="msg">${esc(h.contexto)}</div>
     ${ms.map((m) => `<div class="msg"><span class="meta">${esc(nombreAutor(m.agentes, 'Tú'))} · ${fecha(m.creado_en)}</span><br>${esc(m.cuerpo)}</div>`).join('')}
     ${adj?.length ? `<div class="msg"><b>📎 Adjuntos</b>${adj.map((a) => `<div class="fila-adj"><span>${ICONO[a.tipo] ?? '📄'} ${esc(a.nombre)} <span class="meta">${kb(a.tamano)}</span></span><button class="copiar" data-adj="${a.id}">Descargar</button></div>`).join('')}<p class="meta">Se descargan a tu teléfono; la app no los abre ni los ejecuta. El enlace dura 5 minutos.</p></div>` : ''}
     ${ap.map((a) => `<p>✅ ${esc(a.decision)} · ${esc(a.nota)} <span class="meta">${fecha(a.creado_en)}</span></p>`).join('')}
     ${h.estado !== 'cerrado' ? `<label for="nota" class="meta">${h.estado === 'pide_cierre' ? 'Tu mensaje (opcional): se agrega al hilo y lo leen las IAs. Sirve para «Comentar» o para explicar por qué cierras o sigues.' : 'Tu mensaje: se agrega al hilo y lo leen las IAs.'}</label>
     <textarea id="nota" placeholder="Escribe aquí…"></textarea>` : ''}
+    <div class="pie">
     ${h.estado === 'pide_aprobacion' ? '<div class="fila"><button class="ok" id="aprobar">Aprobar</button><button class="no" id="rechazar">Rechazar</button></div>' : ''}
     ${h.estado === 'pide_cierre' ? '<p class="aviso">Una IA dice que el trabajo ya terminó. ¿Lo cerramos? Al cerrarlo, las IAs ya no podrán escribir en él.</p><div class="fila acciones"><button class="ok" id="cerrar-si">Sí,&nbsp;cerrar</button><button id="cerrar-no">Seguir trabajando</button></div>' : ''}
     ${h.estado !== 'cerrado' && h.estado !== 'pide_cierre' ? '<button class="secundario" id="cerrar-ya">Cerrar este hilo</button>' : ''}
-    ${h.estado !== 'cerrado' ? '<button id="comentar">Comentar</button>' : '<p class="meta">🔒 Hilo cerrado. Ya nadie puede escribir aquí.</p>'}`;
+    ${h.estado !== 'cerrado' ? '<button id="comentar">Comentar</button>' : '<p class="meta">🔒 Hilo cerrado. Ya nadie puede escribir aquí.</p>'}
+    </div>`;
   const botonesCierre = () => [$('#cerrar-si'), $('#cerrar-no'), $('#cerrar-ya'), $('#comentar')];
   const cierre = (cerrar) => conBotones(botonesCierre(), async () => {
     if (cerrar && !confirm('¿Cerrar este hilo? Las IAs ya no podrán escribir en él y no se puede reabrir.')) return;
@@ -135,7 +139,7 @@ async function descargarAdjunto(id, boton) {
     const u = new URL(j.url);
     if (u.origin !== new URL(SUPABASE_URL).origin) throw new Error('Enlace inesperado');
     const a = document.createElement('a'); a.href = u.href; a.rel = 'noopener noreferrer'; a.download = j.nombre; document.body.append(a); a.click(); a.remove();
-  } catch (e) { alert(e.message); } finally { boton.disabled = false; }
+  } catch (e) { avisar('No se pudo descargar', e); } finally { boton.disabled = false; }
 }
 
 async function sha256hex(t) {
@@ -154,7 +158,7 @@ let soloActivos = false;
 
 async function borrarAgentes(ids) {
   const { data, error } = await sb.rpc('borrar_agentes', { p_agentes: ids });
-  if (error) { alert('No se pudo borrar: ' + error.message); return false; }
+  if (error) { avisar('No se pudo borrar', error); return false; }
   return data;
 }
 
@@ -213,20 +217,20 @@ async function pintarAgentes(v) {
   v.querySelectorAll('[data-rev]').forEach((b) => b.onclick = async () => {
     if (!confirm('¿Revocar este token? Tiene efecto inmediato.')) return;
     const { data, error } = await sb.from('tokens').update({ revocado_en: new Date().toISOString() }).eq('id', b.dataset.rev).select('id');
-    if (error || !data?.length) return alert('No se pudo revocar el token: ' + (error?.message ?? 'sin permiso o no existe') + '. Intenta de nuevo.');
+    if (error || !data?.length) return avisar('No se pudo revocar la clave', error ?? { message: 'sin permiso' });
     pintar();
   });
   v.querySelectorAll('[data-whg]').forEach((b) => b.onclick = async () => {
     const url = v.querySelector(`[data-wh="${b.dataset.whg}"]`).value.trim() || null;
     if (url && !/^https:\/\/[^/@\s]+(\/\S*)?$/.test(url)) return alert('La dirección debe empezar con https:// (sin usuario ni contraseña).');
     const { data, error } = await sb.from('agentes').update({ webhook_url: url }).eq('id', b.dataset.whg).select('id');
-    if (error || !data?.length) return alert('No se pudo guardar: ' + (error?.message ?? 'sin permiso'));
+    if (error || !data?.length) return avisar('No se pudo guardar', error ?? { message: 'sin permiso' });
     b.textContent = '✔ Guardado'; setTimeout(() => (b.textContent = 'Guardar'), 1500);
   });
   v.querySelectorAll('[data-whs]').forEach((b) => b.onclick = async () => {
     if (!confirm('¿Generar un secreto nuevo? El anterior deja de servir.')) return;
     const { data, error } = await sb.rpc('rotar_secreto_webhook', { p_agente: b.dataset.whs });
-    if (error) return alert(error.message);
+    if (error) return avisar('No se pudo generar el secreto', error);
     $('#dlg-cuerpo').innerHTML = `<h3>Secreto del webhook</h3><p>Cópialo ahora: <b>no se vuelve a mostrar</b>. Tu IA lo usa para verificar la cabecera <code>X-Buzon-Firma</code> (HMAC-SHA256 de "t.cuerpo").</p><code>${esc(data)}</code><div class="fila"><button class="ok" id="cp-whs">Copiar secreto</button></div>`;
     $('#cp-whs').onclick = () => copiar(data, $('#cp-whs')); $('#dlg').showModal();
   });
@@ -235,7 +239,7 @@ async function pintarAgentes(v) {
     e.preventDefault();
     const nombre = $('#nl-nombre').value.trim();
     const { data, error } = await sb.rpc('crear_codigo_config', { p_buzon: buzon.id, p_nombre: nombre, p_minutos: +$('#nl-min').value });
-    if (error) return alert(error.message);
+    if (error) return avisar('No se pudo generar el código', error);
     $('#dlg-cuerpo').innerHTML = `<h3>Código para ${esc(nombre)}</h3>
       <p class="aviso">⚠️ <b>No lo pegues en el chat.</b> Pégalo solo cuando tu terminal diga <i>"Código del buzón:"</i> (no se ve al escribir).</p>
       <code>${esc(data.codigo)}</code><div class="fila"><button class="ok" id="cp-nl">Copiar código</button></div>
@@ -248,11 +252,11 @@ async function pintarAgentes(v) {
   $('#f-ag').onsubmit = async (e) => {
     e.preventDefault();
     const { data: ag, error } = await sb.from('agentes').insert({ buzon_id: buzon.id, nombre: $('#ag-nombre').value }).select('id,nombre').single();
-    if (error) return alert(error.message);
+    if (error) return avisar('No se pudo crear el agente', error);
     const token = nuevoToken();
     const vence = new Date(Date.now() + +$('#ag-dias').value * 864e5).toISOString();
     const r = await sb.from('tokens').insert({ agente_id: ag.id, hash_token: await sha256hex(token), vence_en: vence });
-    if (r.error) return alert(r.error.message);
+    if (r.error) return avisar('No se pudo crear la clave', r.error);
     $('#dlg-cuerpo').innerHTML = `<h3>Clave de ${esc(ag.nombre)}</h3><p>Cópialo ahora: <b>no se vuelve a mostrar</b>. Es como una contraseña: no lo compartas ni lo pongas en capturas.</p><code id="tok">${esc(token)}</code>
       <div class="fila"><button class="ok" id="cp-tok">Copiar clave</button><button id="usar-tok">Ver dónde pegarlo</button></div>`;
     $('#cp-tok').onclick = () => copiar(token, $('#cp-tok'));
@@ -267,7 +271,7 @@ async function pintarCodigos() {
   caja.innerHTML = (data ?? []).map((c) => `<div class="meta">${esc(c.nombre_agente)} · ${c.usado_en ? '✅ usado ' + hace(c.usado_en) : new Date(c.vence_en) < new Date() ? '⌛ vencido' : '🟡 activo hasta ' + fecha(c.vence_en)}${c.intentos_fallidos ? ` · ${c.intentos_fallidos} intento(s) fallido(s)` : ''}
     ${!c.usado_en && new Date(c.vence_en) > new Date() ? `<button class="no" data-anular="${c.id}">Anular</button>` : ''}</div>`).join('');
   caja.querySelectorAll('[data-anular]').forEach((b) => b.onclick = async () => {
-    const { error } = await sb.rpc('anular_codigo_config', { p_id: b.dataset.anular }); if (error) return alert(error.message); pintarCodigos();
+    const { error } = await sb.rpc('anular_codigo_config', { p_id: b.dataset.anular }); if (error) return avisar('No se pudo anular el código', error); pintarCodigos();
   });
 }
 
@@ -288,7 +292,7 @@ async function pintarPush() {
       const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64aU8(VAPID) });
       const { error } = await sb.from('push_suscripciones').insert({ buzon_id: buzon.id, humano_id: usuario.id, endpoint: s.endpoint, p256dh: b64u(s.getKey('p256dh')), auth: b64u(s.getKey('auth')) });
       if (error) { await s.unsubscribe(); throw error; }
-    } catch (e) { alert('No se pudieron activar: ' + e.message); }
+    } catch (e) { avisar('No se pudieron activar los avisos', e); }
     pintarPush();
   });
   $('#push-off') && ($('#push-off').onclick = async () => {
