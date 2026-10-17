@@ -54,9 +54,9 @@ do $$ begin
   begin perform public._tomar_notificaciones(1); perform pg_temp.falla('46'); exception when insufficient_privilege then perform pg_temp.ok('46 el dueño no puede tomar la cola del notificador'); end;
   begin update public.agentes set webhook_secreto='x'; perform pg_temp.falla('47'); exception when insufficient_privilege then perform pg_temp.ok('47 nadie escribe el secreto HMAC directo'); end;
   begin perform webhook_secreto from public.agentes; perform pg_temp.falla('48'); exception when insufficient_privilege then perform pg_temp.ok('48 el secreto HMAC no se puede leer'); end;
-  begin update public.agentes set webhook_url='http://169.254.169.254/' where id='bbbbbbbb-0000-0000-0000-000000000002';
+  begin perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', 'http://169.254.169.254/', null);
     perform pg_temp.falla('49'); exception when check_violation then perform pg_temp.ok('49 webhook sin https rechazado en BD'); end;
-  update public.agentes set webhook_url='https://ejemplo.com/hook' where id='bbbbbbbb-0000-0000-0000-000000000002';
+  perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', 'https://ejemplo.com/hook', null);
   if public.rotar_secreto_webhook('bbbbbbbb-0000-0000-0000-000000000002') ~ '^whsec_[0-9a-f]{64}$' then perform pg_temp.ok('50 Erik rota el secreto y lo ve una vez'); else perform pg_temp.falla('50'); end if;
 end $$;
 select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
@@ -66,8 +66,8 @@ do $$ begin
     ('aaaaaaaa-0000-0000-0000-000000000001','22222222-2222-2222-2222-222222222222','https://fcm.googleapis.com/fcm/send/e2', repeat('B',87), repeat('a',22));
     perform pg_temp.falla('52'); exception when insufficient_privilege then perform pg_temp.ok('52 intruso no suscribe su navegador al buzón de Erik'); end;
   begin perform public.rotar_secreto_webhook('bbbbbbbb-0000-0000-0000-000000000002'); perform pg_temp.falla('53'); exception when insufficient_privilege then perform pg_temp.ok('53 intruso no rota secretos de webhook de Erik'); end;
-  update public.agentes set webhook_url='https://evil.example/x' where id='bbbbbbbb-0000-0000-0000-000000000002';
-  if not found then perform pg_temp.ok('54 intruso no cambia el webhook de Erik'); else perform pg_temp.falla('54'); end if;
+  begin perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', 'https://evil.example/x', null); perform pg_temp.falla('54');
+    exception when insufficient_privilege then perform pg_temp.ok('54 intruso no cambia el webhook de Erik'); end;
 end $$;
 reset role;
 
@@ -494,6 +494,43 @@ do $$ begin
   if exists (select 1 from information_schema.role_table_grants where table_schema = 'net' and grantee in ('anon','authenticated','PUBLIC')) then perform pg_temp.falla('145 tablas'); end if;
   if not has_function_privilege('postgres', 'public._despertar_notificador()', 'EXECUTE') then perform pg_temp.falla('145 definer'); end if;
   perform pg_temp.ok('145 B1: anon y authenticated no tienen USAGE ni EXECUTE en net; el notificador sigue');
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ begin
+  -- I3: sin dirección se olvida la clave y queda en la auditoría
+  perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', null, null);
+  if (select webhook_url is null and not webhook_tiene_clave from public.agentes where id='bbbbbbbb-0000-0000-0000-000000000002')
+    then perform pg_temp.ok('146 I3: quitar la dirección también quita la clave'); else perform pg_temp.falla('146'); end if;
+  -- I5: authenticated ya no puede cambiar webhook_url directo
+  begin update public.agentes set webhook_url = 'https://directo.dev/x' where id='bbbbbbbb-0000-0000-0000-000000000002'; perform pg_temp.falla('147');
+    exception when insufficient_privilege then perform pg_temp.ok('147 I5: webhook_url solo se cambia con guardar_webhook'); end;
+end $$;
+reset role;
+do $$ begin
+  if exists (select 1 from public.auditoria where accion = 'webhook:guardar_url' and objeto_id = 'bbbbbbbb-0000-0000-0000-000000000002')
+    then perform pg_temp.ok('148 I3: webhook:guardar_url queda en la auditoría'); else perform pg_temp.falla('148'); end if;
+  if to_regclass('public.hilos_buzon_agente_creado_idx') is not null then perform pg_temp.ok('149 I4: índice hilos(buzon_id, creado_por_agente, creado_en)'); else perform pg_temp.falla('149'); end if;
+end $$;
+-- B4: el dueño (authenticated) escribe y el aviso igual entra a la cola de pg_net (el definer sí puede usar net)
+create temp table _q(n bigint, activo boolean); grant all on _q to authenticated;
+do $$ declare activo boolean := to_regclass('net.http_request_queue') is not null and public._secreto_bd() is not null; begin
+  if to_regprocedure('net.http_post(text,jsonb,jsonb,jsonb,integer)') is not null then
+    if has_function_privilege('authenticated','net.http_post(text,jsonb,jsonb,jsonb,integer)','execute') then perform pg_temp.falla('150'); end if;
+    perform pg_temp.ok('150 B4: authenticated no puede ejecutar net.http_post');
+  else perform pg_temp.ok('150 B4: sin pg_net (se omite)'); end if;
+  insert into public.config_interna values ('notificar_url','https://demo.supabase.co/functions/v1/notificar') on conflict (clave) do update set valor = excluded.valor;
+  delete from public.config_interna where clave = 'ultimo_despertar';
+  if activo then execute 'insert into _q select count(*), true from net.http_request_queue'; else insert into _q values (0, false); end if;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+insert into public.mensajes(hilo_id, autor_humano, cuerpo) select id, '11111111-1111-1111-1111-111111111111', 'Erik: ¿cómo va?' from _d where k = 'h';
+reset role;
+do $$ declare q _q; c bigint; begin
+  select * into q from _q;
+  if not q.activo then perform pg_temp.ok('151 B4: sin pg_net/Vault (se omite)');
+  elsif (select (xpath('/row/c/text()', query_to_xml('select count(*) as c from net.http_request_queue', false, true, '')))[1]::text::bigint) > q.n then perform pg_temp.ok('151 B4: un mensaje del dueño (authenticated) sigue encolando en net.http_request_queue');
+  else perform pg_temp.falla('151'); end if;
+  delete from public.config_interna where clave in ('notificar_url','ultimo_despertar');
 end $$;
 reset role;
 \echo TODAS_LAS_PRUEBAS_PASARON

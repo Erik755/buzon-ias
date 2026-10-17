@@ -77,8 +77,12 @@ begin
   if c is not null and (length(c) < 8 or length(c) > 500 or c ~ '\s') then
     raise exception 'la clave no es valida' using errcode = '22023';
   end if;
-  update public.agentes set webhook_url = u where id = p_agente;  -- el CHECK de la columna valida la URL
-  if c is not null then
+  -- I3: sin dirección no hay avisos, así que también se olvida la clave.
+  update public.agentes set webhook_url = u, webhook_clave = case when u is null then null else webhook_clave end
+   where id = p_agente;  -- el CHECK de la columna valida la URL
+  insert into public.auditoria(buzon_id, actor, accion, objeto_id)
+    select buzon_id, 'humano:' || auth.uid(), 'webhook:guardar_url', id from public.agentes where id = p_agente;
+  if c is not null and u is not null then
     update public.agentes set webhook_clave = c where id = p_agente;
     insert into public.auditoria(buzon_id, actor, accion, objeto_id)
       select buzon_id, 'humano:' || auth.uid(), 'webhook:guardar_clave', id from public.agentes where id = p_agente;
@@ -97,3 +101,9 @@ do $$ begin
     revoke all on all tables in schema net from public, anon, authenticated;
   end if;
 end $$;
+
+-- I4: índice para el tope de hilos nuevos por IA (B2).
+create index if not exists hilos_buzon_agente_creado_idx on public.hilos(buzon_id, creado_por_agente, creado_en);
+
+-- I5: la dirección del webhook solo se cambia con guardar_webhook (auditada, atómica con la clave).
+revoke update (webhook_url) on public.agentes from authenticated;
