@@ -519,6 +519,21 @@ do $$ declare q _q; c bigint; begin
   else perform pg_temp.falla('151'); end if;
   delete from public.config_interna where clave in ('notificar_url','ultimo_despertar');
 end $$;
+do $$ declare h uuid; n bigint; i int; begin
+  -- Tope de push: con 10 push de hilos nuevos en la última hora, el 11.º no suena; pide_cierre siempre suena
+  for i in 1..10 loop
+    insert into public.notificaciones(buzon_id, hilo_id, evento, entregados)
+      select 'aaaaaaaa-0000-0000-0000-000000000001', id, 'hilo_nuevo', array['push:x'] from _d where k = 'h';
+  end loop;
+  insert into public.notificaciones(buzon_id, hilo_id, evento) select 'aaaaaaaa-0000-0000-0000-000000000001', id, 'hilo_nuevo' from _d where k = 'h' returning id into n;
+  if not public._permitir_push(n) then perform pg_temp.ok('152 tope de push: el 11.º hilo nuevo en una hora no suena'); else perform pg_temp.falla('152'); end if;
+  insert into public.notificaciones(buzon_id, hilo_id, evento) select 'aaaaaaaa-0000-0000-0000-000000000001', id, 'pide_cierre' from _d where k = 'h' returning id into n;
+  if public._permitir_push(n) then perform pg_temp.ok('153 pide_cierre siempre suena'); else perform pg_temp.falla('153'); end if;
+  update public.notificaciones set creado_en = creado_en - interval '2 hours' where 'push:x' = any(entregados);
+  insert into public.notificaciones(buzon_id, hilo_id, evento) select 'aaaaaaaa-0000-0000-0000-000000000001', id, 'hilo_nuevo' from _d where k = 'h' returning id into n;
+  if public._permitir_push(n) then perform pg_temp.ok('154 pasada la hora, el push de hilo nuevo vuelve a sonar'); else perform pg_temp.falla('154'); end if;
+  update public.notificaciones set estado = 'enviada' where estado = 'pendiente';
+end $$;
 reset role;
 \echo TODAS_LAS_PRUEBAS_PASARON
 

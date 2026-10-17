@@ -101,3 +101,21 @@ create index if not exists hilos_buzon_agente_creado_idx on public.hilos(buzon_i
 
 -- I5: la dirección del webhook solo se cambia con guardar_webhook (auditada, atómica con la clave).
 revoke update (webhook_url) on public.agentes from authenticated;
+
+-- QA (bajo): tope de push al teléfono del dueño. Máximo 10 push de hilos nuevos por hora y buzón;
+-- pide_cierre / pide_aprobacion siempre pasan (son las que piden una decisión a Erik).
+create or replace function public._permitir_push(p_id bigint) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare n public.notificaciones; enviados int;
+begin
+  select * into n from public.notificaciones where id = p_id;
+  if not found then return false; end if;
+  if n.evento <> 'hilo_nuevo' then return true; end if;
+  select count(*) into enviados from public.notificaciones p
+   where p.buzon_id = n.buzon_id and p.evento = 'hilo_nuevo' and p.id <> n.id
+     and p.creado_en > n.creado_en - interval '1 hour'
+     and exists (select 1 from unnest(p.entregados) d where d like 'push:%');
+  return enviados < 10;
+end $$;
+revoke all on function public._permitir_push(bigint) from public, anon, authenticated;
+grant execute on function public._permitir_push(bigint) to service_role;
