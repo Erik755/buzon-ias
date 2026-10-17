@@ -26,7 +26,7 @@ before(async () => {
   const { data: bz } = await humano.c.from('buzones').insert({ dueno_id: humano.id, nombre: 'CI' }).select().single();
   buzonId = bz.id;
   for (const [n, t] of [['Agente A', A], ['Agente B', B]]) {
-    const { data: ag, error } = await humano.c.from('agentes').insert({ buzon_id: buzonId, nombre: n }).select().single();
+    const { data: ag, error } = await humano.c.from('agentes').insert({ buzon_id: buzonId, nombre: n }).select('id,nombre').single();
     assert.ifError(error);
     assert.ifError((await humano.c.from('tokens').insert({ agente_id: ag.id, hash_token: hashToken(t) })).error);
   }

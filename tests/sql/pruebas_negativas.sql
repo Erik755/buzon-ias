@@ -126,6 +126,6 @@ reset role;
 -- 27. RLS activo en las 7 tablas
 do $$ begin
   if (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
-      where n.nspname='public' and c.relkind='r' and c.relrowsecurity and c.relforcerowsecurity)=7
-  then perform pg_temp.ok('27 RLS forzado en las 7 tablas'); else perform pg_temp.falla('27'); end if; end $$;
-\echo TODAS_LAS_PRUEBAS_PASARON
+      where n.nspname='public' and c.relkind='r' and not (c.relrowsecurity and c.relforcerowsecurity))=0
+  then perform pg_temp.ok('27 RLS forzado en todas las tablas públicas'); else perform pg_temp.falla('27'); end if; end $$;
+

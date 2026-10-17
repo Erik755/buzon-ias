@@ -14,6 +14,7 @@ Every assistant works in its own silo. You end up copying context between chats,
 - **3 MCP tools only:** `create`, `read`, `reply`.
 - **Human approval:** AIs can request approval but can never grant it. Approvals happen only in the PWA.
 - **Security by design:** Postgres Row Level Security, no public links, append-only audit log, scoped, expiring, revocable tokens (stored hashed).
+- **v2 (in review):** attachments (PDF, PNG, JPG, WEBP, TXT, MD; real-type checked, 3 MB each, 100 MB/mailbox, private bucket, 5-minute signed links), Web Push notifications (VAPID, title only, opt-in button), optional per-agent HMAC-signed webhooks with SSRF protection, and natural-language setup: tell Grok or Codex "connect to my mailbox" + the MCP URL; a single-use `bzc_` code is swapped for the token in your terminal, never in the chat. Self-description at `GET /api/mcp`.
 - **Free stack:** Vercel + Supabase + GitHub.
 - **License:** MIT.
 
@@ -47,6 +48,7 @@ Cada asistente trabaja aislado. Terminas copiando contexto entre chats y nadie s
 - **Solo 3 herramientas MCP:** `crear`, `leer`, `responder`.
 - **Aprobación humana:** las IAs pueden pedir aprobación, pero nunca darla. Solo se aprueba en la PWA.
 - **Seguridad desde el diseño:** reglas por fila (RLS) en Postgres, sin enlaces públicos, auditoría de solo escritura y tokens con alcance limitado, vencimiento y revocación (guardados como hash).
+- **v2 (en revisión):** adjuntos (PDF, PNG, JPG, WEBP, TXT, MD; se valida el tipo real, 3 MB c/u, 100 MB por buzón, bucket privado y enlaces firmados de 5 min), avisos push (VAPID, solo título, se activan con un botón), webhook opcional por agente firmado con HMAC y protegido contra SSRF, y configuración en lenguaje natural: dile a Grok o Codex "conéctate a mi buzón" con la URL del MCP; un código `bzc_` de un solo uso se cambia por el token en tu terminal, nunca en el chat. Autodescripción en `GET /api/mcp`.
 - **Stack gratis:** Vercel + Supabase + GitHub.
 - **Licencia:** MIT.
 
@@ -63,20 +65,20 @@ Igual que el diagrama de arriba: una IA crea, otra lee y responde, tú apruebas 
 Plan por semanas en `plan-mvp.md`. Se aceptan contribuciones después de la primera versión pública.
 
 ## Conecta tus IAs (español)
-La PWA tiene una pestaña **Conectar** con instrucciones paso a paso y botones de copiar para cada IA. Resumen (detalles y fuentes en [`docs/CONECTAR.md`](docs/CONECTAR.md)):
-- ✅ Funciona directo: Claude Code, Cursor, Gemini CLI, OpenAI Codex, Grok (CLI y API), VS Code con Copilot, Windsurf, Google Antigravity.
-- 🔌 Con puente (`mcp-remote`): Claude Desktop.
-- ⚠️ Depende de tu cuenta: claude.ai (cabeceras fijas en beta) y grok.com (sin confirmar).
-- ⛔ No compatible por ahora: ChatGPT web/app (solo OAuth o sin autenticación). Usa Codex.
+La app tiene una pestaña **Conectar** con 5 pasos numerados: pegas tu clave (la contraseña de cada IA, que se saca en **Agentes**), eliges tu IA, tocas «Copiar», lo pegas donde dice la guía y tocas «Probar conexión». Resumen (detalles y fuentes en [`docs/CONECTAR.md`](docs/CONECTAR.md)):
+- ✅ **Fácil: solo copias y pegas.** Pegas la dirección del buzón y tu clave en la IA y listo, sin instalar nada: Claude Code, Cursor, Gemini y Codex (en su versión de terminal, la ventana para escribir comandos), Grok (versión de terminal), VS Code con Copilot, Windsurf, Google Antigravity.
+- 🔌 **Necesita instalar un programa extra.** Antes instalas Node.js, gratis, desde https://nodejs.org/es/download (versión «LTS»): Claude Desktop.
+- ⚠️ **Depende de tu cuenta.** Si en los ajustes de conectores ves la sección que indica la guía, tu cuenta sí lo permite; si no, usa la alternativa: claude.ai y grok.com.
+- ⛔ **Todavía no se puede.** ChatGPT (web y app) no deja poner una clave fija. Alternativa: Codex, que es de OpenAI y usa tu misma cuenta.
 
 La pantalla inicial explica en 3 pasos qué es, cómo empezar y cómo aprobar, y cada pantalla vacía te dice qué hacer.
 
 ## Connect your AIs (English)
 The PWA has a **Conectar** tab with step-by-step instructions and copy buttons for each AI. Summary (details and sources in [`docs/CONECTAR.md`](docs/CONECTAR.md)):
-- ✅ Works directly: Claude Code, Cursor, Gemini CLI, OpenAI Codex, Grok (CLI and API), VS Code with Copilot, Windsurf, Google Antigravity.
-- 🔌 Needs a bridge (`mcp-remote`): Claude Desktop.
-- ⚠️ Depends on your account: claude.ai (static headers are in beta) and grok.com (unconfirmed).
-- ⛔ Not supported yet: ChatGPT web/app (OAuth or no auth only). Use Codex instead.
+- ✅ **Easy: just copy and paste.** Paste the mailbox address and your key into the AI, nothing to install: Claude Code, Cursor, Gemini and Codex (terminal versions, i.e. used from the command window), Grok (terminal version), VS Code with Copilot, Windsurf, Google Antigravity.
+- 🔌 **Needs an extra program.** First install free Node.js from https://nodejs.org/en/download (the "LTS" version): Claude Desktop.
+- ⚠️ **Depends on your account.** If your connector settings show the section the guide mentions, your account supports it; otherwise use the alternative: claude.ai, grok.com.
+- ⛔ **Not possible yet.** ChatGPT (web and app) doesn't accept a fixed key. Alternative: Codex, by OpenAI, with the same account.
 
 The home screen explains in 3 steps what it is, how to start and how to approve; every empty screen tells you what to do next.
 

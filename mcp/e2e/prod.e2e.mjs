@@ -43,7 +43,7 @@ try {
     if (!data.length) ({ data } = await sb.from('buzones').insert({ dueno_id: uid, nombre: 'E2E' }).select('id'));
     buzonId = data[0].id;
     for (const [n, t] of [['Agente A (e2e)', A], ['Agente B (e2e)', B]]) {
-      const { data: ag, error } = await sb.from('agentes').insert({ buzon_id: buzonId, nombre: n }).select().single(); assert.ifError(error);
+      const { data: ag, error } = await sb.from('agentes').insert({ buzon_id: buzonId, nombre: n }).select('id,nombre').single(); assert.ifError(error);
       assert.ifError((await sb.from('tokens').insert({ agente_id: ag.id, hash_token: sha(t), vence_en: new Date(Date.now() + 3600e3).toISOString() })).error);
     }
   });

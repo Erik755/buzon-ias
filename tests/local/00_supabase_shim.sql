@@ -13,3 +13,6 @@ grant execute on function auth.uid() to anon, authenticated, service_role;
 grant references, select on auth.users to service_role;
 alter default privileges in schema public grant all on tables to service_role;
 alter default privileges in schema public grant all on sequences to service_role;
+-- Storage mínimo (en Supabase real ya existe)
+create schema if not exists storage;
+create table if not exists storage.buckets (id text primary key, name text, public boolean default false);
