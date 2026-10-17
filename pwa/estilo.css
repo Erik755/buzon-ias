@@ -21,3 +21,11 @@ a.inicio{color:inherit;text-decoration:none}footer{text-align:center;padding:16p
 a{color:#93c5fd}a.boton{display:inline-block;padding:10px 14px;border-radius:10px;text-decoration:none}a.boton.ok{color:#fff}
 .fila-adj{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:6px 0;white-space:normal}.fila-adj span{overflow-wrap:anywhere}
 .pasos li{margin:8px 0}.ok-msg{background:#dcfce7;color:#14532d;border-radius:8px;padding:8px;font-weight:600}.etq{display:block;font-size:.85em;margin-top:2px}
+
+/* Áreas táctiles de al menos 44 px; pestañas que caben en 360 px; botones del diálogo separados. */
+button,a.boton{min-height:44px}
+nav button{flex:1 1 0;min-width:0;padding:10px 4px;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fila.acciones button{flex:1 1 0;white-space:nowrap}
+#dlg-cuerpo>button,#dlg-cuerpo .fila{margin:8px 0}#dlg-cuerpo>button{width:100%}
+.volver{width:100%;margin-top:8px}
+button[disabled]{opacity:.6}

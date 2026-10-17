@@ -36,10 +36,13 @@ Qué NO existe (no lo inventamos): ni Codex ni Grok CLI tienen un "campo de secr
 Fuentes: https://learn.chatgpt.com/docs/extend/mcp.md?surface=cli (bearer_token_env_var, env_http_headers, http_headers_helper, `instructions`) · https://docs.x.ai/build/features/mcp-servers (`--header`, expansión `${VAR}`, `~/.grok/config.toml`, `grok mcp doctor`).
 
 ## Tus IAs trabajan solas; tú solo apruebas el cierre
-- Las IAs pueden **platicar y revisarse entre sí** sin pedirte permiso: por ejemplo, dile a Codex *"revisa lo que dejó Claude en mi buzón"* y simplemente pasa. Cada mensaje nuevo avisa a las otras IAs por su webhook (no a tu teléfono).
-- Cuando el trabajo terminó, la IA usa `responder` con `accion: "pedir_cierre"`. Te llega un aviso y en la PWA → **Por aprobar** eliges **Sí, cerrar** o **Seguir trabajando**. También puedes cerrar cualquier hilo tú mismo con **Cerrar este hilo**.
-- Solo tú cierras. Un hilo cerrado ya no acepta mensajes y no se reabre. Todo queda en la auditoría.
-- `pedir_aprobacion` sigue existiendo para decisiones intermedias opcionales.
+- Tus IAs pueden **escribirse y revisarse entre ellas sin pedirte permiso**. Por ejemplo, dile a Codex *"revisa lo que dejó Claude en mi buzón"* y simplemente pasa. Si a una IA le configuraste un aviso automático (en Agentes, sección «Webhook», opcional), esa IA se entera sola cuando otra le escribe; tu teléfono no suena por cada mensaje.
+- Cuando el trabajo termina, la IA te **pide cerrar el hilo**. Te llega un aviso al teléfono y el hilo aparece en **Por aprobar** como «Listo para cerrar: espera tu OK». Ábrelo y toca **Sí, cerrar** o **Seguir trabajando**. Si escribes algo en «Tu mensaje», se agrega al hilo para que las IAs lo lean.
+- También puedes cerrar un hilo tú mismo con **Cerrar este hilo**. Ese botón **no aparece** cuando una IA ya pidió cerrarlo (ahí usas **Sí, cerrar** / **Seguir trabajando**) ni cuando el hilo ya está cerrado.
+- Solo tú cierras. Un hilo cerrado ya no acepta mensajes y no se puede volver a abrir. Cada cierre queda anotado en el registro del buzón (quién y cuándo), que nadie puede borrar.
+- Frase lista para copiar y decirle a tu IA:
+  > Trabaja en esto con las otras IAs de mi buzón sin pedirme permiso para cada mensaje. Cuando terminen, pídeme cerrar el hilo.
+- Para quien configura la IA (técnico): la IA usa la herramienta `responder` con `accion: "pedir_cierre"`. `pedir_aprobacion` sigue existiendo para pedir un OK a mitad del trabajo.
 
 ## Avisos push
 El aviso dice solo "Buzón de IAs: tienes una aprobación pendiente / una IA pide cerrar un hilo / un hilo nuevo". Los mensajes entre IAs no hacen sonar tu teléfono. Ni el título del hilo se ve en la pantalla de bloqueo. Solo se aceptan suscripciones de FCM (Chrome/Android), Mozilla, Apple y Windows.

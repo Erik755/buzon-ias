@@ -1,6 +1,7 @@
 import { createClient } from './vendor/supabase.js';
 import * as CFG from './config.js';
 import { GUIAS, ETIQUETA, QUE_HACER } from './guias.js';
+import { mensajeAmable, conBotones } from './errores.js';
 
 const { SUPABASE_URL, SUPABASE_ANON_KEY, MCP_URL } = CFG;
 const VAPID = CFG.VAPID_PUBLIC_KEY || '';
@@ -53,7 +54,7 @@ async function pintar() {
   let q = sb.from('hilos').select('*, agentes!hilos_creado_por_agente_fkey(nombre,eliminado_en)').eq('buzon_id', buzon.id).order('creado_en', { ascending: false }).limit(50);
   if (vista === 'pendientes') q = q.in('estado', ['pide_aprobacion', 'pide_cierre']);
   const { data, error } = await q;
-  if (error) return v.innerHTML = !navigator.onLine || /fetch|network/i.test(error.message) ? '<div class="vacio"><b>📡 Sin conexión</b>Se cargará cuando vuelva internet.</div>' : esc(error.message);
+  if (error) return v.innerHTML = !navigator.onLine || /fetch|network/i.test(error.message) ? '<div class="vacio"><b>📡 Sin conexión</b>Se cargará cuando vuelva internet.</div>' : `<div class="vacio"><b>No pudimos cargar tus hilos</b>${esc(mensajeAmable(error))}</div>`;
   if (!data.length) {
     const { count } = await sb.from('agentes').select('id', { count: 'exact', head: true }).eq('buzon_id', buzon.id).is('eliminado_en', null);
     v.innerHTML = !count
@@ -85,37 +86,39 @@ async function abrirHilo(id) {
   ]);
   if (!h) return;
   const c = $('#dlg-cuerpo');
-  c.innerHTML = `<h3>${esc(h.titulo)}</h3><p class="meta">${esc(estadoTxt(h.estado))}</p><div class="msg">${esc(h.contexto)}</div>
+  c.innerHTML = `<h3 id="dlg-titulo">${esc(h.titulo)}</h3><p class="meta">${esc(estadoTxt(h.estado))}</p><div class="msg">${esc(h.contexto)}</div>
     ${ms.map((m) => `<div class="msg"><span class="meta">${esc(nombreAutor(m.agentes, 'Tú'))} · ${fecha(m.creado_en)}</span><br>${esc(m.cuerpo)}</div>`).join('')}
     ${adj?.length ? `<div class="msg"><b>📎 Adjuntos</b>${adj.map((a) => `<div class="fila-adj"><span>${ICONO[a.tipo] ?? '📄'} ${esc(a.nombre)} <span class="meta">${kb(a.tamano)}</span></span><button class="copiar" data-adj="${a.id}">Descargar</button></div>`).join('')}<p class="meta">Se descargan a tu teléfono; la app no los abre ni los ejecuta. El enlace dura 5 minutos.</p></div>` : ''}
     ${ap.map((a) => `<p>✅ ${esc(a.decision)} · ${esc(a.nota)} <span class="meta">${fecha(a.creado_en)}</span></p>`).join('')}
-    <textarea id="nota" placeholder="Nota (opcional)"></textarea>
+    ${h.estado !== 'cerrado' ? `<label for="nota" class="meta">${h.estado === 'pide_cierre' ? 'Tu mensaje (opcional): se agrega al hilo y lo leen las IAs. Sirve para «Comentar» o para explicar por qué cierras o sigues.' : 'Tu mensaje: se agrega al hilo y lo leen las IAs.'}</label>
+    <textarea id="nota" placeholder="Escribe aquí…"></textarea>` : ''}
     ${h.estado === 'pide_aprobacion' ? '<div class="fila"><button class="ok" id="aprobar">Aprobar</button><button class="no" id="rechazar">Rechazar</button></div>' : ''}
-    ${h.estado === 'pide_cierre' ? '<p class="aviso">Una IA dice que el trabajo ya terminó. ¿Lo cerramos? Al cerrarlo, las IAs ya no podrán escribir en él.</p><div class="fila"><button class="ok" id="cerrar-si">Sí, cerrar</button><button class="secundario" id="cerrar-no">Seguir trabajando</button></div>' : ''}
+    ${h.estado === 'pide_cierre' ? '<p class="aviso">Una IA dice que el trabajo ya terminó. ¿Lo cerramos? Al cerrarlo, las IAs ya no podrán escribir en él.</p><div class="fila acciones"><button class="ok" id="cerrar-si">Sí,&nbsp;cerrar</button><button id="cerrar-no">Seguir trabajando</button></div>' : ''}
     ${h.estado !== 'cerrado' && h.estado !== 'pide_cierre' ? '<button class="secundario" id="cerrar-ya">Cerrar este hilo</button>' : ''}
     ${h.estado !== 'cerrado' ? '<button id="comentar">Comentar</button>' : '<p class="meta">🔒 Hilo cerrado. Ya nadie puede escribir aquí.</p>'}`;
-  const cierre = async (cerrar) => {
+  const botonesCierre = () => [$('#cerrar-si'), $('#cerrar-no'), $('#cerrar-ya'), $('#comentar')];
+  const cierre = (cerrar) => conBotones(botonesCierre(), async () => {
     if (cerrar && !confirm('¿Cerrar este hilo? Las IAs ya no podrán escribir en él y no se puede reabrir.')) return;
-    const { error } = await sb.rpc('decidir_cierre', { p_hilo: id, p_cerrar: cerrar, p_nota: $('#nota').value || null });
-    if (error) return alert('No se pudo: ' + error.message);
+    const { error } = await sb.rpc('decidir_cierre', { p_hilo: id, p_cerrar: cerrar, p_nota: $('#nota')?.value || null });
+    if (error) return alert('No se pudo: ' + mensajeAmable(error, navigator.onLine));
     $('#dlg').close(); pintar();
-  };
+  });
   $('#cerrar-si') && ($('#cerrar-si').onclick = () => cierre(true));
   $('#cerrar-ya') && ($('#cerrar-ya').onclick = () => cierre(true));
   $('#cerrar-no') && ($('#cerrar-no').onclick = () => cierre(false));
-  const decidir = async (decision) => {
-    const { error } = await sb.from('aprobaciones').insert({ hilo_id: id, humano_id: usuario.id, decision, nota: $('#nota').value || null });
-    if (error) return alert(error.message);
+  const decidir = (decision) => conBotones([$('#aprobar'), $('#rechazar')], async () => {
+    const { error } = await sb.from('aprobaciones').insert({ hilo_id: id, humano_id: usuario.id, decision, nota: $('#nota')?.value || null });
+    if (error) return alert('No se pudo: ' + mensajeAmable(error, navigator.onLine));
     $('#dlg').close(); pintar();
-  };
+  });
   c.querySelectorAll('[data-adj]').forEach((b) => b.onclick = () => descargarAdjunto(b.dataset.adj, b));
   $('#aprobar') && ($('#aprobar').onclick = () => decidir('aprobado'));
   $('#rechazar') && ($('#rechazar').onclick = () => decidir('rechazado'));
-  if ($('#comentar')) $('#comentar').onclick = async () => {
+  if ($('#comentar')) $('#comentar').onclick = () => conBotones(botonesCierre(), async () => {
     const cuerpo = $('#nota').value.trim(); if (!cuerpo) return;
     const { error } = await sb.from('mensajes').insert({ hilo_id: id, autor_humano: usuario.id, cuerpo });
-    if (error) return alert(error.message); abrirHilo(id);
-  };
+    if (error) return alert('No se pudo enviar: ' + mensajeAmable(error, navigator.onLine)); abrirHilo(id);
+  });
   $('#dlg').showModal();
 }
 
