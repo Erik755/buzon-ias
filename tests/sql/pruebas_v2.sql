@@ -486,6 +486,15 @@ do $$ begin
   begin perform public.guardar_webhook('bbbbbbbb-0000-0000-0000-000000000002', 'https://intruso.dev/x', null); perform pg_temp.falla('144');
     exception when insufficient_privilege then perform pg_temp.ok('144 guardar_webhook: solo el dueño'); end;
 end $$;
+do $$ begin
+  if not exists (select 1 from pg_namespace where nspname = 'net') then perform pg_temp.ok('145 B1: sin pg_net en este Postgres (se omite)'); return; end if;
+  if has_schema_privilege('anon','net','USAGE') or has_schema_privilege('authenticated','net','USAGE') then perform pg_temp.falla('145 usage'); end if;
+  if exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'net'
+             and (has_function_privilege('anon', p.oid, 'EXECUTE') or has_function_privilege('authenticated', p.oid, 'EXECUTE'))) then perform pg_temp.falla('145 execute'); end if;
+  if exists (select 1 from information_schema.role_table_grants where table_schema = 'net' and grantee in ('anon','authenticated','PUBLIC')) then perform pg_temp.falla('145 tablas'); end if;
+  if not has_function_privilege('postgres', 'public._despertar_notificador()', 'EXECUTE') then perform pg_temp.falla('145 definer'); end if;
+  perform pg_temp.ok('145 B1: anon y authenticated no tienen USAGE ni EXECUTE en net; el notificador sigue');
+end $$;
 reset role;
 \echo TODAS_LAS_PRUEBAS_PASARON
 

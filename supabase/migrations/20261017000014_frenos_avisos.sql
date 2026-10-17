@@ -87,3 +87,13 @@ begin
 end $$;
 revoke all on function public.guardar_webhook(uuid, text, text) from public, anon;
 grant execute on function public.guardar_webhook(uuid, text, text) to authenticated;
+
+-- Auditor B1 (endurecimiento): anon/authenticated no usan el esquema net (pg_net). La cola guarda la cabecera x-buzon-bd.
+-- pg_cron y _despertar_notificador corren como postgres (definer), así que siguen funcionando.
+do $$ begin
+  if exists (select 1 from pg_namespace where nspname = 'net') then
+    revoke usage on schema net from public, anon, authenticated;
+    revoke execute on all functions in schema net from public, anon, authenticated;
+    revoke all on all tables in schema net from public, anon, authenticated;
+  end if;
+end $$;
