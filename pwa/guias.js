@@ -3,6 +3,18 @@
 // Codex y Grok verificados el 16 oct 2026: learn.chatgpt.com/docs/extend/mcp y docs.x.ai/build/features/mcp-servers.
 export const GUIAS = [
   {
+    id: 'instinct', nombre: 'Instinct (desde tu celular)', estado: 'seguro',
+    donde: 'Tu conversación con Instinct y un formulario seguro que te proporciona ahí. No necesitas terminal ni instalar un MCP.',
+    pasos: ['En Agentes, escribe Instinct en el campo Nombre y toca Crear y generar clave. Ese campo acepta cualquier nombre; no necesitas encontrar Instinct en un selector.',
+      'Copia la clave que empieza por bz_. No copies la dirección del buzón, el nombre del agente ni tu contraseña de correo. La clave se muestra una sola vez: no cierres esa pantalla hasta copiarla.',
+      'Dile a Instinct: "Quiero conectar mi Buzón: {URL}". Pídele un formulario seguro para guardar la clave. Pega la clave únicamente en ese formulario, nunca en WhatsApp ni en otro chat. No uses un código bzc_ para este paso.',
+      'Pídele revisar los mensajes del buzón. La conexión se confirma solo cuando una lectura autenticada funciona. Los mensajes a otras IAs requieren tu aprobación o un permiso con alcance definido.',
+      'Si perdiste la clave, revoca ese acceso y crea uno nuevo. No borres un agente con trabajo asociado sin revisar antes sus hilos.'],
+    codigo: '',
+    probar: 'Pide a Instinct una lectura del buzón y el resultado. Luego revisa su último uso en Agentes. El botón Probar conexión solo observa el uso: no configura ni conecta a la IA por sí solo.',
+    nota: 'Acceso bajo pedido, no escucha permanente ni sincronización automática. Las revisiones periódicas requieren acordar alcance y frecuencia. Un token de lectura puede ver otros hilos del mismo buzón: Para es una ruta de trabajo, no una barrera de privacidad. Comparte resúmenes de proyectos, no contraseñas, claves ni conversaciones privadas completas.',
+  },
+  {
     id: 'nl-codex', nombre: '🗣️ Codex en lenguaje natural ("conéctate a mi buzón")', estado: 'directo',
     donde: 'Tu terminal (Mac o Linux) y Codex CLI. La clave nunca pasa por el chat: vive en la variable de entorno BUZON_TOKEN, que Codex lee con bearer_token_env_var.',
     pasos: ['En Agentes → "Conectar con lenguaje natural", escribe "Codex" y toca Generar código. Toca Copiar código. NO lo pegues en el chat.',
@@ -109,9 +121,10 @@ echo "Token listo: \${BUZON_TOKEN:0:6}…"`,
   },
 ];
 
-export const ETIQUETA = { directo: '✅ Fácil: solo copias y pegas', puente: '🔌 Necesita instalar un programa extra', limitado: '⚠️ Depende de tu cuenta', no: '⛔ Todavía no se puede' };
+export const ETIQUETA = { seguro: '🔐 Acceso con formulario seguro', directo: '✅ Fácil: solo copias y pegas', puente: '🔌 Necesita instalar un programa extra', limitado: '⚠️ Depende de tu cuenta', no: '⛔ Todavía no se puede' };
 // Línea "qué tienes que hacer" debajo de cada etiqueta (lenguaje sin tecnicismos).
 export const QUE_HACER = {
+  seguro: 'Desde el celular: crea una clave por agente y guárdala solo en el formulario seguro de Instinct. No la pegues en el chat. La conexión se comprueba con una lectura real.',
   directo: 'Pegas la dirección del buzón y tu clave en la IA y listo. No instalas nada.',
   puente: 'Antes instalas un programa gratis llamado Node.js, que sirve de enlace entre la IA y tu buzón. 1) Entra a https://nodejs.org/es/download 2) Descarga la versión "LTS" para tu computadora 3) Ábrela y dale "Siguiente" hasta terminar 4) Reinicia la IA y sigue los pasos de abajo.',
   limitado: 'Algunas cuentas tienen la opción y otras no. Para saberlo, sigue el primer paso: si ves la sección que dice la guía, tu cuenta sí la tiene. Si no aparece, usa la alternativa que se indica.',
