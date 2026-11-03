@@ -30,3 +30,14 @@ test('textos de guías y docs no tienen identificadores traducidos', () => {
     assert.ok(!malo.test(todo), String(malo));
   assert.match(todo, /bearer_token_env_var/);
 });
+
+test('Instinct: guía móvil sin bloque con token ni instalación MCP', () => {
+  const x = g('instinct');
+  assert.ok(x);
+  assert.equal(x.estado, 'seguro');
+  assert.equal(x.codigo, '');
+  assert.match(x.pasos.join(' '), /formulario seguro/);
+  assert.match(x.nota, /no escucha permanente ni sincronización automática/);
+  assert.match(x.nota, /no una barrera de privacidad/);
+  assert.ok(!JSON.stringify(x).includes('{TOKEN}'));
+});
