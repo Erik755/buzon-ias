@@ -324,8 +324,9 @@ async function copiar(texto, boton) {
 
 function pintarGuias(v, conSesion) {
   const caja = document.createElement('div');
-  caja.innerHTML = `<div class="tarjeta"><b>Conecta tus IAs en 5 pasos</b>
-    <p class="meta">Cada IA necesita dos cosas: la <b>dirección del buzón</b> (el lugar donde se conecta) y <b>tu clave</b> (una contraseña que empieza con bz_, una por IA).</p>
+  caja.innerHTML = `<div class="tarjeta"><b>Conecta tus IAs: elige su guía</b>
+    <p class="aviso"><b>¿Usas Instinct desde el celular?</b> Abre su guía al principio de la lista. No pegues su clave en este recuadro ni en el chat: guárdala en el formulario seguro que te dé Instinct. No necesitas terminal.</p>
+    <p class="meta">Para las otras guías, cada IA necesita dos cosas: la <b>dirección del buzón</b> (el lugar donde se conecta) y <b>tu clave</b> (una contraseña que empieza con bz_, una por IA).</p>
     <ol class="pasos">
       <li><b>Pega tu clave aquí.</b> ${conSesion ? 'Se saca en la pestaña <a href="#" id="ir-ag">Agentes</a> (botón «Crear y generar clave»).' : 'Primero entra con tu correo; la clave se saca en la pestaña Agentes. Mientras, verás TU_CLAVE donde va.'}
         ${conSesion ? '<input id="tok-guia" type="password" placeholder="bz_… (pega tu clave aquí)" autocomplete="off" aria-describedby="tok-nota"><p id="tok-ok" class="ok-msg" role="status" hidden>✓ Listo, tu clave ya quedó puesta en las guías de abajo</p><p id="tok-nota" class="meta">No se guarda; si recargas, pégala otra vez.</p>' : ''}</li>
@@ -379,7 +380,7 @@ function hace(f) {
 }
 function conexion(u) {
   if (!u) return '⚪ Sin conectar';
-  return Date.now() - new Date(u) < 15 * 60e3 ? '🟢 Conectada' : '🟡 Conectada antes · ' + hace(u);
+  return Date.now() - new Date(u) < 15 * 60e3 ? '🟢 Uso reciente' : '🟡 Conectada antes · ' + hace(u);
 }
 
 // Probar conexión: la PWA nunca habla con la IA ni ve tokens; solo observa (con RLS) cuándo usó el MCP.
@@ -388,17 +389,17 @@ async function probarConexion(ag, antes) {
   clearInterval(sondeo);
   const c = $('#dlg-cuerpo'), inicio = Date.now(), base = antes ? new Date(antes).getTime() : 0;
   c.innerHTML = `<h3>Probar conexión: ${esc(ag.nombre)}</h3>
-    <p>1) Abre ${esc(ag.nombre)} y escríbele:</p><pre>Usa la herramienta "leer" de mi buzón y dime cuántos hilos hay.</pre>
+    <p>1) Abre ${esc(ag.nombre)} y escríbele:</p><pre>Revisa los mensajes de mi Buzón y confirma si pudiste leerlos.</pre>
     <button class="copiar" id="cp-ping">Copiar mensaje</button>
     <p>2) Deja esta pantalla abierta. En cuanto tu IA lea el buzón, aquí verás ✅.</p><p id="ping-estado" class="aviso">⏳ Esperando a ${esc(ag.nombre)}…</p>`;
-  $('#cp-ping').onclick = (e) => copiar('Usa la herramienta "leer" de mi buzón y dime cuántos hilos hay.', e.target);
+  $('#cp-ping').onclick = (e) => copiar('Revisa los mensajes de mi Buzón y confirma si pudiste leerlos.', e.target);
   $('#dlg').showModal();
   const revisar = async () => {
     if (!$('#dlg').open) return clearInterval(sondeo);
     const { data } = await sb.from('estado_agentes').select('ultimo_uso').eq('agente_id', ag.id).maybeSingle();
     const u = data?.ultimo_uso ? new Date(data.ultimo_uso).getTime() : 0;
     const p = $('#ping-estado'); if (!p) return clearInterval(sondeo);
-    if (u > base) { clearInterval(sondeo); p.className = 'vacio'; p.innerHTML = `<b>✅ ¡${esc(ag.nombre)} está conectada!</b>Usó tu buzón ${hace(data.ultimo_uso)}.`; pintar(); }
+    if (u > base) { clearInterval(sondeo); p.className = 'vacio'; p.innerHTML = `<b>✅ ¡${esc(ag.nombre)} usó el buzón!</b>Lectura o llamada autenticada registrada ${hace(data.ultimo_uso)}.`; pintar(); }
     else if (Date.now() - inicio > 180e3) { clearInterval(sondeo); p.innerHTML = '⚠️ No vimos ninguna llamada en 3 minutos. Revisa en <b>Conectar</b> que pegaste la dirección y el token correctos, y que el token no esté revocado o vencido.'; }
   };
   sondeo = setInterval(revisar, 4000); revisar();
