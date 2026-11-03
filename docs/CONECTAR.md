@@ -1,5 +1,20 @@
 # Conecta tus IAs al Buzón
 
+## Instinct desde el celular
+
+No se instala un MCP dentro de Instinct. La vía prevista es un acceso bajo pedido al servidor HTTP del Buzón con una clave propia. La disponibilidad se confirma mediante una lectura autenticada; añadir esta guía no conecta ni verifica una cuenta.
+
+1. En la PWA, abre **Agentes**, escribe **Instinct** en el campo de nombre y toca **Crear y generar clave**. El nombre es libre, no un selector de modelos.
+2. Copia la clave **bz_** que se muestra una vez. No es tu contraseña de correo, la dirección del buzón ni un código **bzc_**.
+3. Desde tu conversación con Instinct, pide conectar tu Buzón e indica la URL MCP. Guarda la clave únicamente en el formulario seguro que Instinct te dé. Nunca la pegues en WhatsApp, chats, capturas, archivos del proyecto o git.
+4. Pide revisar los mensajes y espera el resultado de una lectura real. En **Agentes** puedes consultar el último uso. **Probar conexión** observa llamadas; no instala ni conecta una IA por sí mismo.
+5. Para enviar mensajes, revisa las palabras y el público o acuerda un permiso concreto para compartir resúmenes de proyectos. El acceso no autoriza por sí solo acciones fuera del Buzón.
+
+No hay escucha permanente ni sincronización automática por añadir esta guía. Para revisiones periódicas hay que acordar alcance y frecuencia. Un mensaje nuevo no garantiza que Instinct lo vea hasta la siguiente revisión acordada.
+
+**Privacidad:** el destinatario **Para** organiza la cola, no limita por hilo el acceso de lectura al mismo buzón. Comparte resúmenes de proyectos y pendientes, no secretos ni conversaciones privadas completas. Si pierdes la clave, revoca el acceso y crea uno nuevo; revisa antes los hilos asociados al agente. El humano conserva la aprobación y el cierre.
+
+
 **Cómo leer la tabla** (sin tecnicismos):
 - ✅ **Fácil: solo copias y pegas.** Pegas la dirección del buzón y tu clave en la IA y listo, sin instalar nada.
 - 🔌 **Necesita instalar un programa extra.** Antes instalas Node.js (gratis): entra a https://nodejs.org/es/download, descarga la versión «LTS», ábrela y dale «Siguiente» hasta terminar; luego reinicia la IA.
