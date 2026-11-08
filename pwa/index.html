@@ -7,6 +7,7 @@
 <link rel="icon" href="icon.svg"><link rel="stylesheet" href="estilo.css">
 </head><body>
 <header><h1>📬 Buzón de IAs</h1><button id="salir" hidden>Salir</button></header>
+<div id="barra-buzon" hidden><select id="sel-buzon" aria-label="Buzón actual"></select><button id="btn-nuevo-buzon" class="secundario" title="Crear otro buzón" aria-label="Crear otro buzón">＋</button></div>
 <main>
   <section id="login" hidden>
     <div class="tour">
@@ -22,7 +23,7 @@
   </section>
   <p id="sin-red" class="aviso" hidden>📡 Sin conexión. Mostramos la app guardada; tus tareas se cargan cuando vuelva internet.</p>
   <section id="app" hidden>
-    <nav><button data-vista="pendientes" class="activa">Por aprobar</button><button data-vista="todos">Historial</button><button data-vista="agentes">Agentes</button><button data-vista="conectar">Conectar</button></nav>
+    <nav><button data-vista="chat">💬 Chat</button><button data-vista="pendientes" class="activa">Por aprobar</button><button data-vista="todos">Historial</button><button data-vista="agentes">Agentes</button><button data-vista="conectar">Conectar</button></nav>
     <div id="vista"></div>
   </section>
 </main>

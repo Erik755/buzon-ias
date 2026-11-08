@@ -10,7 +10,7 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = (s) => document.querySelector(s);
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fecha = (f) => new Date(f).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
-let usuario, buzon, vista = 'pendientes', tokenGuia = '';
+let usuario, buzon, buzones = [], vista = 'pendientes', tokenGuia = '';
 const URL_MCP = MCP_URL || 'https://buzon-ias-mcp.vercel.app/api/mcp';
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
@@ -42,16 +42,39 @@ sb.auth.onAuthStateChange(async (_ev, ses) => {
 });
 
 async function asegurarBuzon() {
-  let { data, error } = await sb.from('buzones').select('*').limit(1);
+  let { data, error } = await sb.from('buzones').select('*').order('creado_en');
   if (!error && !data?.length) ({ data, error } = await sb.from('buzones').insert({ dueno_id: usuario.id, nombre: 'Mi buzón' }).select());
   if (error || !data?.length) throw new Error(error?.message || 'No se pudo abrir tu buzón');
-  buzon = data[0];
+  buzones = data;
+  const guardado = localStorage.getItem('buzon_actual');
+  buzon = buzones.find((b) => b.id === guardado) || buzones[0];
+  pintarSelectorBuzon();
 }
+
+function pintarSelectorBuzon() {
+  const barra = $('#barra-buzon'); if (!barra) return;
+  barra.hidden = !usuario;
+  $('#sel-buzon').innerHTML = buzones.map((b) => `<option value="${b.id}"${b.id === buzon.id ? ' selected' : ''}>${esc(b.nombre)}</option>`).join('');
+}
+
+$('#sel-buzon').onchange = (e) => {
+  const b = buzones.find((x) => x.id === e.target.value);
+  if (b) { buzon = b; localStorage.setItem('buzon_actual', b.id); pintar(); }
+};
+$('#btn-nuevo-buzon').onclick = async () => {
+  const nombre = prompt('Nombre del buzón nuevo (ej. "Erik e Instinct"):');
+  if (!nombre?.trim()) return;
+  const { data, error } = await sb.from('buzones').insert({ dueno_id: usuario.id, nombre: nombre.trim().slice(0, 120) }).select().single();
+  if (error) return avisar('No se pudo crear el buzón', error);
+  buzones.push(data); buzon = data; localStorage.setItem('buzon_actual', data.id);
+  pintarSelectorBuzon(); pintar();
+};
 
 async function pintar() {
   const v = $('#vista'); v.innerHTML = '<p class="meta">Cargando…</p>';
   if (vista === 'agentes') return pintarAgentes(v);
   if (vista === 'conectar') { v.innerHTML = ''; return pintarGuias(v, true); }
+  if (vista === 'chat') return pintarChat(v);
   let q = sb.from('hilos').select('*, creador:agentes!hilos_creado_por_agente_fkey(nombre,eliminado_en), destino:agentes!hilos_para_agente_fkey(nombre,eliminado_en)').eq('buzon_id', buzon.id).order('creado_en', { ascending: false }).limit(50);
   if (vista === 'pendientes') q = q.in('estado', ['pide_aprobacion', 'pide_cierre']);
   const { data, error } = await q;
@@ -74,6 +97,57 @@ async function pintar() {
       <div class="meta">🕒 ${fecha(h.creado_en)} (hora de tu teléfono)</div>`;
     d.onclick = () => abrirHilo(h.id); v.append(d);
   }
+}
+
+// Vista Chat: conversación directa con la IA del buzón actual (p. ej. un buzón solo de Erik e Instinct).
+// Experimento honesto: el humano ve mensajes nuevos al instante con «Tiempo real»; la IA responde cuando revisa el buzón (puede tardar minutos).
+let chatHilo = null, chatTimer = null;
+const burbuja = (m) => `<div class="burbuja ${m.autor_humano ? 'mia' : 'suya'}"><span class="meta">${m.autor_humano ? 'Tú' : esc(nombreAutor(m.agentes, 'IA'))} · ${fecha(m.creado_en)}</span>${esc(m.cuerpo)}</div>`;
+async function refrescarChat() {
+  if (!chatHilo) return;
+  const caja = $('#chat-msgs'); if (!caja) return;
+  const { data: ms } = await sb.from('mensajes').select('id,cuerpo,creado_en,autor_humano,agentes(nombre,eliminado_en)').eq('hilo_id', chatHilo).order('creado_en');
+  caja.innerHTML = (ms ?? []).map(burbuja).join('') || '<p class="meta">Aún no hay mensajes. Escribe el primero 👇</p>';
+  caja.scrollTop = caja.scrollHeight;
+}
+async function pintarChat(v) {
+  clearInterval(chatTimer); chatTimer = null; chatHilo = null;
+  const { data: hs, error } = await sb.from('hilos').select('id,titulo,estado,creado_en').eq('buzon_id', buzon.id)
+    .ilike('titulo', 'Chat%').not('estado', 'in', '(cerrado,aprobado,rechazado)').order('creado_en', { ascending: false }).limit(1);
+  if (error) return v.innerHTML = `<div class="vacio"><b>No pudimos cargar el chat</b>${esc(mensajeAmable(error))}</div>`;
+  const h = hs?.[0];
+  if (!h) {
+    v.innerHTML = `<div class="vacio"><b>💬 Chat directo</b>Este espacio es para platicar dentro del buzón «${esc(buzon.nombre)}». Solo escriben aquí los agentes que tú crees en la pestaña <b>Agentes</b> de ESTE buzón.<br><br><button class="ok" id="chat-empezar">Empezar chat</button></div>
+      <p class="meta">⚠️ Experimento: tu IA revisa el buzón cada cierto tiempo, así que su respuesta puede tardar unos minutos. Cuentas, pagos y datos privados se siguen manejando por tu canal habitual, no por aquí.</p>`;
+    $('#chat-empezar').onclick = () => conBotones([$('#chat-empezar')], async () => {
+      const { error: e2 } = await sb.from('hilos').insert({ buzon_id: buzon.id, tipo: 'avance', titulo: 'Chat' });
+      if (e2) return avisar('No se pudo empezar el chat', e2);
+      pintar();
+    });
+    return;
+  }
+  chatHilo = h.id;
+  const { data: ms } = await sb.from('mensajes').select('id,cuerpo,creado_en,autor_humano,agentes(nombre,eliminado_en)').eq('hilo_id', h.id).order('creado_en');
+  v.innerHTML = `<div class="chat-caja" id="chat-msgs">${(ms ?? []).map(burbuja).join('') || '<p class="meta">Aún no hay mensajes. Escribe el primero 👇</p>'}</div>
+    <form id="f-chat" class="chat-form"><input id="chat-texto" autocomplete="off" maxlength="20000" placeholder="Escribe aquí…" required><button class="ok">Enviar</button></form>
+    <div class="fila"><button class="secundario" id="chat-refrescar">Actualizar</button><label class="meta chat-rt"><input type="checkbox" id="chat-rt"> ⚡ Tiempo real (experimento)</label></div>
+    <p class="meta">Experimento: con «Tiempo real» los mensajes nuevos aparecen solos cada pocos segundos. Tu IA responde cuando revisa el buzón: puede tardar unos minutos, no es instantáneo de su lado. Cuentas, pagos y datos privados: solo por tu canal habitual, no aquí.</p>`;
+  const caja = $('#chat-msgs'); caja.scrollTop = caja.scrollHeight;
+  $('#f-chat').onsubmit = (e) => {
+    e.preventDefault();
+    const cuerpo = $('#chat-texto').value.trim(); if (!cuerpo) return;
+    conBotones([$('#f-chat').querySelector('button')], async () => {
+      const { error: e3 } = await sb.from('mensajes').insert({ hilo_id: h.id, autor_humano: usuario.id, cuerpo });
+      if (e3) return avisar('No se pudo enviar', e3);
+      await refrescarChat();
+    });
+  };
+  $('#chat-texto').value = ''; 
+  $('#chat-refrescar').onclick = () => refrescarChat();
+  $('#chat-rt').onchange = (e) => {
+    clearInterval(chatTimer); chatTimer = null;
+    if (e.target.checked) chatTimer = setInterval(() => { if (vista === 'chat' && chatHilo) refrescarChat(); else clearInterval(chatTimer); }, 5000);
+  };
 }
 
 const ESTADO = { abierto: 'Abierto', tomado: 'Una IA lo está trabajando', pide_aprobacion: 'Espera tu aprobación', aprobado: 'Aprobado', rechazado: 'Rechazado', pide_cierre: 'Listo para cerrar: espera tu OK', cerrado: 'Cerrado' };
