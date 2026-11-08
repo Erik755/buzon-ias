@@ -57,3 +57,6 @@ dialog[open]{display:flex;flex-direction:column;max-height:92dvh;padding:0;width
 .chat-rt{display:flex;align-items:center;gap:6px;margin:0}
 .chat-rt input{width:20px;height:20px;margin:0;flex:none}
 #chat-refrescar{width:auto;margin:0;padding:8px 12px;font-size:.85rem}
+#fila-nuevo-buzon{display:flex;gap:8px;padding:8px 16px;background:#111827;border-top:1px solid #1f2937}
+#fila-nuevo-buzon input{flex:1 1 auto;margin:0;min-height:44px}
+#fila-nuevo-buzon button{flex:0 0 auto}

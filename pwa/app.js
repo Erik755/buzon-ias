@@ -61,14 +61,22 @@ $('#sel-buzon').onchange = (e) => {
   const b = buzones.find((x) => x.id === e.target.value);
   if (b) { buzon = b; localStorage.setItem('buzon_actual', b.id); pintar(); }
 };
-$('#btn-nuevo-buzon').onclick = async () => {
-  const nombre = prompt('Nombre del buzón nuevo (ej. "Erik e Instinct"):');
-  if (!nombre?.trim()) return;
-  const { data, error } = await sb.from('buzones').insert({ dueno_id: usuario.id, nombre: nombre.trim().slice(0, 120) }).select().single();
+$('#btn-nuevo-buzon').onclick = () => {
+  const fila = $('#fila-nuevo-buzon');
+  fila.hidden = !fila.hidden;
+  if (!fila.hidden) $('#nuevo-buzon-nombre').focus();
+};
+$('#btn-guardar-buzon').onclick = () => conBotones([$('#btn-guardar-buzon')], async () => {
+  const entrada = $('#nuevo-buzon-nombre');
+  const nombre = entrada.value.trim();
+  if (!nombre) return;
+  const { data, error } = await sb.from('buzones').insert({ dueno_id: usuario.id, nombre: nombre.slice(0, 120) }).select().single();
   if (error) return avisar('No se pudo crear el buzón', error);
   buzones.push(data); buzon = data; localStorage.setItem('buzon_actual', data.id);
+  entrada.value = ''; $('#fila-nuevo-buzon').hidden = true;
   pintarSelectorBuzon(); pintar();
-};
+});
+$('#nuevo-buzon-nombre').onkeydown = (e) => { if (e.key === 'Enter') $('#btn-guardar-buzon').click(); };
 
 async function pintar() {
   const v = $('#vista'); v.innerHTML = '<p class="meta">Cargando…</p>';
