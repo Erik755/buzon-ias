@@ -125,6 +125,14 @@ begin
   select * into h from public.hilos where id = p_hilo_id and buzon_id = a.buzon_id for update;
   if not found then raise exception '404:Hilo no encontrado en tu buzon'; end if;
   if h.estado = 'cerrado' then raise exception '409:El hilo ya esta cerrado'; end if;
+  if p_evidencia is not null and p_evidencia ? 'pruebas' then
+    for prueba in select value from jsonb_array_elements(p_evidencia->'pruebas') loop
+      if prueba ? 'adjunto_sha256' and not exists (
+        select 1 from public.adjuntos ad where ad.hilo_id = h.id and ad.sha256 = (prueba->>'adjunto_sha256')) then
+        raise exception '400:prueba.adjunto_sha256 no corresponde a un adjunto de este hilo';
+      end if;
+    end loop;
+  end if;
   if p_accion in ('tomar','pedir_aprobacion') and h.estado in ('aprobado','rechazado') then raise exception '409:El hilo ya esta %', h.estado; end if;
   insert into public.mensajes(hilo_id, autor_agente, cuerpo) values (h.id, a.id, p_cuerpo) returning id into m;
   if p_evidencia is not null then

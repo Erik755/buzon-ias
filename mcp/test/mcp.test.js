@@ -182,6 +182,11 @@ test('cierre verificable: evidencia estructurada, es_humano y nombres reservados
   assert.equal(sin.json.evidencia, false);
   // Con evidencia estructurada
   const r2 = await llamar(v, 'crear', { tipo: 'tarea', titulo: 'Otro trabajo' });
+  // adjunto_sha256 debe ser de un adjunto del mismo hilo
+  const mala3 = await llamar(v, 'responder', { hilo_id: r2.json.id, cuerpo: 'x', accion: 'pedir_cierre',
+    evidencia: { que_se_pidio: 'a', que_se_entrego: 'b', pruebas: [{ adjunto_sha256: 'b'.repeat(64) }] } });
+  assert.equal(mala3.error, true); assert.match(mala3.texto, /^\[400\]/);
+  await pool.query("insert into adjuntos(buzon_id,hilo_id,nombre,tipo,tamano,sha256,ruta) values('aaaaaaaa-0000-0000-0000-000000000001',$1,'evidencia.txt','text/plain',10,$2,'z/evidencia-e2e.txt')", [r2.json.id, 'a'.repeat(64)]);
   const con = await llamar(v, 'responder', { hilo_id: r2.json.id, cuerpo: 'listo', accion: 'pedir_cierre',
     evidencia: { que_se_pidio: 'Corregir el contador', que_se_entrego: 'Contador corregido',
       pruebas: [{ url: 'https://ejemplo.com/captura.png' }, { adjunto_sha256: 'a'.repeat(64) }],

@@ -543,6 +543,8 @@ insert into public.tokens(agente_id,hash_token) values ('bbbbbbbb-0000-0000-0000
 do $$ declare h uuid; r jsonb; begin
   insert into public.hilos(buzon_id,tipo,titulo) values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','Cierre con evidencia') returning id into h;
   insert into _d values ('ev', h);
+  insert into public.adjuntos(buzon_id,hilo_id,nombre,tipo,tamano,sha256,ruta)
+    values ('aaaaaaaa-0000-0000-0000-000000000001', h, 'captura.txt', 'text/plain', 10, repeat('a',64), 'z/ev-cierre.txt');
   r := public.mcp_responder('bz_'||repeat('f',30), h, 'Terminado, con evidencia', 'pedir_cierre', null,
     jsonb_build_object('que_se_pidio','Corregir el contador de cupo','que_se_entrego','Contador corregido con etiqueta dia UTC',
       'pruebas', jsonb_build_array(jsonb_build_object('url','https://ejemplo.com/captura.png'), jsonb_build_object('adjunto_sha256', repeat('a',64))),
@@ -619,5 +621,18 @@ do $$ declare j jsonb; r jsonb; begin
   end;
 end $$;
 reset role;
+do $$ declare h uuid; r jsonb; begin
+  insert into public.hilos(buzon_id,tipo,titulo) values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','Cierre con sha inventado') returning id into h;
+  begin perform public.mcp_responder('bz_'||repeat('f',30), h, 'x', 'pedir_cierre', null,
+      jsonb_build_object('que_se_pidio','a','que_se_entrego','b','pruebas',jsonb_build_array(jsonb_build_object('adjunto_sha256',repeat('b',64)))));
+    perform pg_temp.falla('172'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('172 evidencia con adjunto_sha256 inventado rechazada'); else raise; end if; end;
+  insert into public.hilos(buzon_id,tipo,titulo) values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','Hilo con adjunto') returning id into h;
+  insert into public.adjuntos(buzon_id,hilo_id,nombre,tipo,tamano,sha256,ruta)
+    values ('aaaaaaaa-0000-0000-0000-000000000001', h, 'notas.txt', 'text/plain', 10, repeat('c',64), 'z/notas.txt');
+  insert into public.hilos(buzon_id,tipo,titulo) values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','Cierre citando adjunto ajeno') returning id into h;
+  begin perform public.mcp_responder('bz_'||repeat('f',30), h, 'x', 'pedir_cierre', null,
+      jsonb_build_object('que_se_pidio','a','que_se_entrego','b','pruebas',jsonb_build_array(jsonb_build_object('adjunto_sha256',repeat('c',64)))));
+    perform pg_temp.falla('173'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('173 evidencia con adjunto_sha256 de otro hilo rechazada'); else raise; end if; end;
+end $$;
 \echo TODAS_LAS_PRUEBAS_PASARON
 
