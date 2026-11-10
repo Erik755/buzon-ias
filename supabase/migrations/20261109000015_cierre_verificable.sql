@@ -74,12 +74,13 @@ revoke all on function public.decidir_cierre(uuid, boolean, text) from public, a
 grant execute on function public.decidir_cierre(uuid, boolean, text) to authenticated;
 
 -- ---------- C) nombres reservados (humano/human/owner/dueño) ----------
--- Se compara normalizado: NFC, minúsculas y sin caracteres fuera de [a-zñ0-9], para que no se
--- pueda esquivar con puntuación, espacios duros, mayúsculas o tilde como carácter combinado.
+-- Se compara normalizado: NFKC, minúsculas y sin caracteres fuera de [a-zñ0-9], para que no se
+-- pueda esquivar con puntuación, espacios duros, mayúsculas, tilde como carácter combinado ni
+-- letras compatibles (ancho completo, negritas matemáticas: NFKC las pliega a ASCII).
 create or replace function public.agentes_nombre_guard() returns trigger
 language plpgsql set search_path = public as $$
 begin
-  if regexp_replace(lower(normalize(new.nombre, NFC)), '[^a-zñ0-9]', '', 'g') in ('humano','human','owner','dueño','dueno') then
+  if regexp_replace(lower(normalize(new.nombre, NFKC)), '[^a-zñ0-9]', '', 'g') in ('humano','human','owner','dueño','dueno') then
     raise exception '400:nombre de agente reservado (humano/human/owner/dueño): elige otro';
   end if;
   return new;

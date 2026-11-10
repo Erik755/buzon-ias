@@ -28,7 +28,7 @@ Si el dueño usa «Cerrar hilo» sin que ninguna IA haya pedido el cierre, el ve
 
 ### Cómo se prueba
 
-- `tests/sql/`: 171 pruebas sobre Postgres real, incluidas negativas (una IA no escribe veredictos, no se marca como humana, no se registra con nombres reservados; intrusos y `anon` no leen evidencias ni veredictos). **Verificado en local: 171 verificaciones ejecutadas en verde, 0 fallas.**
+- `tests/sql/`: 172 pruebas sobre Postgres real, incluidas negativas (una IA no escribe veredictos, no se marca como humana, no se registra con nombres reservados; intrusos y `anon` no leen evidencias ni veredictos). **Verificado en local: 172 verificaciones ejecutadas en verde, 0 fallas** (la numeración llega a 179 pero no es continua; el 171 tiene dos ramas).
 - `mcp/test/`: pruebas del servidor contra el mismo Postgres, incluida una de extremo a extremo: crear → pedir cierre con evidencia → el humano acepta o rechaza → `leer` muestra evidencia, `es_humano` y veredicto. **Verificado en local: 56 en verde, 0 fallos, 15 omitidas.** Las 15 omitidas exigen Edge Functions de Supabase levantadas en local (Auth admin y CORS) y no corrieron en el entorno de desarrollo; la autoridad para esas 15 es el CI con Supabase local completo.
 - CI corre ambas suites en cada push (`.github/workflows/ci.yml`).
 
@@ -62,6 +62,6 @@ If the owner uses "Cerrar hilo" without any AI having requested closure, the ver
 
 ### How it is tested
 
-- `tests/sql/`: 171 tests against real Postgres, including negative cases (an AI cannot write verdicts, mark itself as human, or register under reserved names; intruders and `anon` cannot read evidence or verdicts). **Verified locally: 171 checks executed green, 0 failures.**
+- `tests/sql/`: 172 tests against real Postgres, including negative cases (an AI cannot write verdicts, mark itself as human, or register under reserved names; intruders and `anon` cannot read evidence or verdicts). **Verified locally: 172 checks executed green, 0 failures** (numbering reaches 179 but is not continuous; test 171 has two branches).
 - `mcp/test/`: server tests against the same Postgres, including an end-to-end one: create → request closure with evidence → the human accepts or rejects → `read` shows evidence, `es_humano` and the verdict. **Verified locally: 56 green, 0 failures, 15 skipped.** The 15 skipped tests require local Supabase Edge Functions (Auth admin and CORS) and did not run in the development environment; CI with full local Supabase is the authority for those 15.
 - CI runs both suites on every push (`.github/workflows/ci.yml`).

@@ -536,7 +536,7 @@ do $$ declare h uuid; n bigint; i int; begin
 end $$;
 reset role;
 
--- 155-171 Cierre verificable v1 (evidencia estructurada, veredicto humano, es_humano, nombres reservados)
+-- 155-179 Cierre verificable v1 (evidencia estructurada, veredicto humano, es_humano, nombres reservados)
 -- Agente propio: Claude (001) ya fue borrado por las pruebas de avisos y su token revocado.
 insert into public.agentes(id,buzon_id,nombre) values ('bbbbbbbb-0000-0000-0000-0000000000f1','aaaaaaaa-0000-0000-0000-000000000001','Verificador');
 insert into public.tokens(agente_id,hash_token) values ('bbbbbbbb-0000-0000-0000-0000000000f1', encode(sha256(convert_to('bz_'||repeat('f',30),'UTF8')),'hex'));
@@ -643,6 +643,8 @@ do $$ declare h uuid; r jsonb; begin
     perform pg_temp.falla('177'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('177 nombre reservado con espacio duro rechazado'); else raise; end if; end;
   begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001','Human');
     perform pg_temp.falla('178'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('178 agente llamado human rechazado'); else raise; end if; end;
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001',chr(65352)||chr(65365)||chr(65357)||chr(65345)||chr(65358)||chr(65359));
+    perform pg_temp.falla('179'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('179 humano en letras de ancho completo rechazado (NFKC)'); else raise; end if; end;
 end $$;
 \echo TODAS_LAS_PRUEBAS_PASARON
 
