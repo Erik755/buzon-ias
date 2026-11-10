@@ -535,5 +535,89 @@ do $$ declare h uuid; n bigint; i int; begin
   update public.notificaciones set estado = 'enviada' where estado = 'pendiente';
 end $$;
 reset role;
+
+-- 155-171 Cierre verificable v1 (evidencia estructurada, veredicto humano, es_humano, nombres reservados)
+-- Agente propio: Claude (001) ya fue borrado por las pruebas de avisos y su token revocado.
+insert into public.agentes(id,buzon_id,nombre) values ('bbbbbbbb-0000-0000-0000-0000000000f1','aaaaaaaa-0000-0000-0000-000000000001','Verificador');
+insert into public.tokens(agente_id,hash_token) values ('bbbbbbbb-0000-0000-0000-0000000000f1', encode(sha256(convert_to('bz_'||repeat('f',30),'UTF8')),'hex'));
+do $$ declare h uuid; r jsonb; begin
+  insert into public.hilos(buzon_id,tipo,titulo) values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','Cierre con evidencia') returning id into h;
+  insert into _d values ('ev', h);
+  r := public.mcp_responder('bz_'||repeat('f',30), h, 'Terminado, con evidencia', 'pedir_cierre', null,
+    jsonb_build_object('que_se_pidio','Corregir el contador de cupo','que_se_entrego','Contador corregido con etiqueta dia UTC',
+      'pruebas', jsonb_build_array(jsonb_build_object('url','https://ejemplo.com/captura.png'), jsonb_build_object('adjunto_sha256', repeat('a',64))),
+      'verificacion','npm test: 12/12 en verde'));
+  if (r->>'evidencia')::boolean and r->>'estado'='pide_cierre'
+     and exists (select 1 from public.evidencias_cierre where hilo_id=h and que_se_pidio='Corregir el contador de cupo' and jsonb_array_length(pruebas)=2 and verificacion like 'npm test:%')
+  then perform pg_temp.ok('155 pedir_cierre con evidencia la guarda estructurada'); else perform pg_temp.falla('155 ' || r::text); end if;
+  if (select count(*) from jsonb_array_elements(public.mcp_leer('bz_'||repeat('f',30), h)->'evidencias_cierre'))=1
+  then perform pg_temp.ok('156 leer expone la evidencia del hilo'); else perform pg_temp.falla('156'); end if;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ declare ret text; begin
+  ret := public.decidir_cierre((select id from _d where k='ev'), true, 'Revisada la captura');
+  if ret='cerrado'
+     and exists (select 1 from public.cierres where hilo_id=(select id from _d where k='ev') and veredicto='aceptado' and motivo='Revisada la captura' and humano_id='11111111-1111-1111-1111-111111111111')
+  then perform pg_temp.ok('157 aceptar guarda veredicto estructurado (motivo y quien)'); else perform pg_temp.falla('157 ' || coalesce(ret,'null')); end if;
+  if (select count(*) from public.evidencias_cierre)=1
+     and (select count(*) from public.cierres where hilo_id=(select id from _d where k='ev'))=1
+  then perform pg_temp.ok('158 el dueno ve evidencias y veredictos en la BD'); else perform pg_temp.falla('158'); end if;
+end $$;
+select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$ begin
+  if (select count(*) from public.evidencias_cierre)=0 and (select count(*) from public.cierres)=0
+  then perform pg_temp.ok('159 intruso no ve evidencias ni veredictos de Erik'); else perform pg_temp.falla('159'); end if;
+  begin insert into public.cierres(hilo_id,humano_id,veredicto) values ((select id from _d where k='ev'),'22222222-2222-2222-2222-222222222222','aceptado');
+    perform pg_temp.falla('160'); exception when insufficient_privilege then perform pg_temp.ok('160 nadie escribe un veredicto por fuera de decidir_cierre'); end;
+end $$;
+reset role;
+set role anon;
+do $$ begin
+  begin perform 1 from public.evidencias_cierre; perform pg_temp.falla('161'); exception when insufficient_privilege then perform pg_temp.ok('161 anon no lee evidencias'); end;
+  begin perform 1 from public.cierres; perform pg_temp.falla('162'); exception when insufficient_privilege then perform pg_temp.ok('162 anon no lee veredictos'); end;
+end $$;
+reset role;
+do $$ declare h uuid; r jsonb; begin
+  insert into public.hilos(buzon_id,tipo,titulo) values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','Cierre sin evidencia') returning id into h;
+  r := public.mcp_responder('bz_'||repeat('f',30), h, 'Terminado', 'pedir_cierre');
+  if (r->'evidencia') is not null and not (r->>'evidencia')::boolean
+     and not exists (select 1 from public.evidencias_cierre where hilo_id=h)
+  then perform pg_temp.ok('163 pedir_cierre sin evidencia se permite y queda marcado evidencia=false'); else perform pg_temp.falla('163 ' || r::text); end if;
+  begin perform public.mcp_responder('bz_'||repeat('f',30), h, 'x', 'comentar', null, jsonb_build_object('que_se_pidio','a','que_se_entrego','b'));
+    perform pg_temp.falla('164'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('164 evidencia solo con pedir_cierre'); else raise; end if; end;
+  begin perform public.mcp_responder('bz_'||repeat('f',30), h, 'x', 'pedir_cierre', null, jsonb_build_object('que_se_pidio','a','que_se_entrego','b','pruebas',jsonb_build_array(jsonb_build_object('url','javascript:alert(1)'))));
+    perform pg_temp.falla('165'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('165 prueba con url no http(s) rechazada'); else raise; end if; end;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ declare ret text; begin
+  ret := public.decidir_cierre((select id from public.hilos where titulo='Cierre sin evidencia'), false, 'Falta evidencia');
+  if ret='abierto' and (select estado from public.hilos where titulo='Cierre sin evidencia')='abierto'
+     and exists (select 1 from public.cierres where veredicto='rechazado' and motivo='Falta evidencia')
+  then perform pg_temp.ok('166 rechazar reabre el hilo y guarda el veredicto'); else perform pg_temp.falla('166 ' || coalesce(ret,'null')); end if;
+end $$;
+reset role;
+do $$ begin
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001','HUMANO');
+    perform pg_temp.falla('167'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('167 agente llamado humano rechazado (sin importar mayusculas)'); else raise; end if; end;
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001',' owner ');
+    perform pg_temp.falla('168'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('168 agente llamado owner rechazado'); else raise; end if; end;
+  if (select m->>'es_humano' from jsonb_array_elements(public.mcp_leer('bz_'||repeat('f',30),(select id from _d where k='ev'))->'mensajes') m limit 1)='false'
+  then perform pg_temp.ok('169 mensajes de IA traen es_humano=false'); else perform pg_temp.falla('169'); end if;
+  insert into public.mensajes(hilo_id, autor_humano, cuerpo) values ((select id from _d where k='ev'), '11111111-1111-1111-1111-111111111111', 'Erik deja constancia');
+  if (select count(*) from jsonb_array_elements(public.mcp_leer('bz_'||repeat('f',30),(select id from _d where k='ev'))->'mensajes') m where (m->>'es_humano')::boolean and m->>'cuerpo'='Erik deja constancia')=1
+  then perform pg_temp.ok('170 el mensaje del humano trae es_humano=true'); else perform pg_temp.falla('170'); end if;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ declare j jsonb; r jsonb; begin
+  j := public.crear_codigo_config('aaaaaaaa-0000-0000-0000-000000000001','Dueño', 10);
+  begin
+    r := public.canjear_codigo_config(j->>'codigo', null);
+    if r ? 'error' then perform pg_temp.ok('171 el canje tampoco permite registrar una IA llamada dueño');
+    else perform pg_temp.falla('171 ' || r::text); end if;
+  exception when others then
+    if sqlerrm like '400:%' then perform pg_temp.ok('171 el canje tampoco permite registrar una IA llamada dueño'); else raise; end if;
+  end;
+end $$;
+reset role;
 \echo TODAS_LAS_PRUEBAS_PASARON
 

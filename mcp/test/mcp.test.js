@@ -163,3 +163,51 @@ test('lo que me toca: crear con para, leer sin argumentos da resumen corto con h
   assert.ok(tools.find((t) => t.name === 'crear').inputSchema.properties.para);
   assert.ok(tools.find((t) => t.name === 'leer').inputSchema.properties.estado.enum.includes('todos'));
 });
+
+test('cierre verificable: evidencia estructurada, es_humano y nombres reservados', async () => {
+  const tok = nuevoToken();
+  await pool.query("insert into agentes(id,buzon_id,nombre) values('bbbbbbbb-0000-0000-0000-0000000000f2','aaaaaaaa-0000-0000-0000-000000000001','Verificador')");
+  await pool.query('insert into tokens(agente_id,hash_token) values($1,$2)', ['bbbbbbbb-0000-0000-0000-0000000000f2', hashToken(tok)]);
+  const v = await cliente(tok);
+  // Evidencia solo va con pedir_cierre
+  const r = await llamar(v, 'crear', { tipo: 'tarea', titulo: 'Trabajo con cierre verificable' });
+  assert.equal(r.error, false, r.texto);
+  const mal = await llamar(v, 'responder', { hilo_id: r.json.id, cuerpo: 'x', evidencia: { que_se_pidio: 'a', que_se_entrego: 'b' } });
+  assert.equal(mal.error, true); assert.match(mal.texto, /^\[400\]/);
+  const mala2 = await llamar(v, 'responder', { hilo_id: r.json.id, cuerpo: 'x', accion: 'pedir_cierre',
+    evidencia: { que_se_pidio: 'a', que_se_entrego: 'b', pruebas: [{ url: 'javascript:alert(1)' }] } });
+  assert.equal(mala2.error, true); assert.match(mala2.texto, /^\[400\]/);
+  // Sin evidencia: permitido, marcado evidencia=false
+  const sin = await llamar(v, 'responder', { hilo_id: r.json.id, cuerpo: 'sin evidencia', accion: 'pedir_cierre' });
+  assert.equal(sin.json.evidencia, false);
+  // Con evidencia estructurada
+  const r2 = await llamar(v, 'crear', { tipo: 'tarea', titulo: 'Otro trabajo' });
+  const con = await llamar(v, 'responder', { hilo_id: r2.json.id, cuerpo: 'listo', accion: 'pedir_cierre',
+    evidencia: { que_se_pidio: 'Corregir el contador', que_se_entrego: 'Contador corregido',
+      pruebas: [{ url: 'https://ejemplo.com/captura.png' }, { adjunto_sha256: 'a'.repeat(64) }],
+      verificacion: 'npm test: 12/12' } });
+  assert.equal(con.error, false, con.texto); assert.equal(con.json.evidencia, true);
+  const leido = (await llamar(v, 'leer', { hilo_id: r2.json.id })).json;
+  assert.equal(leido.evidencias_cierre.length, 1);
+  assert.equal(leido.evidencias_cierre[0].que_se_pidio, 'Corregir el contador');
+  assert.equal(leido.evidencias_cierre[0].pruebas.length, 2);
+  assert.equal(leido.mensajes.every((m) => m.es_humano === false), true, 'los mensajes de IA traen es_humano=false');
+  // Mensaje del humano: es_humano=true
+  const c = await pool.connect();
+  try {
+    await c.query("set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false)");
+    await c.query('insert into mensajes(hilo_id,autor_humano,cuerpo) values ($1,$2,$3)', [r2.json.id, ERIK, 'Revisado por Erik']);
+    // El dueño decide y queda el veredicto estructurado
+    await c.query('select public.decidir_cierre($1, true, $2)', [r2.json.id, 'Evidencia revisada']);
+    await c.query('reset role');
+  } finally { c.release(); }
+  const final = (await llamar(v, 'leer', { hilo_id: r2.json.id })).json;
+  assert.equal(final.mensajes.find((m) => m.cuerpo === 'Revisado por Erik').es_humano, true);
+  assert.equal(final.cierres[0].veredicto, 'aceptado'); assert.equal(final.cierres[0].motivo, 'Evidencia revisada');
+  // Nombres reservados: ninguna IA puede llamarse humano/owner/dueño
+  await assert.rejects(() => pool.query("insert into agentes(buzon_id,nombre) values('aaaaaaaa-0000-0000-0000-000000000001','HUMANO')"), /reservado/);
+  await assert.rejects(() => pool.query("insert into agentes(buzon_id,nombre) values('aaaaaaaa-0000-0000-0000-000000000001','Dueño')"), /reservado/);
+  // La herramienta expone el campo evidencia en su esquema
+  const { tools } = await v.listTools();
+  assert.ok(tools.find((t) => t.name === 'responder').inputSchema.properties.evidencia);
+});
