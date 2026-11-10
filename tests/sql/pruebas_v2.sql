@@ -633,6 +633,16 @@ do $$ declare h uuid; r jsonb; begin
   begin perform public.mcp_responder('bz_'||repeat('f',30), h, 'x', 'pedir_cierre', null,
       jsonb_build_object('que_se_pidio','a','que_se_entrego','b','pruebas',jsonb_build_array(jsonb_build_object('adjunto_sha256',repeat('c',64)))));
     perform pg_temp.falla('173'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('173 evidencia con adjunto_sha256 de otro hilo rechazada'); else raise; end if; end;
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001','Humano.');
+    perform pg_temp.falla('174'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('174 nombre reservado con puntuación rechazado'); else raise; end if; end;
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001','HUMANO_');
+    perform pg_temp.falla('175'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('175 nombre reservado con guion bajo rechazado'); else raise; end if; end;
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001','duen'||chr(771)||'o');
+    perform pg_temp.falla('176'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('176 dueño con tilde combinada rechazado'); else raise; end if; end;
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001',chr(160)||'humano'||chr(160));
+    perform pg_temp.falla('177'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('177 nombre reservado con espacio duro rechazado'); else raise; end if; end;
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001','Human');
+    perform pg_temp.falla('178'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('178 agente llamado human rechazado'); else raise; end if; end;
 end $$;
 \echo TODAS_LAS_PRUEBAS_PASARON
 

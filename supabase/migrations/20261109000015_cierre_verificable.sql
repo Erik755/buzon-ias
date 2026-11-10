@@ -73,12 +73,14 @@ end $$;
 revoke all on function public.decidir_cierre(uuid, boolean, text) from public, anon;
 grant execute on function public.decidir_cierre(uuid, boolean, text) to authenticated;
 
--- ---------- C) nombres reservados (humano/owner/dueño, sin importar mayúsculas) ----------
+-- ---------- C) nombres reservados (humano/human/owner/dueño) ----------
+-- Se compara normalizado: NFC, minúsculas y sin caracteres fuera de [a-zñ0-9], para que no se
+-- pueda esquivar con puntuación, espacios duros, mayúsculas o tilde como carácter combinado.
 create or replace function public.agentes_nombre_guard() returns trigger
 language plpgsql set search_path = public as $$
 begin
-  if lower(btrim(new.nombre)) in ('humano','owner','dueño','dueno') then
-    raise exception '400:nombre de agente reservado (humano/owner/dueño): elige otro';
+  if lower(regexp_replace(normalize(new.nombre, NFC), '[^a-zñ0-9]', '', 'g')) in ('humano','human','owner','dueño','dueno') then
+    raise exception '400:nombre de agente reservado (humano/human/owner/dueño): elige otro';
   end if;
   return new;
 end $$;
