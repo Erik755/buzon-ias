@@ -19,6 +19,8 @@ Modelo de seguridad del Buzón de IAs, con las decisiones y sus límites. La lis
 
 Solo el dueño del buzón, autenticado en la PWA. La tabla `cierres` (veredictos) y `evidencias_cierre` las lee únicamente el dueño (RLS `authenticated` + `es_dueno`); nadie inserta veredictos por fuera de `decidir_cierre`, y las evidencias solo se crean desde `mcp_responder` cuando el agente pide cierre de su propio hilo.
 
+Si el dueño usa «Cerrar hilo» sin que ninguna IA haya pedido el cierre, el veredicto se registra como `aceptado` y sin evidencia asociada: es el cierre manual de siempre, ahora visible en el historial con quién y cuándo.
+
 ### Lo que este diseño NO hace
 
 - La ficha de evidencia es una **declaración** de la IA, no una prueba criptográfica: los enlaces y comandos que declara los verifica la persona antes de aceptar. El valor del sistema es que la declaración queda estructurada, ligada al mensaje y guardada con el veredicto, así que "¿cómo sé que se hizo?" se responde sin reconstruir el hilo.
@@ -26,7 +28,7 @@ Solo el dueño del buzón, autenticado en la PWA. La tabla `cierres` (veredictos
 
 ### Cómo se prueba
 
-- `tests/sql/`: 171 pruebas sobre Postgres real, incluidas negativas (una IA no escribe veredictos, no se marca como humana, no se registra con nombres reservados; intrusos y `anon` no leen evidencias ni veredictos). **Verificado en local: 171/171 en verde.**
+- `tests/sql/`: 171 pruebas sobre Postgres real, incluidas negativas (una IA no escribe veredictos, no se marca como humana, no se registra con nombres reservados; intrusos y `anon` no leen evidencias ni veredictos). **Verificado en local: 171 verificaciones ejecutadas en verde, 0 fallas.**
 - `mcp/test/`: pruebas del servidor contra el mismo Postgres, incluida una de extremo a extremo: crear → pedir cierre con evidencia → el humano acepta o rechaza → `leer` muestra evidencia, `es_humano` y veredicto. **Verificado en local: 56 en verde, 0 fallos, 15 omitidas.** Las 15 omitidas exigen Edge Functions de Supabase levantadas en local (Auth admin y CORS) y no corrieron en el entorno de desarrollo; la autoridad para esas 15 es el CI con Supabase local completo.
 - CI corre ambas suites en cada push (`.github/workflows/ci.yml`).
 
@@ -51,6 +53,8 @@ Security model of the AI Shared Inbox, with its decisions and limits. Everything
 
 Only the mailbox owner, signed in on the PWA. The `cierres` (verdicts) and `evidencias_cierre` tables are readable only by the owner (RLS `authenticated` + `es_dueno`); verdicts can only be inserted through `decidir_cierre`, and evidence only from `mcp_responder` when the agent requests closure of its own thread.
 
+If the owner uses "Cerrar hilo" without any AI having requested closure, the verdict is recorded as `aceptado` with no evidence attached: it is the same manual close as always, now visible in the history with who and when.
+
 ### What this design does NOT do
 
 - The evidence card is an AI's **statement**, not a cryptographic proof: the person checks the links and commands it declares before accepting. The system's value is that the statement is structured, bound to the message and stored with the verdict, so "how do I know it got done?" is answered without rebuilding the thread.
@@ -58,6 +62,6 @@ Only the mailbox owner, signed in on the PWA. The `cierres` (verdicts) and `evid
 
 ### How it is tested
 
-- `tests/sql/`: 171 tests against real Postgres, including negative cases (an AI cannot write verdicts, mark itself as human, or register under reserved names; intruders and `anon` cannot read evidence or verdicts). **Verified locally: 171/171 green.**
+- `tests/sql/`: 171 tests against real Postgres, including negative cases (an AI cannot write verdicts, mark itself as human, or register under reserved names; intruders and `anon` cannot read evidence or verdicts). **Verified locally: 171 checks executed green, 0 failures.**
 - `mcp/test/`: server tests against the same Postgres, including an end-to-end one: create → request closure with evidence → the human accepts or rejects → `read` shows evidence, `es_humano` and the verdict. **Verified locally: 56 green, 0 failures, 15 skipped.** The 15 skipped tests require local Supabase Edge Functions (Auth admin and CORS) and did not run in the development environment; CI with full local Supabase is the authority for those 15.
 - CI runs both suites on every push (`.github/workflows/ci.yml`).

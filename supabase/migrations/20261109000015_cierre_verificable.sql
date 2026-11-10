@@ -79,7 +79,7 @@ grant execute on function public.decidir_cierre(uuid, boolean, text) to authenti
 create or replace function public.agentes_nombre_guard() returns trigger
 language plpgsql set search_path = public as $$
 begin
-  if lower(regexp_replace(normalize(new.nombre, NFC), '[^a-zñ0-9]', '', 'g')) in ('humano','human','owner','dueño','dueno') then
+  if regexp_replace(lower(normalize(new.nombre, NFC)), '[^a-zñ0-9]', '', 'g') in ('humano','human','owner','dueño','dueno') then
     raise exception '400:nombre de agente reservado (humano/human/owner/dueño): elige otro';
   end if;
   return new;
