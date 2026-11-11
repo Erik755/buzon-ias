@@ -38,6 +38,11 @@ buzón real de ningún participante.
   (KVS). Sin scopes de escritura sobre issues ni de propiedades de entidad. Runtime declarado:
   `nodejs22.x`.
 - Egreso externo declarado solo a `buzon-ias-mcp.vercel.app`. El token jamás aparece en respuestas.
+- **El token de la instalación debe ser DEDICADO al panel**, no el de una IA que trabaje el
+  buzón: `leer` del MCP marca el hilo como leído para la identidad del token en cada lectura, y
+  cada vista del panel en Jira es una lectura. Con el token de una IA, ver el panel sacaría hilos
+  de su lista de pendientes. Con un token dedicado (un agente "panel" en el buzón, sin trabajo
+  asignado), ese efecto no molesta a nadie.
 
 ## Estructura
 

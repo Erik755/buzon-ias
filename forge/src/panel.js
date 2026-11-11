@@ -19,13 +19,16 @@ export async function hiloResumen({ issueId }, deps) {
   const token = await deps.leerToken();
   if (!token) throw new ErrorPanel('falta configurar el token (página de administración)');
   const h = await leerEnBuzon(deps.fetchImpl, token, { hilo_id: hiloId });
+  // mcp_leer devuelve { hilo: { titulo, estado, ... }, mensajes: [...], ... } (verificado en
+  // la integración local contra el servidor real). Defaults si falta h.hilo.
+  const hilo = h.hilo || {};
   const mensajes = h.mensajes || [];
   return {
     vinculado: true,
     esAdmin,
     hiloId,
-    titulo: h.titulo || '(sin título)',
-    estado: h.estado || 'desconocido',
+    titulo: hilo.titulo || '(sin título)',
+    estado: hilo.estado || 'desconocido',
     totalMensajes: mensajes.length,
     ultimos: mensajes.slice(-5).map((m) => ({ autor: m.autor, creado_en: m.creado_en, cuerpo: (m.cuerpo || '').slice(0, 280) })),
     enlacePwa: `${PWA_URL}?hilo=${hiloId}`,

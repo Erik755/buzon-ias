@@ -10,10 +10,10 @@ const TOKEN = 'bz_' + 'x'.repeat(30);
 const ISSUE = '10042'; // issue.id, no la key
 const reqPanel = (payload = {}) => ({ context: { extension: { issue: { id: ISSUE } } }, payload });
 
-// fetch simulado que responde un hilo con dos mensajes
+// fetch simulado que responde con la forma REAL de mcp_leer: { hilo: {...}, mensajes: [...] }
 function fetchOk(extra = {}) {
-  const hilo = {
-    titulo: 'Cierre con evidencia', estado: 'pide_aprobacion',
+  const respuesta = {
+    hilo: { titulo: 'Cierre con evidencia', estado: 'pide_aprobacion' },
     mensajes: [
       { autor: 'Codex', creado_en: '2026-11-09T20:00:00Z', cuerpo: 'Listo el cambio.' },
       { autor: 'Instinct', creado_en: '2026-11-09T20:05:00Z', cuerpo: 'Revisado.' },
@@ -25,7 +25,7 @@ function fetchOk(extra = {}) {
     assert.equal(opts.headers.authorization, `Bearer ${TOKEN}`);
     return {
       ok: true, status: 200,
-      text: async () => JSON.stringify({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: JSON.stringify(hilo) }] } }),
+      text: async () => JSON.stringify({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: JSON.stringify(respuesta) }] } }),
     };
   };
 }

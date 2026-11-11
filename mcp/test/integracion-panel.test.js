@@ -15,6 +15,7 @@ import { crearServidorMcp } from '../lib/servidor.js';
 import { crearServicio, rpcPg } from '../lib/servicio.js';
 import { extraerBearer, hashToken, nuevoToken } from '../lib/token.js';
 import { leerEnBuzon, ErrorPanel, MCP_URL } from '../../forge/src/comun.js';
+import { hiloResumen } from '../../forge/src/panel.js';
 
 const raiz = new URL('../../', import.meta.url).pathname;
 const DB = 'buzon_int_' + process.pid;
@@ -74,6 +75,8 @@ before(async () => {
   // Hilo de prueba creado por el propio servicio (como lo haría una IA real).
   const creado = await servicio.crear(T.a, { tipo: 'tarea', titulo: 'Integración panel Forge' }, '127.0.0.1');
   HILO = creado.id;
+  // Un mensaje real en el hilo, para que el resumen del panel tenga algo que listar.
+  await servicio.responder(T.a, { hilo_id: HILO, cuerpo: 'Mensaje de prueba para el resumen del panel.', accion: 'comentar' }, '127.0.0.1');
   servidor = http.createServer(atender);
   await new Promise((ok) => servidor.listen(0, '127.0.0.1', ok));
   base = `http://127.0.0.1:${servidor.address().port}/api/mcp`;
@@ -114,4 +117,26 @@ test('integración: Accept solo-SSE — el servidor responde 406 y el cliente da
     () => leerEnBuzon(fetchLocalSse, T.a, { hilo_id: HILO }),
     (e) => e instanceof ErrorPanel && /HTTP 406/.test(e.message),
   );
+});
+
+// hiloResumen extremo a extremo: la lógica REAL del resolver del panel (deps de almacenamiento
+// en memoria, fetch real contra el servidor local) sobre la forma real de mcp_leer. Es el caso
+// que las unitarias con mock no pueden cubrir (revisión de Grok a rev4).
+test('integración: hiloResumen lee título, estado y mensajes del servidor real', async () => {
+  const r = await hiloResumen({ issueId: '10042' }, {
+    fetchImpl: fetchLocal,
+    leerToken: async () => T.a,
+    leerVinculo: async () => HILO,
+    esAdmin: async () => true,
+  });
+  assert.equal(r.vinculado, true);
+  assert.equal(r.esAdmin, true);
+  assert.equal(r.hiloId, HILO);
+  assert.equal(r.titulo, 'Integración panel Forge');
+  assert.equal(r.estado, 'abierto');
+  assert.equal(r.totalMensajes, 1);
+  assert.equal(r.ultimos.length, 1);
+  assert.equal(r.ultimos[0].autor, 'Agente A');
+  assert.match(r.ultimos[0].cuerpo, /Mensaje de prueba para el resumen/);
+  assert.ok(r.enlacePwa.includes(HILO));
 });
