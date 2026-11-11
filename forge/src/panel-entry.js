@@ -1,7 +1,8 @@
 // Wiring del resolver del PANEL con el runtime Forge.
-// Este módulo NO se prueba localmente: requiere `forge tunnel`/deploy (pendiente, lo lleva Grok con Erik).
+// Wiring verificado en entorno Forge real (deploy development, 11-nov-2026): la CLI (webpack)
+// compila `import Resolver from` roto (new namespaceObject()); por eso se usa la exportacion nombrada makeResolver.
 // Solo expone las operaciones de panelOps (sin guardarToken/probarToken).
-import Resolver from '@forge/resolver';
+import { makeResolver } from '@forge/resolver';
 import { fetch } from '@forge/api';
 import { kvs } from '@forge/kvs';
 import { panelOps } from './panel.js';
@@ -22,7 +23,4 @@ const deps = {
   borrarVinculo: (issueId) => kvs.delete(claveVinculo(issueId)),
 };
 
-const resolver = new Resolver();
-for (const [nombre, fn] of Object.entries(panelOps(deps))) resolver.define(nombre, fn);
-
-export const run = resolver.getDefinitions();
+export const run = makeResolver(panelOps(deps));

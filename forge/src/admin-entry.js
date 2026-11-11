@@ -1,7 +1,8 @@
 // Wiring del resolver de ADMINISTRACIÓN con el runtime Forge.
-// Este módulo NO se prueba localmente: requiere `forge tunnel`/deploy (pendiente, lo lleva Grok con Erik).
+// Wiring verificado en entorno Forge real (deploy development, 11-nov-2026): la CLI (webpack)
+// compila `import Resolver from` roto (new namespaceObject()); por eso se usa la exportacion nombrada makeResolver.
 // Solo expone las operaciones de adminOps (guardarToken/probarToken), ambas con requireAdmin().
-import Resolver from '@forge/resolver';
+import { makeResolver } from '@forge/resolver';
 import { fetch } from '@forge/api';
 import { kvs } from '@forge/kvs';
 import { adminOps } from './admin.js';
@@ -15,7 +16,4 @@ const deps = {
   requireAdmin: exigirAdmin,
 };
 
-const resolver = new Resolver();
-for (const [nombre, fn] of Object.entries(adminOps(deps))) resolver.define(nombre, fn);
-
-export const run = resolver.getDefinitions();
+export const run = makeResolver(adminOps(deps));
