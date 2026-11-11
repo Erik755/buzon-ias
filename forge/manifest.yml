@@ -29,9 +29,8 @@ resources:
     path: src/admin-page.jsx # UI Kit vigente (@forge/react, render: native); la empaqueta la CLI de Forge
 permissions:
   scopes:
-    - read:jira-work # mypermissions del usuario + lectura de la propiedad del issue
-    - write:jira-work # escribir/borrar la propiedad issue<->hilo_id
-    - storage:app # KVS secrets: token del buzón por instalación
+    - read:permission:jira # granular mínimo para mypermissions (ADMINISTER del usuario que llama)
+    - storage:app # KVS: token del buzón y vínculo hilo<->issue; solo escribe la app
   external:
     fetch:
       backend:
@@ -39,3 +38,5 @@ permissions:
 app:
   # Reemplazar tras `forge register` (lo hace Grok con la cuenta de Erik).
   id: ari:cloud:ecosystem::app/00000000-0000-0000-0000-000000000000
+  runtime:
+    name: nodejs22.x # opciones documentadas: nodejs24.x | nodejs22.x | nodejs20.x; 22 por coherencia con engines del repo

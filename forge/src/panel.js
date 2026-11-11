@@ -1,19 +1,28 @@
 // Lógica del resolver del PANEL, con dependencias inyectadas para probar sin entorno Forge.
 // Este módulo NO conoce guardarToken ni probarToken: esas operaciones viven en admin.js y el
 // resolver del panel nunca las expone (separación exigida en la revisión de Grok).
-import { leerEnBuzon, ErrorPanel, PWA_URL, PROP_ISSUE_HILO, UUID_RE } from './comun.js';
+//
+// El vínculo issue<->hilo vive en Forge KVS (clave hilo:<issue.id>), NO en una propiedad del
+// issue: las propiedades las puede escribir cualquier usuario con EDIT_ISSUES por REST,
+// saltándose las validaciones, y las puede leer cualquiera con BROWSE. Solo la app escribe KVS.
+// Se usa issue.id (estable al mover el issue entre proyectos), no la key.
+import { leerEnBuzon, ErrorPanel, PWA_URL, UUID_RE } from './comun.js';
 
-// Resumen de solo lectura para el panel.
-// deps: { fetchImpl, leerToken, leerPropiedad }
-export async function hiloResumen({ issueKey }, deps) {
-  const hiloId = await deps.leerPropiedad(issueKey, PROP_ISSUE_HILO);
-  if (!hiloId) return { vinculado: false };
+// Resumen de solo lectura para el panel. Incluye esAdmin para que el front oculte las
+// acciones de vincular/desvincular a quien no es admin (la verificación real es del servidor).
+// deps: { fetchImpl, leerToken, leerVinculo, esAdmin }
+export async function hiloResumen({ issueId }, deps) {
+  const esAdmin = await deps.esAdmin().catch(() => false);
+  const hiloId = await deps.leerVinculo(issueId);
+  if (!hiloId) return { vinculado: false, esAdmin };
+  if (!UUID_RE.test(hiloId)) throw new ErrorPanel('vínculo corrupto en el almacenamiento');
   const token = await deps.leerToken();
   if (!token) throw new ErrorPanel('falta configurar el token (página de administración)');
   const h = await leerEnBuzon(deps.fetchImpl, token, { hilo_id: hiloId });
   const mensajes = h.mensajes || [];
   return {
     vinculado: true,
+    esAdmin,
     hiloId,
     titulo: h.titulo || '(sin título)',
     estado: h.estado || 'desconocido',
@@ -23,27 +32,26 @@ export async function hiloResumen({ issueKey }, deps) {
   };
 }
 
-// Vincula el issue con un hilo. Exige, en orden:
-// 1. UUID bien formado;
-// 2. permiso EDIT_ISSUES del usuario que llama sobre ese issue (mypermissions asUser);
-// 3. token de la instalación configurado;
+// Vincula el issue con un hilo. Solo administradores del sitio (rev4: un editor podría
+// exponer cualquier hilo del buzón a todo el que pueda ver el issue). Exige, en orden:
+// 1. UUID bien formado; 2. rol admin; 3. token configurado;
 // 4. que el token pueda leer el hilo (pertenencia hilo<->buzón). Solo entonces escribe.
-// deps: { fetchImpl, leerToken, requireEditIssue, guardarPropiedad }
-export async function vincularHilo({ issueKey, hiloId }, deps) {
+// deps: { fetchImpl, leerToken, requireAdmin, guardarVinculo }
+export async function vincularHilo({ issueId, hiloId }, deps) {
   if (!UUID_RE.test(hiloId || '')) throw new ErrorPanel('hilo_id no es un UUID');
-  await deps.requireEditIssue(issueKey);
+  await deps.requireAdmin();
   const token = await deps.leerToken();
   if (!token) throw new ErrorPanel('falta configurar el token (página de administración)');
   await leerEnBuzon(deps.fetchImpl, token, { hilo_id: hiloId }); // lanza si no hay acceso
-  await deps.guardarPropiedad(issueKey, PROP_ISSUE_HILO, hiloId);
+  await deps.guardarVinculo(issueId, hiloId);
   return { vinculado: true, hiloId };
 }
 
-// Desvincular también escribe en el issue: mismo requisito de EDIT_ISSUES.
-// deps: { requireEditIssue, borrarPropiedad }
-export async function desvincularHilo({ issueKey }, deps) {
-  await deps.requireEditIssue(issueKey);
-  await deps.borrarPropiedad(issueKey, PROP_ISSUE_HILO);
+// Desvincular también es administración del vínculo: mismo requisito de rol admin.
+// deps: { requireAdmin, borrarVinculo }
+export async function desvincularHilo({ issueId }, deps) {
+  await deps.requireAdmin();
+  await deps.borrarVinculo(issueId);
   return { vinculado: false };
 }
 
@@ -51,8 +59,8 @@ export async function desvincularHilo({ issueKey }, deps) {
 // pública del panel: las pruebas verifican que no incluye operaciones de administración.
 export function panelOps(deps) {
   return {
-    hiloResumen: (req) => hiloResumen({ issueKey: req.context.extension.issue.key }, deps),
-    vincularHilo: (req) => vincularHilo({ issueKey: req.context.extension.issue.key, ...req.payload }, deps),
-    desvincularHilo: (req) => desvincularHilo({ issueKey: req.context.extension.issue.key }, deps),
+    hiloResumen: (req) => hiloResumen({ issueId: req.context.extension.issue.id }, deps),
+    vincularHilo: (req) => vincularHilo({ issueId: req.context.extension.issue.id, ...req.payload }, deps),
+    desvincularHilo: (req) => desvincularHilo({ issueId: req.context.extension.issue.id }, deps),
   };
 }

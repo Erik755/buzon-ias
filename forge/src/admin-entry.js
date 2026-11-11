@@ -2,23 +2,11 @@
 // Este módulo NO se prueba localmente: requiere `forge tunnel`/deploy (pendiente, lo lleva Grok con Erik).
 // Solo expone las operaciones de adminOps (guardarToken/probarToken), ambas con requireAdmin().
 import Resolver from '@forge/resolver';
-import api, { route, fetch } from '@forge/api';
+import { fetch } from '@forge/api';
 import { kvs } from '@forge/kvs';
 import { adminOps } from './admin.js';
-import { ErrorPanel, KVS_TOKEN } from './comun.js';
-
-// Rol de administrador del SITIO: permiso global ADMINISTER del usuario que llama.
-async function exigirAdmin() {
-  const r = await api.asUser().requestJira(
-    route`/rest/api/3/mypermissions?permissions=ADMINISTER`,
-    { headers: { Accept: 'application/json' } },
-  );
-  if (!r.ok) throw new Error(`jira mypermissions: HTTP ${r.status}`);
-  const d = await r.json();
-  if (!d.permissions?.ADMINISTER?.havePermission) {
-    throw new ErrorPanel('se requiere rol de administrador del sitio');
-  }
-}
+import { exigirAdmin } from './permisos.js';
+import { KVS_TOKEN } from './comun.js';
 
 const deps = {
   fetchImpl: (url, opts) => fetch(url, opts),

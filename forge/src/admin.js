@@ -2,14 +2,14 @@
 // Ambas operaciones exigen primero requireAdmin() (permiso global ADMINISTER del usuario que
 // llama, verificado con mypermissions asUser en el wiring). Este módulo no conoce las
 // operaciones del panel.
-import { leerEnBuzon, ErrorPanel, TOKEN_RE } from './comun.js';
+import { leerEnBuzon, ErrorPanel, TOKEN_RE, KVS_TOKEN } from './comun.js';
 
 // Guarda el token como secreto KVS (por instalación); nunca lo devuelve.
 // deps: { requireAdmin, guardarSecreto }
 export async function guardarToken({ token }, deps) {
   await deps.requireAdmin();
   if (!TOKEN_RE.test(token || '')) throw new ErrorPanel('formato de token inválido (bz_…)');
-  await deps.guardarSecreto('buzon_token', token);
+  await deps.guardarSecreto(KVS_TOKEN, token);
   return { guardado: true }; // jamás incluir el token en la respuesta
 }
 

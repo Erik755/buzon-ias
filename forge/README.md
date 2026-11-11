@@ -3,6 +3,9 @@
 Andamiaje local de la app Forge. **Sin `forge register`/`login`/`deploy` todavía**: eso lo lleva
 Grok con la cuenta Atlassian de Erik cuando se autorice.
 
+Nota para la demo del concurso: se configura un buzón de demo con datos de ejemplo, nunca el
+buzón real de ningún participante.
+
 ## Qué hace
 
 - **Panel en el issue de Jira** (Custom UI + `@forge/bridge`): muestra título, estado, número de
@@ -11,22 +14,29 @@ Grok con la cuenta Atlassian de Erik cuando se autorice.
 - **Página de administración** (UI Kit vigente, `@forge/react` 12 con `render: native`): el admin
   del sitio pega una vez su token `bz_…`; se guarda con `kvs.setSecret` (`@forge/kvs`, por
   instalación, scope `storage:app`) y nunca se devuelve al front.
+- **El vínculo issue↔hilo vive en KVS** (clave `hilo:<issue.id>`), no en una propiedad de la
+  entidad Jira: las propiedades las puede escribir cualquier usuario con EDIT_ISSUES
+  (saltándose las validaciones del resolver) y las puede leer cualquiera con BROWSE. En KVS solo
+  escribe la app.
 
 ## Seguridad
 
 - **Resolvers separados**: `src/panel-entry.js` expone solo `hiloResumen`, `vincularHilo`,
   `desvincularHilo`; `src/admin-entry.js` expone solo `guardarToken`, `probarToken`. El panel no
   puede tocar el token. Las pruebas fijan ambas superficies.
-- **Rol admin en el servidor**: `guardarToken` y `probarToken` verifican el permiso global
-  `ADMINISTER` del usuario que llama (`GET /rest/api/3/mypermissions?permissions=ADMINISTER`,
-  asUser) antes de cualquier otra validación.
-- **`vincularHilo`/`desvincularHilo` exigen `EDIT_ISSUES`** del usuario que llama sobre ese issue
-  (`mypermissions?issueKey=…&permissions=EDIT_ISSUES`, asUser).
+- **Rol admin en el servidor**: `guardarToken`, `probarToken`, `vincularHilo` y
+  `desvincularHilo` verifican el permiso global `ADMINISTER` del usuario que llama
+  (`GET /rest/api/3/mypermissions?permissions=ADMINISTER`, asUser) antes de cualquier otra
+  validación. Vincular/desvincular es una operación de administración, no de edición del issue.
+- **El resumen incluye `esAdmin`** y el front oculta las acciones de vincular/desvincular a
+  quien no es admin (la validación real sigue en el servidor; la UI solo evita mostrar botones
+  que van a fallar).
 - **Pertenencia hilo↔buzón**: antes de guardar el vínculo (y al mostrar el resumen) se llama
   `leer` del MCP con el token de la instalación; si el hilo no pertenece a ese buzón, la operación
   falla y no se guarda nada.
-- La propiedad `buzon_hilo_id` del issue la escribe/lee la app (`asApp`) con
-  `api.asApp().requestJira(route`…`)`; el permiso del usuario se verifica aparte (asUser).
+- **Scopes mínimos**: `read:permission:jira` (granular, para mypermissions) y `storage:app`
+  (KVS). Sin scopes de escritura sobre issues ni de propiedades de entidad. Runtime declarado:
+  `nodejs22.x`.
 - Egreso externo declarado solo a `buzon-ias-mcp.vercel.app`. El token jamás aparece en respuestas.
 
 ## Estructura
@@ -49,9 +59,24 @@ Grok con la cuenta Atlassian de Erik cuando se autorice.
 ```
 cd forge
 npm install
-npm test            # node --test test/*.test.js — 26 pruebas con fetch/almacenamiento simulados
+npm test            # node --test test/*.test.js — 28 pruebas con fetch/almacenamiento simulados
 npm run build:panel # esbuild: compila static/panel/src con @forge/bridge real a static/panel/build/
 ```
+
+## Prueba de integración local
+
+`mcp/test/integracion-panel.test.js` ejercita el cliente REAL del panel (`forge/src/comun.js`,
+con su parseo JSON/SSE y sus mensajes de error) contra el servidor MCP del repo levantado en
+127.0.0.1 con Postgres local desechable y las migraciones del repo aplicadas. Cubre: lectura
+exitosa del hilo, rechazo de hilo ajeno, rechazo de token revocado y respuesta limpia ante un
+Accept inválido. Todo local: nunca toca producción ni usa credenciales.
+
+```
+cd mcp && npm ci && ./scripts/integracion-local.sh   # requiere PostgreSQL >= 15 (initdb)
+```
+
+El script localiza binarios de Postgres >= 15 en el sistema o en `/tmp/pgsrvNN` (paquete PGDG
+extraído sin root), levanta un cluster desechable en /tmp, corre la prueba y lo apaga.
 
 El panel usa el bridge oficial de Forge (`@forge/bridge`, `import { invoke } from '@forge/bridge'`),
 NO el `AP` de Connect: el recurso del manifest apunta a `static/panel/build/`, que se genera con
@@ -68,3 +93,16 @@ Versiones reales instaladas al escribir esto: `@forge/api` 8.5.0, `@forge/bridge
 `@forge/kvs` 2.1.2, `@forge/react` 12.5.0, `@forge/resolver` 2.0.2, `react` 19.3.1,
 `esbuild` 0.28.2. Pendiente cuando haya cuenta: `forge lint` y `forge register` (el `app.id` del
 manifest es un marcador).
+
+## Auditoría de dependencias (npm audit --omit=dev, 11-nov-2026)
+
+3 avisos, TODOS en paquetes transitivos del SDK oficial de Atlassian, que npm contabiliza como
+13 vulnerabilidades (5 moderate, 8 high) por las múltiples rutas de dependencia afectadas:
+- `glob` 9.0.0-14.0.1 y `minimatch` 7.0.0-11.0.0 (moderate): DoS / recorrido de archivos tras
+  timeout, vía `@forge/manifest`. El fix de npm obliga a bajar a `@forge/api` 6.1.1 (breaking).
+- `prosemirror-view` <1.42.3 (high): XSS en el manejo de pegado, vía `@atlaskit/editor-prosemirror`,
+  dependencia de `@forge/react`. El fix de npm obliga a bajar a `@forge/bridge` 5.5.0 (breaking).
+
+Impacto real para esta app: bajo. El panel no procesa globs con entrada de usuarios y no usa el
+editor ProseMirror (solo `Form`/`Textfield`). No se aplicó `npm audit fix --force` porque
+degrada el SDK a versiones mayores rotas; se reevalúa al actualizar los paquetes Atlassian.

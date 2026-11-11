@@ -9,7 +9,6 @@
 
 export const MCP_URL = 'https://buzon-ias-mcp.vercel.app/api/mcp';
 export const PWA_URL = 'https://buzon-ias-pwa.vercel.app/';
-export const PROP_ISSUE_HILO = 'buzon_hilo_id';
 export const KVS_TOKEN = 'buzon_token';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -45,7 +44,11 @@ export async function leerEnBuzon(fetchImpl, token, args) {
     // Respuesta SSE: tomar el último "data: {...}".
     const lineas = crudo.split('\n').filter((l) => l.startsWith('data: '));
     if (!lineas.length) throw new ErrorPanel('buzón: respuesta ilegible');
-    data = JSON.parse(lineas[lineas.length - 1].slice(6));
+    try {
+      data = JSON.parse(lineas[lineas.length - 1].slice(6));
+    } catch {
+      throw new ErrorPanel('buzón: respuesta ilegible');
+    }
   }
   if (data.error) throw new ErrorPanel('sin acceso al hilo con este token');
   let contenido;

@@ -36,7 +36,7 @@ const AdminPage = () => {
           <Text>{resultado.texto}</Text>
         </SectionMessage>
       )}
-      <Text>Cada sitio configura su propio buzón. Para los jueces del concurso se usa un buzón de demo con datos de ejemplo, nunca el buzón real.</Text>
+      <Text>Cada sitio configura su propio buzón.</Text>
     </>
   );
 };
