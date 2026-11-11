@@ -34,7 +34,7 @@ const AdminPage = () => {
           con submitButtonText el host lo ignora en silencio y no pinta botón alguno. */}
       <Form onSubmit={handleSubmit(alEnviar)}>
         <Label labelFor={getFieldId('token')}>Token del buzón (bz_…)</Label>
-        <Textfield {...register('token', { required: true })} placeholder="bz_…" />
+        <Textfield {...register('token', { required: true })} placeholder="bz_…" type="password" />
         <Button type="submit" appearance="primary">Guardar y probar token</Button>
       </Form>
       {resultado && (
