@@ -535,5 +535,316 @@ do $$ declare h uuid; n bigint; i int; begin
   update public.notificaciones set estado = 'enviada' where estado = 'pendiente';
 end $$;
 reset role;
+
+-- 155-179 Cierre verificable v1 (evidencia estructurada, veredicto humano, es_humano, nombres reservados)
+-- Agente propio: Claude (001) ya fue borrado por las pruebas de avisos y su token revocado.
+insert into public.agentes(id,buzon_id,nombre) values ('bbbbbbbb-0000-0000-0000-0000000000f1','aaaaaaaa-0000-0000-0000-000000000001','Verificador');
+insert into public.tokens(agente_id,hash_token) values ('bbbbbbbb-0000-0000-0000-0000000000f1', encode(sha256(convert_to('bz_'||repeat('f',30),'UTF8')),'hex'));
+do $$ declare h uuid; r jsonb; begin
+  insert into public.hilos(buzon_id,tipo,titulo) values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','Cierre con evidencia') returning id into h;
+  insert into _d values ('ev', h);
+  insert into public.adjuntos(buzon_id,hilo_id,nombre,tipo,tamano,sha256,ruta)
+    values ('aaaaaaaa-0000-0000-0000-000000000001', h, 'captura.txt', 'text/plain', 10, repeat('a',64), 'z/ev-cierre.txt');
+  r := public.mcp_responder('bz_'||repeat('f',30), h, 'Terminado, con evidencia', 'pedir_cierre', null,
+    jsonb_build_object('que_se_pidio','Corregir el contador de cupo','que_se_entrego','Contador corregido con etiqueta dia UTC',
+      'pruebas', jsonb_build_array(jsonb_build_object('url','https://ejemplo.com/captura.png'), jsonb_build_object('adjunto_sha256', repeat('a',64))),
+      'verificacion','npm test: 12/12 en verde'));
+  if (r->>'evidencia')::boolean and r->>'estado'='pide_cierre'
+     and exists (select 1 from public.evidencias_cierre where hilo_id=h and que_se_pidio='Corregir el contador de cupo' and jsonb_array_length(pruebas)=2 and verificacion like 'npm test:%')
+  then perform pg_temp.ok('155 pedir_cierre con evidencia la guarda estructurada'); else perform pg_temp.falla('155 ' || r::text); end if;
+  if (select count(*) from jsonb_array_elements(public.mcp_leer('bz_'||repeat('f',30), h)->'evidencias_cierre'))=1
+  then perform pg_temp.ok('156 leer expone la evidencia del hilo'); else perform pg_temp.falla('156'); end if;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ declare ret text; begin
+  ret := public.decidir_cierre((select id from _d where k='ev'), true, 'Revisada la captura');
+  if ret='cerrado'
+     and exists (select 1 from public.cierres where hilo_id=(select id from _d where k='ev') and veredicto='aceptado' and motivo='Revisada la captura' and humano_id='11111111-1111-1111-1111-111111111111')
+  then perform pg_temp.ok('157 aceptar guarda veredicto estructurado (motivo y quien)'); else perform pg_temp.falla('157 ' || coalesce(ret,'null')); end if;
+  if (select count(*) from public.evidencias_cierre)=1
+     and (select count(*) from public.cierres where hilo_id=(select id from _d where k='ev'))=1
+  then perform pg_temp.ok('158 el dueno ve evidencias y veredictos en la BD'); else perform pg_temp.falla('158'); end if;
+end $$;
+select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$ begin
+  if (select count(*) from public.evidencias_cierre)=0 and (select count(*) from public.cierres)=0
+  then perform pg_temp.ok('159 intruso no ve evidencias ni veredictos de Erik'); else perform pg_temp.falla('159'); end if;
+  begin insert into public.cierres(hilo_id,humano_id,veredicto) values ((select id from _d where k='ev'),'22222222-2222-2222-2222-222222222222','aceptado');
+    perform pg_temp.falla('160'); exception when insufficient_privilege then perform pg_temp.ok('160 nadie escribe un veredicto por fuera de decidir_cierre'); end;
+end $$;
+reset role;
+set role anon;
+do $$ begin
+  begin perform 1 from public.evidencias_cierre; perform pg_temp.falla('161'); exception when insufficient_privilege then perform pg_temp.ok('161 anon no lee evidencias'); end;
+  begin perform 1 from public.cierres; perform pg_temp.falla('162'); exception when insufficient_privilege then perform pg_temp.ok('162 anon no lee veredictos'); end;
+end $$;
+reset role;
+do $$ declare h uuid; r jsonb; begin
+  insert into public.hilos(buzon_id,tipo,titulo) values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','Cierre sin evidencia') returning id into h;
+  r := public.mcp_responder('bz_'||repeat('f',30), h, 'Terminado', 'pedir_cierre');
+  if (r->'evidencia') is not null and not (r->>'evidencia')::boolean
+     and not exists (select 1 from public.evidencias_cierre where hilo_id=h)
+  then perform pg_temp.ok('163 pedir_cierre sin evidencia se permite y queda marcado evidencia=false'); else perform pg_temp.falla('163 ' || r::text); end if;
+  begin perform public.mcp_responder('bz_'||repeat('f',30), h, 'x', 'comentar', null, jsonb_build_object('que_se_pidio','a','que_se_entrego','b'));
+    perform pg_temp.falla('164'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('164 evidencia solo con pedir_cierre'); else raise; end if; end;
+  begin perform public.mcp_responder('bz_'||repeat('f',30), h, 'x', 'pedir_cierre', null, jsonb_build_object('que_se_pidio','a','que_se_entrego','b','pruebas',jsonb_build_array(jsonb_build_object('url','javascript:alert(1)'))));
+    perform pg_temp.falla('165'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('165 prueba con url no http(s) rechazada'); else raise; end if; end;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ declare ret text; begin
+  ret := public.decidir_cierre((select id from public.hilos where titulo='Cierre sin evidencia'), false, 'Falta evidencia');
+  if ret='abierto' and (select estado from public.hilos where titulo='Cierre sin evidencia')='abierto'
+     and exists (select 1 from public.cierres where veredicto='rechazado' and motivo='Falta evidencia')
+  then perform pg_temp.ok('166 rechazar reabre el hilo y guarda el veredicto'); else perform pg_temp.falla('166 ' || coalesce(ret,'null')); end if;
+end $$;
+reset role;
+do $$ begin
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001','HUMANO');
+    perform pg_temp.falla('167'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('167 agente llamado humano rechazado (sin importar mayusculas)'); else raise; end if; end;
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001',' owner ');
+    perform pg_temp.falla('168'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('168 agente llamado owner rechazado'); else raise; end if; end;
+  if (select m->>'es_humano' from jsonb_array_elements(public.mcp_leer('bz_'||repeat('f',30),(select id from _d where k='ev'))->'mensajes') m limit 1)='false'
+  then perform pg_temp.ok('169 mensajes de IA traen es_humano=false'); else perform pg_temp.falla('169'); end if;
+  insert into public.mensajes(hilo_id, autor_humano, cuerpo) values ((select id from _d where k='ev'), '11111111-1111-1111-1111-111111111111', 'Erik deja constancia');
+  if (select count(*) from jsonb_array_elements(public.mcp_leer('bz_'||repeat('f',30),(select id from _d where k='ev'))->'mensajes') m where (m->>'es_humano')::boolean and m->>'cuerpo'='Erik deja constancia')=1
+  then perform pg_temp.ok('170 el mensaje del humano trae es_humano=true'); else perform pg_temp.falla('170'); end if;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ declare j jsonb; r jsonb; begin
+  j := public.crear_codigo_config('aaaaaaaa-0000-0000-0000-000000000001','Dueño', 10);
+  begin
+    r := public.canjear_codigo_config(j->>'codigo', null);
+    if r ? 'error' then perform pg_temp.ok('171 el canje tampoco permite registrar una IA llamada dueño');
+    else perform pg_temp.falla('171 ' || r::text); end if;
+  exception when others then
+    if sqlerrm like '400:%' then perform pg_temp.ok('171 el canje tampoco permite registrar una IA llamada dueño'); else raise; end if;
+  end;
+end $$;
+reset role;
+do $$ declare h uuid; r jsonb; begin
+  insert into public.hilos(buzon_id,tipo,titulo) values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','Cierre con sha inventado') returning id into h;
+  begin perform public.mcp_responder('bz_'||repeat('f',30), h, 'x', 'pedir_cierre', null,
+      jsonb_build_object('que_se_pidio','a','que_se_entrego','b','pruebas',jsonb_build_array(jsonb_build_object('adjunto_sha256',repeat('b',64)))));
+    perform pg_temp.falla('172'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('172 evidencia con adjunto_sha256 inventado rechazada'); else raise; end if; end;
+  insert into public.hilos(buzon_id,tipo,titulo) values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','Hilo con adjunto') returning id into h;
+  insert into public.adjuntos(buzon_id,hilo_id,nombre,tipo,tamano,sha256,ruta)
+    values ('aaaaaaaa-0000-0000-0000-000000000001', h, 'notas.txt', 'text/plain', 10, repeat('c',64), 'z/notas.txt');
+  insert into public.hilos(buzon_id,tipo,titulo) values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','Cierre citando adjunto ajeno') returning id into h;
+  begin perform public.mcp_responder('bz_'||repeat('f',30), h, 'x', 'pedir_cierre', null,
+      jsonb_build_object('que_se_pidio','a','que_se_entrego','b','pruebas',jsonb_build_array(jsonb_build_object('adjunto_sha256',repeat('c',64)))));
+    perform pg_temp.falla('173'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('173 evidencia con adjunto_sha256 de otro hilo rechazada'); else raise; end if; end;
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001','Humano.');
+    perform pg_temp.falla('174'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('174 nombre reservado con puntuación rechazado'); else raise; end if; end;
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001','HUMANO_');
+    perform pg_temp.falla('175'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('175 nombre reservado con guion bajo rechazado'); else raise; end if; end;
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001','duen'||chr(771)||'o');
+    perform pg_temp.falla('176'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('176 dueño con tilde combinada rechazado'); else raise; end if; end;
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001',chr(160)||'humano'||chr(160));
+    perform pg_temp.falla('177'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('177 nombre reservado con espacio duro rechazado'); else raise; end if; end;
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001','Human');
+    perform pg_temp.falla('178'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('178 agente llamado human rechazado'); else raise; end if; end;
+  begin insert into public.agentes(buzon_id,nombre) values ('aaaaaaaa-0000-0000-0000-000000000001',chr(65352)||chr(65365)||chr(65357)||chr(65345)||chr(65358)||chr(65359));
+    perform pg_temp.falla('179'); exception when others then if sqlerrm like '400:%' then perform pg_temp.ok('179 humano en letras de ancho completo rechazado (NFKC)'); else raise; end if; end;
+end $$;
+reset role;
+
+-- 180-196 Nota de decidir_cierre: un solo texto (trim de espacios ASCII), tope 2000
+-- caracteres medidos con length() —el mismo que el CHECK de cierres.motivo—.
+-- 2001 se rechaza antes de escribir: no hay recorte silencioso, ni mensaje/estado a medias,
+-- ni la nota en el detalle del error. Null, vacío y solo espacios siguen sin nota.
+create temp table _nota(k text primary key, id uuid);
+grant select on _nota to anon, authenticated;
+do $$ declare k text; h uuid; est text; begin
+  foreach k in array array['a2000','u2000','e2000','nulo','vacio','espacios','espacios_largos','largo','uni_largo','emoji_largo','combinado','combinado_largo','recorte','borde','intruso','anonimo','cerrado','sin_pedido'] loop
+    est := case when k = 'sin_pedido' then 'abierto' else 'pide_cierre' end;
+    insert into public.hilos(buzon_id,tipo,titulo,estado)
+      values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','Nota '||k, est) returning id into h;
+    insert into _nota values (k, h);
+  end loop;
+end $$;
+-- security invoker: auth.uid() y el RLS son los del dueño que llama.
+create or replace function pg_temp.nota_rechazada(p_h uuid, p_cerrar boolean, p_nota text, p_estado text, p_id text)
+returns void language plpgsql as $$
+declare msg text; det text; st text; prefijo text;
+begin
+  prefijo := left(p_nota, 40);
+  begin
+    perform public.decidir_cierre(p_h, p_cerrar, p_nota);
+    perform pg_temp.falla(p_id || ' no rechazo la nota larga');
+  exception when others then
+    if sqlerrm like 'FALLA %' then raise; end if;
+    get stacked diagnostics msg = message_text, det = pg_exception_detail, st = returned_sqlstate;
+    if st = '22023' and msg = 'la nota supera 2000 caracteres' and coalesce(det, '') = ''
+       and position(prefijo in msg) = 0 and position(prefijo in coalesce(det, '')) = 0
+       and (select estado from public.hilos where id = p_h) = p_estado
+       and not exists (select 1 from public.mensajes where hilo_id = p_h and autor_humano is not null)
+       and not exists (select 1 from public.cierres where hilo_id = p_h)
+       and not exists (select 1 from public.auditoria where objeto_id = p_h and accion like 'cierre:%')
+    then perform pg_temp.ok(p_id);
+    else perform pg_temp.falla(p_id || ' st=' || coalesce(st,'') || ' msg=' || left(coalesce(msg,''), 140)
+      || ' det_vacio=' || (coalesce(det,'') = '')::text
+      || ' det_tiene_nota=' || (position(prefijo in coalesce(det,'')) > 0)::text
+      || ' estado=' || coalesce((select estado from public.hilos where id = p_h), 'null'));
+    end if;
+  end;
+end $$;
+grant execute on function pg_temp.nota_rechazada(uuid, boolean, text, text, text) to authenticated;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ declare h uuid; nota text; vc text; vm text; n int; begin
+  h := (select id from _nota where k='a2000'); nota := repeat('a', 2000);
+  if public.decidir_cierre(h, true, nota) <> 'cerrado' then perform pg_temp.falla('180 no cerro'); end if;
+  select m.cuerpo, c.motivo into vc, vm
+    from public.mensajes m join public.cierres c on c.hilo_id = m.hilo_id
+   where m.hilo_id = h and m.autor_humano is not null;
+  if vc = nota and vm = nota and length(vm) = 2000
+  then perform pg_temp.ok('180 nota de 2000 caracteres se guarda igual en el mensaje y en el motivo');
+  else perform pg_temp.falla('180 vc_len=' || coalesce(length(vc)::text,'null')
+    || ' vm_len=' || coalesce(length(vm)::text,'null')
+    || ' igual_nota=' || coalesce((vc = nota and vm = nota)::text,'null')); end if;
+
+  h := (select id from _nota where k='u2000'); nota := repeat(chr(225), 2000);
+  if public.decidir_cierre(h, true, nota) <> 'cerrado' then perform pg_temp.falla('181 no cerro'); end if;
+  select m.cuerpo, c.motivo into vc, vm
+    from public.mensajes m join public.cierres c on c.hilo_id = m.hilo_id
+   where m.hilo_id = h and m.autor_humano is not null;
+  if vc = nota and vm = nota and length(vm) = 2000 and octet_length(vm) = 4000
+  then perform pg_temp.ok('181 2000 letras á (4000 bytes) se guardan completas e iguales');
+  else perform pg_temp.falla('181'); end if;
+
+  h := (select id from _nota where k='e2000'); nota := repeat(chr(128512), 2000);
+  if public.decidir_cierre(h, true, nota) <> 'cerrado' then perform pg_temp.falla('182 no cerro'); end if;
+  select m.cuerpo, c.motivo into vc, vm
+    from public.mensajes m join public.cierres c on c.hilo_id = m.hilo_id
+   where m.hilo_id = h and m.autor_humano is not null;
+  if vc = nota and vm = nota and length(vm) = 2000 and octet_length(vm) = 8000
+  then perform pg_temp.ok('182 2000 emojis (8000 bytes) se guardan completos e iguales');
+  else perform pg_temp.falla('182'); end if;
+
+  if public.decidir_cierre((select id from _nota where k='nulo'), true, null) = 'cerrado'
+     and public.decidir_cierre((select id from _nota where k='vacio'), false, '') = 'abierto'
+     and public.decidir_cierre((select id from _nota where k='espacios'), false, '   ') = 'abierto'
+     and public.decidir_cierre((select id from _nota where k='espacios_largos'), true, repeat(' ', 5000)) = 'cerrado'
+     and not exists (
+       select 1 from public.mensajes m join _nota n on n.id = m.hilo_id
+        where n.k in ('nulo','vacio','espacios','espacios_largos') and m.autor_humano is not null)
+     and not exists (
+       select 1 from public.cierres c join _nota n on n.id = c.hilo_id
+        where n.k in ('nulo','vacio','espacios','espacios_largos') and c.motivo is not null)
+  then perform pg_temp.ok('183 null, vacío o solo espacios no guarda nota');
+  else perform pg_temp.falla('183'); end if;
+
+  perform pg_temp.nota_rechazada((select id from _nota where k='largo'), true, repeat('N', 2001), 'pide_cierre',
+    '184 nota de 2001 se rechaza sin cambiar el hilo ni devolver la nota');
+  perform pg_temp.nota_rechazada((select id from _nota where k='uni_largo'), true, repeat(chr(225), 2001), 'pide_cierre',
+    '185 2001 letras á se rechazan igual y el hilo sigue en pide_cierre');
+  perform pg_temp.nota_rechazada((select id from _nota where k='emoji_largo'), false, repeat(chr(128512), 2001), 'pide_cierre',
+    '186 2001 emojis al rechazar no reabren el hilo');
+
+  h := (select id from _nota where k='combinado'); nota := repeat('e' || chr(769), 1000);
+  if public.decidir_cierre(h, true, nota) <> 'cerrado' then perform pg_temp.falla('187 no cerro'); end if;
+  select m.cuerpo, c.motivo into vc, vm
+    from public.mensajes m join public.cierres c on c.hilo_id = m.hilo_id
+   where m.hilo_id = h and m.autor_humano is not null;
+  if vc = nota and vm = nota and length(nota) = 2000 and octet_length(nota) > length(nota)
+  then perform pg_temp.ok('187 2000 code points con tilde combinada se guardan iguales');
+  else perform pg_temp.falla('187'); end if;
+  perform pg_temp.nota_rechazada((select id from _nota where k='combinado_largo'), true, repeat('e' || chr(769), 1000) || chr(769), 'pide_cierre',
+    '188 2001 code points con tilde combinada se rechazan');
+
+  h := (select id from _nota where k='recorte'); nota := '  ' || chr(241) || '  ';
+  if public.decidir_cierre(h, true, nota) <> 'cerrado' then perform pg_temp.falla('189 no cerro'); end if;
+  select m.cuerpo, c.motivo into vc, vm
+    from public.mensajes m join public.cierres c on c.hilo_id = m.hilo_id
+   where m.hilo_id = h and m.autor_humano is not null;
+  if vc = chr(241) and vm = chr(241)
+  then perform pg_temp.ok('189 los espacios de los extremos se quitan igual en mensaje y motivo');
+  else perform pg_temp.falla('189 cuerpo_len=' || coalesce(length(vc)::text,'null') || ' motivo=' || coalesce(vm,'null'));
+  end if;
+
+  h := (select id from _nota where k='borde');
+  if public.decidir_cierre(h, false, ' ' || repeat('b', 2000) || ' ') <> 'abierto' then perform pg_temp.falla('190 no decidio'); end if;
+  select m.cuerpo, c.motivo into vc, vm
+    from public.mensajes m join public.cierres c on c.hilo_id = m.hilo_id
+   where m.hilo_id = h and m.autor_humano is not null;
+  if vc = repeat('b', 2000) and vm = repeat('b', 2000) and length(vc) = 2000
+  then perform pg_temp.ok('190 un espacio más 2000 letras no recorta la última: mensaje y motivo coinciden');
+  else perform pg_temp.falla('190 cuerpo_len=' || coalesce(length(vc)::text,'null')
+    || ' motivo_len=' || coalesce(length(vm)::text,'null')
+    || ' iguales=' || coalesce((vc = vm)::text,'null')
+    || ' cuerpo_es_b=' || coalesce((vc = repeat('b', 2000))::text,'null'));
+  end if;
+
+  h := (select id from _nota where k='cerrado');
+  if public.decidir_cierre(h, true, 'ok') <> 'cerrado' then perform pg_temp.falla('193 preparacion'); end if;
+  begin
+    perform public.decidir_cierre(h, true, repeat('Q', 2001));
+    perform pg_temp.falla('193 debio seguir cerrado');
+  exception when others then
+    if sqlerrm like 'FALLA %' then raise; end if;
+    if sqlerrm = 'el hilo ya esta cerrado'
+       and (select estado from public.hilos where id=h) = 'cerrado'
+       and (select count(*) from public.cierres where hilo_id=h) = 1
+       and (select motivo from public.cierres where hilo_id=h) = 'ok'
+    then perform pg_temp.ok('193 un hilo ya cerrado con nota larga sigue diciendo que ya está cerrado');
+    else perform pg_temp.falla('193 ' || left(sqlerrm, 140)); end if;
+  end;
+
+  h := (select id from _nota where k='sin_pedido');
+  begin
+    perform public.decidir_cierre(h, false, repeat('Q', 2001));
+    perform pg_temp.falla('194 debio exigir pedido');
+  exception when others then
+    if sqlerrm like 'FALLA %' then raise; end if;
+    if sqlerrm = 'nadie pidio cerrar este hilo'
+       and (select estado from public.hilos where id=h) = 'abierto'
+       and not exists (select 1 from public.cierres where hilo_id=h)
+    then perform pg_temp.ok('194 sin pedido de cierre, una nota larga no revela el tope: sigue el error de estado');
+    else perform pg_temp.falla('194 ' || left(sqlerrm, 140)); end if;
+  end;
+
+  h := (select id from _nota where k='largo');
+  if public.decidir_cierre(h, true, '  Listo  ') <> 'cerrado' then perform pg_temp.falla('195 no cerro'); end if;
+  select m.cuerpo, c.motivo into vc, vm
+    from public.mensajes m join public.cierres c on c.hilo_id = m.hilo_id
+   where m.hilo_id = h and m.autor_humano is not null;
+  if (select estado from public.hilos where id=h) = 'cerrado'
+     and (select count(*) from public.cierres where hilo_id=h) = 1
+     and vm = 'Listo' and vc = 'Listo'
+     and (select count(*) from public.mensajes where hilo_id=h and autor_humano is not null) = 1
+  then perform pg_temp.ok('195 tras rechazar 2001, una nota corta cierra una sola vez y sin espacios');
+  else perform pg_temp.falla('195 estado=' || coalesce((select estado from public.hilos where id=h),'null')
+    || ' cierres=' || (select count(*) from public.cierres where hilo_id=h)
+    || ' msgs=' || (select count(*) from public.mensajes where hilo_id=h and autor_humano is not null)
+    || ' vc=' || coalesce(vc,'null') || ' vm=' || coalesce(vm,'null')); end if;
+  select count(*) into n from public.auditoria where objeto_id=h and accion = 'cierre:aprobado';
+  if n <> 1 then perform pg_temp.falla('195 auditoria=' || n); end if;
+end $$;
+select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$ declare h uuid := (select id from _nota where k='intruso'); begin
+  begin
+    perform public.decidir_cierre(h, true, repeat('Q', 2001));
+    perform pg_temp.falla('191');
+  exception when insufficient_privilege then
+    perform pg_temp.ok('191 intruso con nota larga sigue sin permiso');
+  end;
+end $$;
+reset role;
+do $$ begin
+  if (select estado from public.hilos where id=(select id from _nota where k='intruso')) = 'pide_cierre'
+     and not exists (select 1 from public.cierres where hilo_id=(select id from _nota where k='intruso'))
+     and not exists (select 1 from public.mensajes where hilo_id=(select id from _nota where k='intruso') and autor_humano is not null)
+  then perform pg_temp.ok('192 la nota larga del intruso no deja veredicto ni mensaje');
+  else perform pg_temp.falla('192'); end if;
+end $$;
+set role anon;
+do $$ declare h uuid := (select id from _nota where k='anonimo'); begin
+  begin
+    perform public.decidir_cierre(h, true, repeat('Q', 2001));
+    perform pg_temp.falla('196');
+  exception when insufficient_privilege then
+    perform pg_temp.ok('196 anon con nota larga no puede llamar decidir_cierre');
+  end;
+end $$;
+reset role;
 \echo TODAS_LAS_PRUEBAS_PASARON
 

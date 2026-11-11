@@ -38,8 +38,8 @@ export function crearServicio(rpc, funciones = null) {
       }
       return llamar('mcp_leer', t, { p_hilo_id: hilo_id ?? null, p_estado: estado ?? null, p_limite: limite }, ip);
     },
-    responder: async (t, { hilo_id, cuerpo, accion = 'comentar', adjuntos }, ip) => {
-      const r = await llamar('mcp_responder', t, { p_hilo_id: hilo_id, p_cuerpo: cuerpo, p_accion: accion }, ip);
+    responder: async (t, { hilo_id, cuerpo, accion = 'comentar', adjuntos, evidencia }, ip) => {
+      const r = await llamar('mcp_responder', t, { p_hilo_id: hilo_id, p_cuerpo: cuerpo, p_accion: accion, p_evidencia: evidencia ?? null }, ip);
       const adj = await adjuntar(t, hilo_id, r?.mensaje_id ?? r?.mensaje?.id ?? null, adjuntos, ip);
       avisar();
       return adj ? { ...r, adjuntos: adj } : r;

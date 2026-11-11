@@ -161,12 +161,31 @@ async function pintarChat(v) {
 const ESTADO = { abierto: 'Abierto', tomado: 'Una IA lo está trabajando', pide_aprobacion: 'Espera tu aprobación', aprobado: 'Aprobado', rechazado: 'Rechazado', pide_cierre: 'Listo para cerrar: espera tu OK', cerrado: 'Cerrado' };
 const estadoTxt = (e) => ESTADO[e] ?? e;
 
+const SVG_ICONO = {
+  ficha: '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-2px" aria-hidden="true"><rect x="3" y="2.5" width="10" height="12" rx="1.5"/><path d="M6 2.5a2 2 0 0 1 4 0M5.8 7h4.4M5.8 10h4.4"/></svg>',
+  url: '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" style="vertical-align:-2px" aria-hidden="true"><path d="M6.5 9.5a3 3 0 0 0 4.2.2l2-2a3 3 0 1 0-4.2-4.2l-1.1 1"/><path d="M9.5 6.5a3 3 0 0 0-4.2-.2l-2 2a3 3 0 1 0 4.2 4.2l1.1-1"/></svg>',
+  adj: '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" style="vertical-align:-2px" aria-hidden="true"><path d="M13.5 7.5 8 13a4 4 0 0 1-5.6-5.6l6-6A2.7 2.7 0 0 1 12.2 5l-6 6a1.3 1.3 0 0 1-1.9-1.9l5.5-5.4"/></svg>',
+};
+const fichaEvidencia = (e) => {
+  const pruebas = (e.pruebas || []).map((p) => {
+    if (p.url && /^https?:\/\//.test(p.url)) return `<div>${SVG_ICONO.url} <a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${esc(p.url)}</a></div>`;
+    if (p.adjunto_sha256) return `<div>${SVG_ICONO.adj} Adjunto del hilo · sha256 <code>${esc(p.adjunto_sha256.slice(0, 16))}…</code></div>`;
+    return '';
+  }).join('');
+  return `<div class="msg"><b>${SVG_ICONO.ficha} Evidencia de cierre</b> <span class="meta">${esc(e.agentes?.nombre ?? 'IA')} · ${fecha(e.creado_en)}</span>
+    <br><b>Se pidió:</b> ${esc(e.que_se_pidio)}<br><b>Se entregó:</b> ${esc(e.que_se_entrego)}
+    ${pruebas ? `<br><b>Pruebas:</b>${pruebas}` : ''}
+    ${e.verificacion ? `<br><b>Verificación:</b> ${esc(e.verificacion)}` : ''}</div>`;
+};
+
 async function abrirHilo(id) {
-  const [{ data: h }, { data: ms }, { data: ap }, { data: adj }] = await Promise.all([
+  const [{ data: h }, { data: ms }, { data: ap }, { data: adj }, { data: evs }, { data: cierres }] = await Promise.all([
     sb.from('hilos').select('*, creador:agentes!hilos_creado_por_agente_fkey(nombre,eliminado_en), destino:agentes!hilos_para_agente_fkey(nombre,eliminado_en)').eq('id', id).single(),
     sb.from('mensajes').select('*, agentes(nombre,eliminado_en)').eq('hilo_id', id).order('creado_en'),
     sb.from('aprobaciones').select('*').eq('hilo_id', id).order('creado_en'),
     sb.from('adjuntos').select('id,nombre,tipo,tamano,creado_en').eq('hilo_id', id).order('creado_en'),
+    sb.from('evidencias_cierre').select('*, agentes(nombre)').eq('hilo_id', id).order('creado_en'),
+    sb.from('cierres').select('*').eq('hilo_id', id).order('creado_en'),
   ]);
   if (!h) return;
   const c = $('#dlg-cuerpo');
@@ -174,12 +193,14 @@ async function abrirHilo(id) {
     ${ms.map((m) => `<div class="msg"><span class="meta">${esc(nombreAutor(m.agentes, 'Tú'))} · ${fecha(m.creado_en)}</span><br>${esc(m.cuerpo)}</div>`).join('')}
     ${adj?.length ? `<div class="msg"><b>📎 Adjuntos</b>${adj.map((a) => `<div class="fila-adj"><span>${ICONO[a.tipo] ?? '📄'} ${esc(a.nombre)} <span class="meta">${kb(a.tamano)}</span></span><button class="copiar" data-adj="${a.id}">Descargar</button></div>`).join('')}<p class="meta">Se descargan a tu teléfono; la app no los abre ni los ejecuta. El enlace dura 5 minutos.</p></div>` : ''}
     ${ap.map((a) => `<p>✅ ${esc(a.decision)} · ${esc(a.nota)} <span class="meta">${fecha(a.creado_en)}</span></p>`).join('')}
+    ${(evs || []).map(fichaEvidencia).join('')}
+    ${(cierres || []).map((c) => `<p>${c.veredicto === 'aceptado' ? '✅ Cierre aceptado' : '❌ Cierre rechazado'}${c.motivo ? ` · ${esc(c.motivo)}` : ''} <span class="meta">${fecha(c.creado_en)}</span></p>`).join('')}
     <div class="pie">
-    ${h.estado !== 'cerrado' ? `<label for="nota" class="meta">${h.estado === 'pide_cierre' ? 'Tu mensaje (opcional): se agrega al hilo y lo leen las IAs. Sirve para «Comentar» o para explicar por qué cierras o sigues.' : 'Tu mensaje: se agrega al hilo y lo leen las IAs.'}</label>
+    ${h.estado !== 'cerrado' ? `<label for="nota" class="meta">${h.estado === 'pide_cierre' ? 'Tu motivo (opcional): se agrega al hilo, lo leen las IAs y queda guardado con tu veredicto.' : 'Tu mensaje: se agrega al hilo y lo leen las IAs.'}</label>
     <textarea id="nota" placeholder="Escribe aquí…"></textarea>` : ''}
     <p id="nota-aviso" class="aviso" role="status" hidden></p>
     ${h.estado === 'pide_aprobacion' ? '<div class="fila"><button class="ok" id="aprobar">Aprobar</button><button class="no" id="rechazar">Rechazar</button></div>' : ''}
-    ${h.estado === 'pide_cierre' ? '<p class="aviso">Una IA dice que el trabajo ya terminó. ¿Lo cerramos? Al cerrarlo, las IAs ya no podrán escribir en él.</p><div class="fila acciones"><button class="ok" id="cerrar-si">Sí,&nbsp;cerrar</button><button id="cerrar-no">Seguir trabajando</button></div>' : ''}
+    ${h.estado === 'pide_cierre' ? `<p class="aviso">Una IA dice que el trabajo ya terminó.${(evs || []).length ? ' Arriba tienes su evidencia: revísala antes de decidir.' : ' <b>No trajo evidencia estructurada</b>; puedes pedirle que la agregue con «Rechazar».'}</p><div class="fila acciones"><button class="ok" id="cerrar-si">Aceptar y&nbsp;cerrar</button><button class="no" id="cerrar-no">Rechazar</button></div>` : ''}
     ${h.estado === 'cerrado' ? '<p class="meta">🔒 Hilo cerrado. Ya nadie puede escribir aquí.</p>' : `<div class="fila">${h.estado !== 'pide_cierre' ? '<button class="secundario" id="cerrar-ya">Cerrar hilo</button>' : ''}<button id="comentar">Comentar</button></div>`}
     </div>`;
   const botonesCierre = () => [$('#cerrar-si'), $('#cerrar-no'), $('#cerrar-ya'), $('#comentar')];

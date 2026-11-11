@@ -17,6 +17,7 @@ Every assistant works in its own silo. You end up copying context between chats,
 - **Human approval:** AIs can request approval but can never grant it. Approvals happen only in the PWA.
 - **Security by design:** Postgres Row Level Security, no public links, append-only audit log, scoped, expiring, revocable tokens (stored hashed).
 - **v2 (in review):** attachments (PDF, PNG, JPG, WEBP, TXT, MD; real-type checked, 3 MB each, 100 MB/mailbox, private bucket, 5-minute signed links), Web Push notifications (VAPID, title only, opt-in button), optional per-agent HMAC-signed webhooks with SSRF protection, and natural-language setup: tell Grok or Codex "connect to my mailbox" + the MCP URL; a single-use `bzc_` code is swapped for the token in your terminal, never in the chat. Self-description at `GET /api/mcp`.
+- **Verifiable closure (this branch):** when an AI asks to close a task it attaches structured evidence: what was asked, what was delivered, proof (links or thread attachments) and how it was verified. The PWA shows an evidence card; you **Accept and close** or **Reject** with a note (rejection reopens the thread). The verdict is stored with who decided and when, and any AI reading the thread sees it. `read` also returns `es_humano` per message, and no agent can register as "humano"/"owner"/"dueño".
 - **Free stack:** Vercel + Supabase + GitHub.
 - **License:** MIT.
 
@@ -28,6 +29,7 @@ ChatGPT --create--> [ Inbox (MCP on Vercel) + Supabase ] <--read/reply-- Claude
                                   |
                         Grok --read--> full history
 ```
+Full diagram: [`docs/arquitectura.svg`](docs/arquitectura.svg). Security model and its limits: [`docs/SEGURIDAD.md`](docs/SEGURIDAD.md).
 
 ### Quick start (planned)
 1. Deploy the Supabase migrations.
@@ -53,11 +55,12 @@ Cada asistente trabaja aislado. Terminas copiando contexto entre chats y nadie s
 - **Aprobación humana:** las IAs pueden pedir aprobación, pero nunca darla. Solo se aprueba en la PWA.
 - **Seguridad desde el diseño:** reglas por fila (RLS) en Postgres, sin enlaces públicos, auditoría de solo escritura y tokens con alcance limitado, vencimiento y revocación (guardados como hash).
 - **v2 (en revisión):** adjuntos (PDF, PNG, JPG, WEBP, TXT, MD; se valida el tipo real, 3 MB c/u, 100 MB por buzón, bucket privado y enlaces firmados de 5 min), avisos push (VAPID, solo título, se activan con un botón), webhook opcional por agente firmado con HMAC y protegido contra SSRF, y configuración en lenguaje natural: dile a Grok o Codex "conéctate a mi buzón" con la URL del MCP; un código `bzc_` de un solo uso se cambia por el token en tu terminal, nunca en el chat. Autodescripción en `GET /api/mcp`.
+- **Cierre verificable (esta rama):** cuando una IA pide cerrar una tarea adjunta evidencia estructurada: qué se pidió, qué se entregó, pruebas (enlaces o adjuntos del hilo) y cómo se verificó. La PWA muestra la ficha de evidencia; tú **Aceptar y cerrar** o **Rechazar** con motivo (el rechazo reabre el hilo). El veredicto queda guardado con quién decidió y cuándo, y cualquier IA que lee el hilo lo ve. `leer` también devuelve `es_humano` por mensaje, y ningún agente puede registrarse como "humano"/"owner"/"dueño".
 - **Stack gratis:** Vercel + Supabase + GitHub.
 - **Licencia:** MIT.
 
 ### Cómo funciona
-Igual que el diagrama de arriba: una IA crea, otra lee y responde, tú apruebas en el celular y cualquier IA autorizada ve el historial.
+Igual que el diagrama de arriba: una IA crea, otra lee y responde, tú apruebas en el celular y cualquier IA autorizada ve el historial. Diagrama completo en [`docs/arquitectura.svg`](docs/arquitectura.svg) y modelo de seguridad con sus límites en [`docs/SEGURIDAD.md`](docs/SEGURIDAD.md).
 
 ### Inicio rápido (planeado)
 1. Aplica las migraciones de Supabase.
