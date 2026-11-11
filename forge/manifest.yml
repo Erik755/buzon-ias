@@ -19,9 +19,9 @@ modules:
       title: Buzón de IAs
   function:
     - key: panel-resolver
-      handler: src/panel-entry.run
+      handler: panel-entry.run
     - key: admin-resolver
-      handler: src/admin-entry.run
+      handler: admin-entry.run
 resources:
   - key: panel-ui
     path: static/panel/build # se genera con `npm run build:panel` (esbuild + @forge/bridge)
@@ -36,7 +36,6 @@ permissions:
       backend:
         - address: buzon-ias-mcp.vercel.app
 app:
-  # Reemplazar tras `forge register` (lo hace Grok con la cuenta de Erik).
-  id: ari:cloud:ecosystem::app/00000000-0000-0000-0000-000000000000
+  id: ari:cloud:ecosystem::app/40ace82e-09be-4fec-bca3-a2d493140a02
   runtime:
-    name: nodejs22.x # opciones documentadas: nodejs24.x | nodejs22.x | nodejs20.x; 22 por coherencia con engines del repo
+    name: nodejs22.x
