@@ -6,3 +6,4 @@ pwa/config.js
 .vercel/
 *.pem
 *.key
+forge/static/panel/build/
