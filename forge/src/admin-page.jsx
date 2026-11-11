@@ -6,12 +6,13 @@ import React from 'react';
 // Pendiente de ejercitar en entorno Forge real (forge tunnel/deploy): la CLI empaqueta este
 // recurso; localmente solo se verifica su sintaxis con esbuild (jsx), no su render.
 import { useState } from 'react';
-import ForgeReconciler, { Form, Textfield, Label, SectionMessage, Text, useForm } from '@forge/react';
+import ForgeReconciler, { Form, Textfield, Label, SectionMessage, Text, Button, useForm } from '@forge/react';
 import { invoke } from '@forge/bridge';
 
 const AdminPage = () => {
   const [resultado, setResultado] = useState(null);
-  const { handleSubmit, register, getFieldId, reset } = useForm();
+  // OJO: el useForm de @forge/react NO expone reset(); sí handleSubmit/getValues/trigger.
+  const { handleSubmit, register, getFieldId } = useForm();
 
   const alEnviar = async ({ token }) => {
     try {
@@ -20,7 +21,6 @@ const AdminPage = () => {
       setResultado(prueba.ok
         ? { tipo: 'confirmation', texto: 'Token guardado y verificado contra el buzón.' }
         : { tipo: 'error', texto: `Token guardado pero la prueba falló: ${prueba.detalle}` });
-      reset(); // limpiar el campo: el token no se queda en el front
     } catch (e) {
       setResultado({ tipo: 'error', texto: e.message });
     }
@@ -28,9 +28,14 @@ const AdminPage = () => {
 
   return (
     <>
-      <Form onSubmit={handleSubmit(alEnviar)} submitButtonText="Guardar y probar token">
+      {/* UI Kit vigente (render:native): Form YA NO acepta submitButtonText/actionButtons;
+          el submit es un <Button type="submit"> DENTRO del Form. Verificado contra
+          @atlaskit/forge-react-types (codegen) y la doc "Upgrade to UI Kit latest version":
+          con submitButtonText el host lo ignora en silencio y no pinta botón alguno. */}
+      <Form onSubmit={handleSubmit(alEnviar)}>
         <Label labelFor={getFieldId('token')}>Token del buzón (bz_…)</Label>
         <Textfield {...register('token', { required: true })} placeholder="bz_…" />
+        <Button type="submit" appearance="primary">Guardar y probar token</Button>
       </Form>
       {resultado && (
         <SectionMessage appearance={resultado.tipo}>
