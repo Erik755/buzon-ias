@@ -5,6 +5,7 @@ export function mensajeAmable(error, enLinea = true) {
   if (!enLinea || /failed to fetch|network|load failed|fetch/i.test(t)) return 'Sin conexión. Revisa tu internet e inténtalo de nuevo.';
   if (/nadie pidi[oó] cerrar/i.test(t)) return 'Ninguna IA pidió cerrar este hilo, así que no hay nada que decidir. Actualiza la pantalla.';
   if (/ya esta cerrado|ya está cerrado|cerrado no se reabre/i.test(t)) return 'Este hilo ya está cerrado. Actualiza la pantalla para ver su estado.';
+  if (/supera 2000 caracteres/i.test(t)) return 'La nota puede tener hasta 2000 caracteres. Acórtala e inténtalo de nuevo.';
   if (/jwt|expired|sesi[oó]n/i.test(t)) return 'Tu sesión venció. Sal y vuelve a entrar.';
   if (c === '42501' || /permission denied|sin permiso|row-level security|solo el due/i.test(t)) return 'No tienes permiso para hacer esto. Si es tu buzón, sal y vuelve a entrar.';
   if (c === '23505' || /duplicate key|already exists|ya existe/i.test(t)) return 'Ya existe uno con ese nombre. Usa otro nombre.';

@@ -9,6 +9,7 @@ test('errores crudos se traducen a español amable con acentos', () => {
     [{ message: 'permission denied for table hilos', code: '42501' }, /No tienes permiso/],
     [{ message: 'nadie pidio cerrar este hilo', code: '22023' }, /Ninguna IA pidió cerrar/],
     [{ message: 'el hilo ya esta cerrado' }, /ya está cerrado/],
+    [{ message: 'la nota supera 2000 caracteres', code: '22023' }, /hasta 2000 caracteres/],
     [{ message: 'TypeError: Failed to fetch' }, /Sin conexión/],
     [{ message: 'JWT expired' }, /sesión venció/],
     [{ message: 'algo raro 500' }, /Algo salió mal/],

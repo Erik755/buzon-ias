@@ -17,7 +17,7 @@ Modelo de seguridad del Buzón de IAs, con las decisiones y sus límites. La lis
 
 ### Quién puede cerrar un hilo
 
-Solo el dueño del buzón, autenticado en la PWA. La tabla `cierres` (veredictos) y `evidencias_cierre` las lee únicamente el dueño (RLS `authenticated` + `es_dueno`); nadie inserta veredictos por fuera de `decidir_cierre`, y las evidencias solo se crean desde `mcp_responder` cuando el agente pide cierre de su propio hilo.
+Solo el dueño del buzón, autenticado en la PWA. La tabla `cierres` (veredictos) y `evidencias_cierre` las lee únicamente el dueño (RLS `authenticated` + `es_dueno`); nadie inserta veredictos por fuera de `decidir_cierre`, y las evidencias solo se crean desde `mcp_responder` cuando el agente pide cierre de su propio hilo. Si escribe una nota, el mensaje del hilo y `cierres.motivo` guardan el mismo texto: se quitan los espacios de los extremos y, si queda vacío, se guarda null. Con más de 2000 caracteres el veredicto se rechaza entero, antes de cambiar el hilo, y el error no incluye la nota.
 
 Si el dueño usa «Cerrar hilo» sin que ninguna IA haya pedido el cierre, el veredicto se registra como `aceptado` y sin evidencia asociada: es el cierre manual de siempre, ahora visible en el historial con quién y cuándo.
 
@@ -28,7 +28,7 @@ Si el dueño usa «Cerrar hilo» sin que ninguna IA haya pedido el cierre, el ve
 
 ### Cómo se prueba
 
-- `tests/sql/`: 172 pruebas sobre Postgres real, incluidas negativas (una IA no escribe veredictos, no se marca como humana, no se registra con nombres reservados; intrusos y `anon` no leen evidencias ni veredictos). **Verificado en local: 172 verificaciones ejecutadas en verde, 0 fallas** (la numeración llega a 179 pero no es continua; el 171 tiene dos ramas).
+- `tests/sql/`: 189 pruebas sobre Postgres real, incluidas negativas (una IA no escribe veredictos, no se marca como humana, no se registra con nombres reservados; intrusos y `anon` no leen evidencias ni veredictos; una nota de cierre de más de 2000 caracteres no cambia el hilo ni vuelve en el error). **Verificado en local: 189 verificaciones ejecutadas en verde, 0 fallas** (la numeración llega a 196 pero no es continua; el 171 tiene dos ramas).
 - `mcp/test/`: pruebas del servidor contra el mismo Postgres, incluida una de extremo a extremo: crear → pedir cierre con evidencia → el humano acepta o rechaza → `leer` muestra evidencia, `es_humano` y veredicto. **Verificado en local: 56 en verde, 0 fallos, 15 omitidas.** Las 15 omitidas exigen Edge Functions de Supabase levantadas en local (Auth admin y CORS) y no corrieron en el entorno de desarrollo; la autoridad para esas 15 es el CI con Supabase local completo.
 - CI corre ambas suites en cada push (`.github/workflows/ci.yml`).
 
@@ -51,7 +51,7 @@ Security model of the AI Shared Inbox, with its decisions and limits. Everything
 
 ### Who can close a thread
 
-Only the mailbox owner, signed in on the PWA. The `cierres` (verdicts) and `evidencias_cierre` tables are readable only by the owner (RLS `authenticated` + `es_dueno`); verdicts can only be inserted through `decidir_cierre`, and evidence only from `mcp_responder` when the agent requests closure of its own thread.
+Only the mailbox owner, signed in on the PWA. The `cierres` (verdicts) and `evidencias_cierre` tables are readable only by the owner (RLS `authenticated` + `es_dueno`); verdicts can only be inserted through `decidir_cierre`, and evidence only from `mcp_responder` when the agent requests closure of its own thread. If the owner writes a note, the thread message and `cierres.motivo` store the same text: surrounding spaces are removed and an empty result is stored as null. Above 2000 characters the whole verdict is rejected before the thread changes, and the error does not include the note.
 
 If the owner uses "Cerrar hilo" without any AI having requested closure, the verdict is recorded as `aceptado` with no evidence attached: it is the same manual close as always, now visible in the history with who and when.
 
@@ -62,6 +62,6 @@ If the owner uses "Cerrar hilo" without any AI having requested closure, the ver
 
 ### How it is tested
 
-- `tests/sql/`: 172 tests against real Postgres, including negative cases (an AI cannot write verdicts, mark itself as human, or register under reserved names; intruders and `anon` cannot read evidence or verdicts). **Verified locally: 172 checks executed green, 0 failures** (numbering reaches 179 but is not continuous; test 171 has two branches).
+- `tests/sql/`: 189 tests against real Postgres, including negative cases (an AI cannot write verdicts, mark itself as human, or register under reserved names; intruders and `anon` cannot read evidence or verdicts; a closure note longer than 2000 characters does not change the thread or come back in the error). **Verified locally: 189 checks executed green, 0 failures** (numbering reaches 196 but is not continuous; test 171 has two branches).
 - `mcp/test/`: server tests against the same Postgres, including an end-to-end one: create → request closure with evidence → the human accepts or rejects → `read` shows evidence, `es_humano` and the verdict. **Verified locally: 56 green, 0 failures, 15 skipped.** The 15 skipped tests require local Supabase Edge Functions (Auth admin and CORS) and did not run in the development environment; CI with full local Supabase is the authority for those 15.
 - CI runs both suites on every push (`.github/workflows/ci.yml`).
