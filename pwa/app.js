@@ -210,8 +210,7 @@ $$('[data-filtro]').forEach((b) => {
   b.onclick = () => {
     filtro = b.dataset.filtro;
     $$('[data-filtro]').forEach((x) => x.classList.toggle('activa', x === b));
-    vista = 'chat';
-    dibujarListaHilos();
+    if (vista !== 'chat') irA('chat'); else dibujarListaHilos();
   };
 });
 $('#busca-hilos') && ($('#busca-hilos').oninput = (e) => { buscaHilos = e.target.value; dibujarListaHilos(); });
@@ -332,7 +331,7 @@ function dibujarListaHilos() {
     meta.append(badge, hora);
     info.append(tit, meta);
     btn.append(ini, info);
-    btn.onclick = () => { hiloAbierto = h.id; vista = 'chat'; abrirConversacion(h.id); dibujarListaHilos(); if (window.matchMedia('(max-width:860px)').matches) cerrarCajones(); };
+    btn.onclick = () => { hiloAbierto = h.id; if (vista !== 'chat') irA('chat'); else { abrirConversacion(h.id); dibujarListaHilos(); if (window.matchMedia('(max-width:860px)').matches) cerrarCajones(); } };
     caja.append(btn);
   }
 }
