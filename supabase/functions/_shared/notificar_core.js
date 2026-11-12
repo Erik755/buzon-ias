@@ -5,7 +5,10 @@
 // * webhooks(buzon, excepto, n): en producción usa _destinos_webhook(n.id) (solo IAs del hilo + freno anti ping-pong).
 // * Un fallo temporal (DNS, red, 5xx) se reintenta; un destino prohibido (IP privada, host bloqueado) no.
 // * Cada destino entregado se marca (_marcar_entregado): los reintentos solo van a los que fallaron.
-// * En ultimo_error solo se guarda 'push_fallo' / 'webhook_fallo' (sin códigos HTTP: no sirve de oráculo).
+// * Un destino imposible (motivo no temporal) se DESCARTA con motivo (_marcar_descartado, columna
+//   descartados de la migración 018): nunca cuenta como entregado, no se reintenta y queda error visible.
+// * En ultimo_error y en descartados solo se guardan categorías ('push_fallo', 'webhook_fallo',
+//   'sin_secreto'...): sin códigos HTTP, porque la tabla la puede leer el dueño (no sirve de oráculo).
 import { validarDestino } from './ssrf.js';
 import { firmar, payloadTarea, payloadMensaje } from './hmac.js';
 import { enviarPush, payloadPush } from './webpush.js';
@@ -16,7 +19,12 @@ export async function procesar(deps, limite = 20) {
   for (const n of lote) {
     resumen.procesadas++;
     const hechos = new Set(n.entregados || []), fallos = new Set();
+    // Los descartes definitivos ya registrados no se reintentan y siguen contando como error:
+    // el aviso nunca llegó a ese destino, así que no puede cerrar como entregado.
+    const descartados = new Set((n.descartados || []).map((x) => x.split('|')[0]));
+    for (const x of n.descartados || []) fallos.add(`descartado:${x}`);
     const marcar = (d) => deps.rpc('_marcar_entregado', { p_id: n.id, p_destino: d });
+    const descartar = async (d, motivo) => { await deps.rpc('_marcar_descartado', { p_id: n.id, p_destino: `${d}|${motivo}` }); fallos.add(`descartado:${d}|${motivo}`); };
     // Los mensajes entre IAs no hacen sonar el teléfono del dueño: solo avisan a las otras IAs.
     // Tope de push (QA): máx. 10 push de hilos nuevos por hora y buzón; si la consulta falla, se envía.
     let pushOk = true;
@@ -27,12 +35,12 @@ export async function procesar(deps, limite = 20) {
       let detalle = null;
       if (subs.length && deps.detalleHilo) { try { detalle = await deps.detalleHilo(n.hilo_id, n.evento, n.creado_por_agente); } catch { detalle = null; } }
       for (const s of subs) {
-        const d = `push:${s.id}`; if (hechos.has(d)) continue;
+        const d = `push:${s.id}`; if (hechos.has(d) || descartados.has(d)) continue;
         try {
           const r = await enviarPush(s, payloadPush(n.evento, n.hilo_id, detalle), deps.claves, deps);
           if (r.ok) await marcar(d);
-          else if (r.status === 404 || r.status === 410) await deps.borrarSuscripcion(s.id);
-          else if (r.motivo && !TEMPORALES.has(r.motivo)) await marcar(d); // destino no permitido: no se reintenta
+          else if (r.status === 404 || r.status === 410) { await deps.borrarSuscripcion(s.id); await descartar(d, 'http'); } // suscripción muerta: se borra y consta el descarte
+          else if (r.motivo && !TEMPORALES.has(r.motivo)) await descartar(d, r.motivo); // destino no permitido: se descarta, no se reintenta
           else fallos.add('push_fallo');
         } catch { fallos.add('push_fallo'); }
       }
@@ -41,10 +49,10 @@ export async function procesar(deps, limite = 20) {
       let destinos = [];
       try { destinos = await deps.webhooks(n.buzon_id, n.creado_por_agente, n); } catch { fallos.add('webhook_fallo'); }
       for (const w of destinos) {
-        const d = `wh:${w.id}`; if (hechos.has(d)) continue;
+        const d = `wh:${w.id}`; if (hechos.has(d) || descartados.has(d)) continue;
         const r = await enviarWebhook(w, n.hilo_id, deps, n.evento);
         if (r.ok) await marcar(d);
-        else if (r.motivo && !TEMPORALES.has(r.motivo)) await marcar(d); // destino no permitido o sin secreto: no se reintenta
+        else if (r.motivo && !TEMPORALES.has(r.motivo)) await descartar(d, r.motivo); // destino no permitido o sin secreto: se descarta, no se reintenta
         else fallos.add('webhook_fallo');
       }
     }

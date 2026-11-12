@@ -164,9 +164,37 @@ test('push: un fallo de DNS se reintenta (no se marca entregado); un destino pro
   };
   let r = await correr(async () => { throw new Error('SERVFAIL'); });
   assert.ok(!r.some(([f]) => f === '_marcar_entregado'));
+  assert.ok(!r.some(([f]) => f === '_marcar_descartado'), 'un fallo de DNS no se descarta: se reintenta');
   assert.equal(r.find(([f]) => f === '_cerrar_notificacion')[1].p_ok, false, 'queda pendiente para reintentar');
   r = await correr(async () => ['10.0.0.1']);
-  assert.ok(r.some(([f]) => f === '_marcar_entregado'), 'IP privada: se descarta, no se reintenta');
+  assert.ok(!r.some(([f]) => f === '_marcar_entregado'), 'IP privada: nunca cuenta como entregado');
+  assert.ok(r.some(([f]) => f === '_marcar_descartado'), 'IP privada: se descarta con motivo, no se reintenta');
+});
+test('notificador: un fallo definitivo (sin_secreto) va a descartados con motivo, nunca a entregados, y queda error visible', async () => {
+  const rpcs = []; let envios = 0;
+  const deps = { claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+    resolver: dns({}), enviar: async () => { envios++; return 200; },
+    webhooks: async () => [{ id: 'g', webhook_url: 'https://h.ejemplo.dev/' }],
+    rpc: async (fn, a) => { rpcs.push([fn, a]); return fn === '_tomar_notificaciones' ? [{ id: 5, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: [] }] : null; } };
+  const res = await procesar(deps);
+  assert.equal(envios, 0, 'sin secreto ni clave no se envía nada');
+  assert.ok(!rpcs.some(([f]) => f === '_marcar_entregado'), 'nada se marca entregado');
+  const d = rpcs.find(([f]) => f === '_marcar_descartado');
+  assert.ok(d, 'el destino se descarta'); assert.equal(d[1].p_destino, 'wh:g|sin_secreto');
+  const cierre = rpcs.find(([f]) => f === '_cerrar_notificacion');
+  assert.equal(cierre[1].p_ok, false); assert.match(cierre[1].p_error, /descartado:wh:g\|sin_secreto/);
+  assert.equal(res.errores, 1);
+});
+test('notificador: un descarte previo no se reintenta y el error sigue visible al cerrar', async () => {
+  const rpcs = []; let envios = 0;
+  const deps = { claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+    resolver: dns({}), enviar: async () => { envios++; return 200; },
+    webhooks: async () => [{ id: 'g', webhook_url: 'https://h.ejemplo.dev/' }],
+    rpc: async (fn, a) => { rpcs.push([fn, a]); return fn === '_tomar_notificaciones' ? [{ id: 6, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: ['wh:g|sin_secreto'] }] : null; } };
+  await procesar(deps);
+  assert.equal(envios, 0, 'el destino descartado no se reintenta');
+  const cierre = rpcs.find(([f]) => f === '_cerrar_notificacion');
+  assert.equal(cierre[1].p_ok, false); assert.match(cierre[1].p_error, /descartado:wh:g\|sin_secreto/);
 });
 test('notificador: si falla la consulta de destinos, el aviso queda para reintento (no se pierde)', async () => {
   const rpcs = [];

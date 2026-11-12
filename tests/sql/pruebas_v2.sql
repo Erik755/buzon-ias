@@ -1024,4 +1024,22 @@ do $$ begin
     else perform pg_temp.falla('211'); end if;
 end $$;
 
+-- 212 y 216 Migración 018: descartados separados de entregados, escritura solo service_role.
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_name='notificaciones' and column_name='descartados')
+    then perform pg_temp.ok('212 la cola tiene descartados separados de entregados');
+    else perform pg_temp.falla('212'); end if;
+end $$;
+set role authenticated;
+do $$ begin
+  begin
+    perform public._marcar_descartado(1, 'wh:x|http');
+    perform pg_temp.falla('216');
+  exception when insufficient_privilege then
+    perform pg_temp.ok('216 el dueño no puede marcar descartados, solo service_role');
+  end;
+end $$;
+reset role;
+
 \echo TODAS_LAS_PRUEBAS_PASARON
