@@ -33,3 +33,45 @@ $$;
 revoke all on function public._marcar_descartado(bigint, text) from public, anon, authenticated;
 grant execute on function public._marcar_descartado(bigint, text) to service_role;
 
+-- Detalles menores de la 017 (sin tocar esa migración, ya aplicada): p_activo null ya no borra
+-- en silencio, y la auditoría solo se escribe cuando hubo cambio real.
+-- El dueño marca o desmarca una IA en un hilo suyo. Escribe solo esta RPC (no hay INSERT directo).
+create or replace function public.suscribir_agente_hilo(p_hilo uuid, p_agente uuid, p_activo boolean)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare b uuid; cambio uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'sin permiso' using errcode = '42501';
+  end if;
+  if p_activo is null then
+    raise exception 'p_activo requerido' using errcode = '22004';
+  end if;
+  select h.buzon_id into b
+    from public.hilos h
+    join public.agentes a on a.id = p_agente and a.buzon_id = h.buzon_id and a.eliminado_en is null
+   where h.id = p_hilo and public.es_dueno(h.buzon_id);
+  if b is null then
+    raise exception 'sin permiso' using errcode = '42501';
+  end if;
+  if p_activo then
+    insert into public.hilo_suscripciones(hilo_id, agente_id, buzon_id)
+      values (p_hilo, p_agente, b)
+      on conflict (hilo_id, agente_id) do nothing
+      returning hilo_id into cambio;
+    if cambio is not null then
+      insert into public.auditoria(buzon_id, actor, accion, objeto_id)
+        values (b, 'humano:' || auth.uid(), 'hilo:suscribir', p_agente);
+    end if;
+  else
+    delete from public.hilo_suscripciones where hilo_id = p_hilo and agente_id = p_agente
+      returning hilo_id into cambio;
+    if cambio is not null then
+      insert into public.auditoria(buzon_id, actor, accion, objeto_id)
+        values (b, 'humano:' || auth.uid(), 'hilo:desuscribir', p_agente);
+    end if;
+  end if;
+  return p_activo;
+end $$;
+revoke all on function public.suscribir_agente_hilo(uuid, uuid, boolean) from public, anon;
+grant execute on function public.suscribir_agente_hilo(uuid, uuid, boolean) to authenticated;

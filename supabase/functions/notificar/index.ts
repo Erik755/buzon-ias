@@ -37,9 +37,12 @@ const deps = {
     if (error) throw new Error('destinos');
     return data ?? [];
   },
-  resolver: async (h: string) => [
-    ...(await Deno.resolveDns(h, 'A').catch(() => [])), ...(await Deno.resolveDns(h, 'AAAA').catch(() => [])),
-  ],
+  // Un fallo de DNS se distingue de "sin registros": solo es dns_vacio si ambas consultas respondieron vacías.
+  resolver: async (h: string) => {
+    const [a, aaaa] = await Promise.allSettled([Deno.resolveDns(h, 'A'), Deno.resolveDns(h, 'AAAA')]);
+    if (a.status === 'rejected' && aaaa.status === 'rejected') throw a.reason;
+    return [...(a.status === 'fulfilled' ? a.value : []), ...(aaaa.status === 'fulfilled' ? aaaa.value : [])];
+  },
   enviar: (url: string, ip: string, headers: Record<string, string>, body: Uint8Array | string) => postFijo({ url, ip, headers, body, conectar }),
   claves: pub && priv ? { publica: pub, privada: priv, sujeto } : null,
 };

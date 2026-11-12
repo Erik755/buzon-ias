@@ -1024,14 +1024,42 @@ do $$ begin
     else perform pg_temp.falla('211'); end if;
 end $$;
 
--- 212 y 216 Migración 018: descartados separados de entregados, escritura solo service_role.
+-- 212-216 Migración 018: descartados separados de entregados y detalles menores de suscribir_agente_hilo.
 do $$
 begin
   if exists (select 1 from information_schema.columns where table_name='notificaciones' and column_name='descartados')
     then perform pg_temp.ok('212 la cola tiene descartados separados de entregados');
     else perform pg_temp.falla('212'); end if;
 end $$;
-set role authenticated;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$
+declare h uuid := 'cccccccc-0000-0000-0000-0000000000c0';
+        a1 uuid := 'bbbbbbbb-0000-0000-0000-0000000000c1';
+        na int;
+begin
+  -- p_activo null: error claro, no borrado silencioso.
+  begin
+    perform public.suscribir_agente_hilo(h, a1, null);
+    perform pg_temp.falla('213');
+  exception when null_value_not_allowed then
+    perform pg_temp.ok('213 p_activo null se rechaza en vez de borrar en silencio');
+  end;
+  -- Repetir la suscripción no duplica la auditoría.
+  perform public.suscribir_agente_hilo(h, a1, true);
+  select count(*) into na from public.auditoria where accion='hilo:suscribir' and objeto_id=a1;
+  perform public.suscribir_agente_hilo(h, a1, true);
+  if (select count(*) from public.auditoria where accion='hilo:suscribir' and objeto_id=a1) = na
+    then perform pg_temp.ok('214 suscribir dos veces no duplica la auditoría');
+    else perform pg_temp.falla('214'); end if;
+  -- Desuscribir sin estar suscrito no escribe auditoría.
+  select count(*) into na from public.auditoria where accion='hilo:desuscribir' and objeto_id=a1;
+  perform public.suscribir_agente_hilo(h, a1, false);
+  perform public.suscribir_agente_hilo(h, a1, false);
+  if (select count(*) from public.auditoria where accion='hilo:desuscribir' and objeto_id=a1) = na + 1
+    then perform pg_temp.ok('215 desuscribir sin cambio no escribe auditoría');
+    else perform pg_temp.falla('215'); end if;
+end $$;
+-- El dueño no puede marcar descartes directamente: solo service_role.
 do $$ begin
   begin
     perform public._marcar_descartado(1, 'wh:x|http');
