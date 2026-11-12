@@ -1,8 +1,7 @@
 import { createClient } from './vendor/supabase.js';
 import * as CFG from './config.js';
 import { GUIAS, ETIQUETA, QUE_HACER } from './guias.js';
-import { mensajeAmable, conBotones } from './errores.js';
-const avisar = (que, error) => alert(`${que}: ${mensajeAmable(error, navigator.onLine)}`);
+import { mensajeAmable, conBotones, avisar, mostrarAviso } from './errores.js';
 
 const { SUPABASE_URL, SUPABASE_ANON_KEY, MCP_URL } = CFG;
 const VAPID = CFG.VAPID_PUBLIC_KEY || '';
@@ -17,6 +16,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 const avisoRed = () => { $('#sin-red').hidden = navigator.onLine; };
 addEventListener('online', () => { avisoRed(); if (usuario) asegurarBuzon().then(pintar).catch(() => {}); });
 addEventListener('offline', avisoRed); avisoRed();
+$('#aviso-cerrar') && ($('#aviso-cerrar').onclick = () => mostrarAviso(''));
 
 $('#f-login').onsubmit = async (e) => {
   e.preventDefault();
@@ -61,23 +61,6 @@ $('#sel-buzon').onchange = (e) => {
   const b = buzones.find((x) => x.id === e.target.value);
   if (b) { buzon = b; localStorage.setItem('buzon_actual', b.id); pintar(); }
 };
-$('#btn-nuevo-buzon').onclick = () => {
-  const fila = $('#fila-nuevo-buzon');
-  fila.hidden = !fila.hidden;
-  if (!fila.hidden) $('#nuevo-buzon-nombre').focus();
-};
-$('#btn-guardar-buzon').onclick = () => conBotones([$('#btn-guardar-buzon')], async () => {
-  const entrada = $('#nuevo-buzon-nombre');
-  const nombre = entrada.value.trim();
-  if (!nombre) return;
-  const { data, error } = await sb.from('buzones').insert({ dueno_id: usuario.id, nombre: nombre.slice(0, 120) }).select().single();
-  if (error) return avisar('No se pudo crear el buzón', error);
-  buzones.push(data); buzon = data; localStorage.setItem('buzon_actual', data.id);
-  entrada.value = ''; $('#fila-nuevo-buzon').hidden = true;
-  pintarSelectorBuzon(); pintar();
-});
-$('#nuevo-buzon-nombre').onkeydown = (e) => { if (e.key === 'Enter') $('#btn-guardar-buzon').click(); };
-
 async function pintar() {
   const v = $('#vista'); v.innerHTML = '<p class="meta">Cargando…</p>';
   if (vista === 'agentes') return pintarAgentes(v);
@@ -207,7 +190,7 @@ async function abrirHilo(id) {
   const cierre = (cerrar) => conBotones(botonesCierre(), async () => {
     if (cerrar && !confirm('¿Cerrar este hilo? Las IAs ya no podrán escribir en él y no se puede reabrir.')) return;
     const { error } = await sb.rpc('decidir_cierre', { p_hilo: id, p_cerrar: cerrar, p_nota: $('#nota')?.value || null });
-    if (error) return alert('No se pudo: ' + mensajeAmable(error, navigator.onLine));
+    if (error) return avisar('No se pudo', error);
     $('#dlg').close(); pintar();
   });
   $('#cerrar-si') && ($('#cerrar-si').onclick = () => cierre(true));
@@ -215,7 +198,7 @@ async function abrirHilo(id) {
   $('#cerrar-no') && ($('#cerrar-no').onclick = () => cierre(false));
   const decidir = (decision) => conBotones([$('#aprobar'), $('#rechazar')], async () => {
     const { error } = await sb.from('aprobaciones').insert({ hilo_id: id, humano_id: usuario.id, decision, nota: $('#nota')?.value || null });
-    if (error) return alert('No se pudo: ' + mensajeAmable(error, navigator.onLine));
+    if (error) return avisar('No se pudo', error);
     $('#dlg').close(); pintar();
   });
   c.querySelectorAll('[data-adj]').forEach((b) => b.onclick = () => descargarAdjunto(b.dataset.adj, b));
@@ -225,7 +208,7 @@ async function abrirHilo(id) {
     const cuerpo = $('#nota').value.trim();
     if (!cuerpo) { const av = $('#nota-aviso'); av.textContent = 'Escribe tu mensaje en el cuadro de arriba antes de tocar «Comentar».'; av.hidden = false; $('#nota').focus(); return; }
     const { error } = await sb.from('mensajes').insert({ hilo_id: id, autor_humano: usuario.id, cuerpo });
-    if (error) return alert('No se pudo enviar: ' + mensajeAmable(error, navigator.onLine)); abrirHilo(id);
+    if (error) return avisar('No se pudo enviar', error); abrirHilo(id);
   });
   $('#dlg').showModal();
 }
@@ -332,8 +315,8 @@ async function pintarAgentes(v) {
     const id = b.dataset.whg;
     const url = v.querySelector(`[data-wh="${id}"]`).value.trim() || null;
     const clave = v.querySelector(`[data-whk="${id}"]`).value.trim();
-    if (url && !/^https:\/\/[^/@\s]+(\/\S*)?$/.test(url)) return alert('La dirección debe empezar con https:// (sin usuario ni contraseña).');
-    if (clave && (clave.length < 8 || /\s/.test(clave))) return alert('La clave parece incompleta: cópiala otra vez completa, sin espacios.');
+    if (url && !/^https:\/\/[^/@\s]+(\/\S*)?$/.test(url)) return mostrarAviso('La dirección debe empezar con https:// (sin usuario ni contraseña).');
+    if (clave && (clave.length < 8 || /\s/.test(clave))) return mostrarAviso('La clave parece incompleta: cópiala otra vez completa, sin espacios.');
     // Una sola llamada: dirección y clave se guardan juntas o no se guarda nada.
     const { error } = await sb.rpc('guardar_webhook', { p_agente: id, p_url: url, p_clave: clave || null });
     if (error) return avisar('No se pudo guardar', error);
