@@ -95,9 +95,6 @@ async function procesarUna(n, deps) {
   return fallos.size === 0;
 }
 
-// Motivos que ameritan reintento (los demás son definitivos). Los http_* se clasifican con definitivoHttp.
-export const TEMPORALES = new Set(['dns_fallo', 'dns_vacio', 'red_o_timeout', 'http']);
-
 // Cabeceras: X-Buzon-Firma (HMAC con el secreto whsec_, si existe) y Authorization: Bearer <clave del receptor>
 // (si el dueño pegó la clave de su receptor, p. ej. la "Webhook key" de una rutina de Grok Bot).
 export async function enviarWebhook(w, hiloId, deps, evento = 'hilo_nuevo') {
