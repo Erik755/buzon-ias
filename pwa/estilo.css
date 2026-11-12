@@ -340,9 +340,10 @@ body > header:not(.cab) .inicio{color:inherit;text-decoration:none;display:inlin
   footer{padding:4px 10px;font-size:.7rem}
 }
 @media (max-width:480px){
-  .cab h1{font-size:.82rem;letter-spacing:-.02em}
-  .idioma button{min-width:34px;padding:6px 5px}
-  .cab{padding:4px 6px;gap:3px}
+  .cab h1{font-size:.8rem;letter-spacing:-.02em}
+  .idioma button{min-width:30px;min-height:36px;padding:5px 4px}
+  .tema-switch,#salir,.btn-icono{min-width:36px!important;min-height:36px;padding:5px}
+  .cab{padding:4px 5px;gap:2px}
   .shell{display:block;height:calc(100dvh - var(--cab) - 28px);position:relative}
   #panel-izq,#panel-der{
     position:fixed;top:var(--cab);bottom:0;width:min(360px, 88vw);z-index:40;
