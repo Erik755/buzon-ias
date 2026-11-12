@@ -239,6 +239,7 @@ $('#form-nuevo') && ($('#form-nuevo').onsubmit = async (e) => {
   if (paraNombre) {
     const dest = idAgentePorNombre(listaAgentesCache, paraNombre);
     if (dest) fila.para_agente = dest;
+    else mostrarAviso(t('hilo.paraNoConectado'));
   }
   const { data, error } = await sb.from('hilos').insert(fila).select('id').single();
   if (error) return avisar(t('err.noCrearHilo'), error);
@@ -521,7 +522,7 @@ async function abrirConversacion(id) {
   else { const p = document.createElement('p'); p.className = 'meta'; p.textContent = mensajeAmable(em); cuerpo.append(p); }
   for (const a of (ap || [])) {
     const p = document.createElement('p'); p.className = 'ficha';
-    p.textContent = `✅ ${a.decision}${a.nota ? ' · ' + a.nota : ''} · ${fecha(a.creado_en)}`;
+    p.textContent = `✅ ${t('hilo.decision.' + a.decision) || a.decision}${a.nota ? ' · ' + a.nota : ''} · ${fecha(a.creado_en)}`;
     cuerpo.append(p);
   }
   for (const e of (evs || [])) {
@@ -546,7 +547,7 @@ async function abrirConversacion(id) {
     ${h.estado !== 'cerrado' ? `<label for="nota" class="meta">${h.estado === 'pide_cierre' ? (getIdioma() === 'en' ? 'Your reason (optional): it is added to the thread, AIs can read it, and it is stored with your verdict.' : 'Tu motivo (opcional): se agrega al hilo, lo leen las IAs y queda guardado con tu veredicto.') : (getIdioma() === 'en' ? 'Your message: it is added to the thread and AIs can read it.' : 'Tu mensaje: se agrega al hilo y lo leen las IAs.')}</label>
     <textarea id="nota" placeholder="${esc(t('chat.placeholder'))}"></textarea>` : ''}
     <p id="nota-aviso" class="aviso" role="status" hidden></p>
-    ${h.estado === 'pide_aprobacion' ? `<div class="fila"><button type="button" class="ok" id="aprobar">${getIdioma() === 'en' ? 'Approve' : 'Aprobar'}</button><button type="button" class="no" id="rechazar">Rechazar</button></div>` : ''}
+    ${h.estado === 'pide_aprobacion' ? `<div class="fila"><button type="button" class="ok" id="aprobar">${getIdioma() === 'en' ? 'Approve' : 'Aprobar'}</button><button type="button" class="no" id="rechazar">${t('hilo.rechazar')}</button></div>` : ''}
     ${h.estado === 'pide_cierre' ? `<p class="aviso">${getIdioma() === 'en' ? 'An AI says the work is done.' : 'Una IA dice que el trabajo ya terminó.'}${(evs || []).length ? (getIdioma() === 'en' ? ' Its evidence is above: review it before deciding.' : ' Arriba tienes su evidencia: revísala antes de decidir.') : (getIdioma() === 'en' ? ' <b>It did not bring structured evidence</b>; you can ask it to add some with “Reject”.' : ' <b>No trajo evidencia estructurada</b>; puedes pedirle que la agregue con «Rechazar».')}</p><div class="fila acciones"><button type="button" class="ok" id="cerrar-si">${getIdioma() === 'en' ? t('hilo.aceptarCerrar') : 'Aceptar y&nbsp;cerrar'}</button><button type="button" class="no" id="cerrar-no">${getIdioma() === 'en' ? t('hilo.rechazar') : 'Rechazar'}</button></div>` : ''}
     ${h.estado === 'cerrado' ? `<p class="meta">${t('hilo.cerrado')}</p>` : `<div class="fila">${h.estado !== 'pide_cierre' ? `<button type="button" class="secundario" id="cerrar-ya">${getIdioma() === 'en' ? t('hilo.cerrarYa') : 'Cerrar hilo'}</button>` : ''}<button type="button" id="comentar">${getIdioma() === 'en' ? t('hilo.comentar') : 'Comentar'}</button></div>`}</div>`;
     pie.append(pieAcc);
@@ -630,6 +631,9 @@ async function pintarAvisosHilo(hiloId) {
   const caja = $('#chat-avisos'); if (!caja) return;
   const { data, error } = await sb.rpc('agentes_para_avisos', { p_hilo: hiloId });
   if (error) {
+    // Si la función no existe en este entorno (p. ej. prod aún sin la migración 017), el panel se omite en silencio.
+    const codigo = String(error.code || error.status || '');
+    if (codigo === 'PGRST202' || codigo === '404' || /agentes_para_avisos/i.test(String(error.message || ''))) { caja.replaceChildren(); return; }
     caja.replaceChildren();
     const p = document.createElement('p'); p.className = 'meta'; p.textContent = mensajeAmable(error);
     caja.append(p);

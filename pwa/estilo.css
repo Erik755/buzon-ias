@@ -17,7 +17,7 @@
   --leading-body:1.55; --leading-ui:1.35;
   --dur-1:120ms; --dur-2:180ms; --dur-3:240ms; --dur-4:320ms;
   --ease:cubic-bezier(.22, 1, .36, 1);
-  --font:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --font:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue","Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 
@@ -139,6 +139,8 @@ h2,h3{font-size:.95rem;margin:0 0 8px;font-weight:600;letter-spacing:-.01em;line
 .idioma{display:inline-flex;gap:2px;padding:3px;border:0;border-radius:var(--radio-full);overflow:visible;background:var(--panel-2)}
 .idioma button{min-height:36px;min-width:40px;border-radius:var(--radio-full);background:transparent;color:var(--muted);font-weight:600;padding:6px 10px;border:0;box-shadow:none;font-size:var(--text-sm)}
 .idioma button[aria-pressed="true"]{background:var(--panel);color:var(--texto);box-shadow:var(--sombra-sm)}
+[hidden]{display:none!important}
+
 #salir{background:transparent;color:var(--texto);border:1px solid var(--linea);min-height:40px;padding:8px 14px;border-radius:var(--radio-full);font-weight:600;display:inline-flex;align-items:center;gap:6px;box-shadow:none}
 #salir:hover{background:var(--panel-2)}
 #salir .ico{width:18px;height:18px}
@@ -326,6 +328,8 @@ body > header:not(.cab) .inicio{color:inherit;text-decoration:none;display:inlin
 }
 
 @media (max-width:860px){
+  .bloque-copia{padding:12px}
+  .bloque-copia .fila{position:static;justify-content:flex-end;margin-top:8px}
   button.solo-movil,.solo-movil{display:inline-flex}
   .cab{height:var(--cab);min-height:var(--cab);flex-wrap:nowrap;padding:4px 8px;gap:4px}
   .cab h1{font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -351,6 +355,12 @@ body > header:not(.cab) .inicio{color:inherit;text-decoration:none;display:inlin
   #f-chat{padding:10px 12px calc(12px + env(safe-area-inset-bottom,0px))}
   .pie{margin-left:16px;margin-right:16px}
   .burbuja{max-width:88%}
+}
+@media (max-width:480px){
+  .cab h1{font-size:.8rem;letter-spacing:-.02em}
+  .idioma button{min-width:30px;min-height:36px;padding:5px 4px}
+  .tema-switch,#salir,.btn-icono{min-width:36px!important;min-height:36px;padding:5px}
+  .cab{padding:4px 5px;gap:2px}
 }
 @media (min-width:861px){
   .fondo-panel{display:none !important}

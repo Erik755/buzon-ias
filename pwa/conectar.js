@@ -1,6 +1,8 @@
 // Búsqueda de agentes para el ayudante de conexión.
 // Solo trabaja con las guías del repo (verificadas en docs/CONECTAR.md).
-// No incluye clientes que el servidor MCP no documenta (p. ej. Perplexity).
+// No incluye clientes que el servidor MCP no documenta. Perplexity ya documenta conectores MCP remotos
+// (help center art. 13915507: API Key/OAuth/None, Streamable HTTP), pero la fuente no dice si la clave
+// viaja como Authorization: Bearer; hasta confirmarlo con fuente o prueba real, la guía queda fuera.
 
 export const SUGERENCIAS = ['claude-code', 'cursor', 'gemini-cli', 'codex', 'grok', 'chatgpt', 'instinct', 'labelbox-recursion', 'mcp-generico'];
 
@@ -27,14 +29,6 @@ export function normalizar(s) {
   return String(s ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
 }
 
-function subsecuencia(q, texto) {
-  let i = 0;
-  for (const ch of texto) {
-    if (ch === q[i]) i++;
-    if (i === q.length) return true;
-  }
-  return false;
-}
 
 function distancia(a, b) {
   if (Math.abs(a.length - b.length) > 2) return 99;
@@ -70,7 +64,7 @@ export function puntuacionGuia(query, g, idioma = 'es', nombreEn = '') {
     else if (c.split(/[\s()/"'-]+/).some((w) => w.startsWith(nq))) best = Math.max(best, 80);
     else if (c.includes(nq)) best = Math.max(best, 70);
     else if (nq.length >= 3 && distancia(nq, c) <= 2) best = Math.max(best, 50);
-    else if (nq.length >= 3 && subsecuencia(nq, c)) best = Math.max(best, 35);
+    // Sin coincidencia por subsecuencia: generaba ruido (p. ej. 'gemini' casaba guías sin relación).
   }
   const toks = nq.split(/\s+/).filter(Boolean);
   if (toks.length > 1 && toks.every((tok) => campos.some((c) => c.includes(tok)))) best = Math.max(best, 75);

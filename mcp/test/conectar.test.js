@@ -34,6 +34,12 @@ test('coincidencia parcial y difusa devuelve el agente y no un muro', () => {
   assert.ok(buscarGuias('CÓDEX', GUIAS).resultados.some((g) => g.id === 'codex' || g.id === 'nl-codex'));
 });
 
+test('la búsqueda no devuelve guías que solo casan por subsecuencia de letras', () => {
+  // Antes: 'gemini' también devolvía nl-grok y labelbox-recursion por g-e-m-i-n-i dispersas.
+  const r = buscarGuias('gemini', GUIAS);
+  assert.deepEqual(r.resultados.map((g) => g.id), ['gemini-cli']);
+});
+
 test('Perplexity no está: el servidor no lo documenta', () => {
   assert.ok(!GUIAS.some((g) => /perplexity/i.test(g.id + g.nombre)));
   const r = buscarGuias('perplexity', GUIAS);
