@@ -171,7 +171,7 @@ export const GUIAS_EN = {
     donde: 'Recursion console: Agents and Credential vaults. You need the organization developer or admin role.',
     pasos: [
       'In the Recursion console go to Agents, open the agent, then Configuration \u2192 Tools, and click "Add custom MCP server". Paste the URL below (already filled in) and click Save new version.',
-      'In Credential vaults, add a "Token for an MCP server" (bearer_token). The server URL must be exactly the one below (if the path differs, the token is not sent). Paste the Buz\u00f3n agent\'s bz_ key there, never in a chat. Grant the vault to the agent (defaultVaultIds) or to the session.',
+      'In Credential vaults, add a "Token for an MCP server" (bearer_token). The server URL must be exactly the one below (if the path differs, the token is not sent). Paste the inbox agent\'s bz_ key there, never in a chat. Grant the vault to the agent (defaultVaultIds) or to the session.',
       'In that credential\'s row, click Test (probe). It should list the tools crear, leer and responder. On the agent they appear as <name>__leer, <name>__crear and <name>__responder.',
     ],
     probar: 'The vault Test should succeed and show crear, leer and responder. Then, in an agent session, ask: "Read my inbox". In the Inbox Agents tab you can also tap Test connection (it only observes last use).',
