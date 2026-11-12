@@ -52,7 +52,21 @@ test('Web Push: JWT VAPID ES256 válido y payload solo con título', async () =>
   assert.ok(await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, kp.publicKey, b64u.dec(c), new TextEncoder().encode(`${a}.${b}`)));
   assert.equal(JSON.parse(new TextDecoder().decode(b64u.dec(b))).aud, 'https://fcm.googleapis.com');
   const p = JSON.parse(payloadPush('pide_aprobacion', 'id'));
-  assert.deepEqual(p, { titulo: 'Buzón de IAs', cuerpo: 'Tienes una aprobación pendiente', url: './?hilo=id' }, 'texto genérico: nada del hilo en la pantalla de bloqueo');
+  assert.deepEqual(p, { titulo: 'Buzón de IAs', cuerpo: 'Tienes una aprobación pendiente', url: './?hilo=id' }, 'sin detalle: texto genérico de respaldo');
+});
+test('Web Push: payload con título del hilo y quién pide, sin contenido; recortes y respaldos', () => {
+  const j = (s) => JSON.parse(s);
+  assert.equal(j(payloadPush('pide_aprobacion', 'h1', { tituloHilo: 'Factura de mayo', quien: 'Agente B' })).cuerpo, 'Agente B pide aprobación: Factura de mayo');
+  assert.equal(j(payloadPush('pide_cierre', 'h1', { tituloHilo: 'Factura de mayo', quien: 'Agente B' })).cuerpo, 'Agente B pide cerrar: Factura de mayo');
+  assert.equal(j(payloadPush('hilo_nuevo', 'h1', { tituloHilo: 'Presupuesto', quien: 'Agente B' })).cuerpo, 'Hilo nuevo de Agente B: Presupuesto');
+  assert.equal(j(payloadPush('hilo_nuevo', 'h1', { tituloHilo: 'Presupuesto' })).cuerpo, 'Hilo nuevo: Presupuesto', 'sin quién pide: solo el título');
+  assert.equal(j(payloadPush('pide_aprobacion', 'h1', { tituloHilo: 'Factura' })).cuerpo, 'Tienes una aprobación pendiente', 'detalle incompleto: respaldo genérico');
+  assert.equal(j(payloadPush('pide_cierre', 'h1', null)).cuerpo, 'Una IA pide cerrar un hilo');
+  const largo = j(payloadPush('pide_aprobacion', 'h1', { tituloHilo: 'x'.repeat(80), quien: 'y'.repeat(80) }));
+  assert.ok(largo.cuerpo.startsWith('y'.repeat(40)) && !largo.cuerpo.startsWith('y'.repeat(41)), 'quién recortado a 40');
+  assert.ok(largo.cuerpo.includes('x'.repeat(40)) && !largo.cuerpo.includes('x'.repeat(41)), 'título recortado a 40');
+  const u = j(payloadPush('pide_aprobacion', 'h1', { tituloHilo: 'T', quien: 'Q' }));
+  assert.deepEqual(Object.keys(u).sort(), ['cuerpo', 'titulo', 'url'], 'sin campos extra ni contenido del mensaje');
 });
 test('Adjuntos: tipo real por bytes mágicos; rechaza disfraces, SVG y HTML', () => {
   const B = (s) => new TextEncoder().encode(s), H = (...x) => new Uint8Array(x);

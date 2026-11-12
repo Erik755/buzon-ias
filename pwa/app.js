@@ -920,19 +920,20 @@ async function pintarPush() {
   }
   const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription();
   if (Notification.permission === 'denied') { caja.innerHTML = `<p class="aviso">${esc(t('push.bloqueado'))}</p>`; return; }
-  caja.innerHTML = sub ? `<p>${esc(t('push.activos'))}</p><button type="button" id="push-off" class="no">${esc(t('push.desactivar'))}</button>` : `<button type="button" id="push-on">${esc(t('push.activar'))}</button>`;
-  $('#push-on') && ($('#push-on').onclick = async () => {
-    if (await Notification.requestPermission() !== 'granted') return pintarPush();
-    try {
-      const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64aU8(VAPID) });
-      const { error } = await sb.from('push_suscripciones').insert({ buzon_id: buzon.id, humano_id: usuario.id, endpoint: s.endpoint, p256dh: b64u(s.getKey('p256dh')), auth: b64u(s.getKey('auth')) });
-      if (error) { await s.unsubscribe(); throw error; }
-    } catch (e) { avisar(getIdioma() === 'en' ? 'Could not enable notifications' : 'No se pudieron activar los avisos', e); }
+  caja.innerHTML = `<label class="interruptor"><input type="checkbox" id="push-int" role="switch" ${sub ? 'checked' : ''}><span>${esc(t('push.interruptor'))}</span></label>${sub ? `<p class="meta">${esc(t('push.activos'))}</p>` : ''}`;
+  $('#push-int').onchange = async (ev) => {
+    if (ev.target.checked) {
+      if (await Notification.requestPermission() !== 'granted') return pintarPush();
+      try {
+        const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64aU8(VAPID) });
+        const { error } = await sb.from('push_suscripciones').insert({ buzon_id: buzon.id, humano_id: usuario.id, endpoint: s.endpoint, p256dh: b64u(s.getKey('p256dh')), auth: b64u(s.getKey('auth')) });
+        if (error) { await s.unsubscribe(); throw error; }
+      } catch (e) { avisar(getIdioma() === 'en' ? 'Could not enable notifications' : 'No se pudieron activar los avisos', e); }
+    } else {
+      await sb.from('push_suscripciones').delete().eq('endpoint', sub.endpoint); await sub.unsubscribe();
+    }
     pintarPush();
-  });
-  $('#push-off') && ($('#push-off').onclick = async () => {
-    await sb.from('push_suscripciones').delete().eq('endpoint', sub.endpoint); await sub.unsubscribe(); pintarPush();
-  });
+  };
 }
 
 async function copiar(texto, boton) {
