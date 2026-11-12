@@ -3,13 +3,13 @@
 //         webhooks(buzon, excepto), resolver(host),
 //         enviar(url, ip, headers, body) -> status   (POST a la IP ya validada; ver http_fijo.js), claves? }
 // * webhooks(buzon, excepto, n): en producción usa _destinos_webhook(n.id) (solo IAs del hilo + freno anti ping-pong).
-// * Un fallo temporal (DNS, red, 5xx) se reintenta; un destino prohibido (IP privada, host bloqueado) no.
+// * Un fallo temporal (DNS, red, 408/429/5xx) se reintenta; uno definitivo (otro 4xx, 3xx o destino prohibido) no.
 // * Cada destino entregado se marca (_marcar_entregado): los reintentos solo van a los que fallaron.
 // * Un destino imposible (motivo no temporal) se DESCARTA con motivo (_marcar_descartado, columna
 //   descartados de la migración 018): nunca cuenta como entregado, no se reintenta y queda error visible.
 // * En ultimo_error y en descartados solo se guardan categorías ('push_fallo', 'webhook_fallo',
 //   'sin_secreto'...): sin códigos HTTP, porque la tabla la puede leer el dueño (no sirve de oráculo).
-import { validarDestino } from './ssrf.js';
+import { validarDestino, definitivoHttp, DNS_TEMPORALES } from './ssrf.js';
 import { firmar, payloadTarea, payloadMensaje } from './hmac.js';
 import { enviarPush, payloadPush } from './webpush.js';
 
@@ -25,6 +25,8 @@ export async function procesar(deps, limite = 20) {
     for (const x of n.descartados || []) fallos.add(`descartado:${x}`);
     const marcar = (d) => deps.rpc('_marcar_entregado', { p_id: n.id, p_destino: d });
     const descartar = async (d, motivo) => { await deps.rpc('_marcar_descartado', { p_id: n.id, p_destino: `${d}|${motivo}` }); fallos.add(`descartado:${d}|${motivo}`); };
+    // En la BD (legible por el dueño) solo se guarda la categoría, nunca el código HTTP.
+    const motivoDb = (r) => (!r.motivo || r.motivo.startsWith('http_') ? 'http' : r.motivo);
     // Los mensajes entre IAs no hacen sonar el teléfono del dueño: solo avisan a las otras IAs.
     // Tope de push (QA): máx. 10 push de hilos nuevos por hora y buzón; si la consulta falla, se envía.
     let pushOk = true;
@@ -40,7 +42,7 @@ export async function procesar(deps, limite = 20) {
           const r = await enviarPush(s, payloadPush(n.evento, n.hilo_id, detalle), deps.claves, deps);
           if (r.ok) await marcar(d);
           else if (r.status === 404 || r.status === 410) { await deps.borrarSuscripcion(s.id); await descartar(d, 'http'); } // suscripción muerta: se borra y consta el descarte
-          else if (r.motivo && !TEMPORALES.has(r.motivo)) await descartar(d, r.motivo); // destino no permitido: se descarta, no se reintenta
+          else if (r.definitivo) await descartar(d, motivoDb(r)); // fallo definitivo: se descarta, no se reintenta
           else fallos.add('push_fallo');
         } catch { fallos.add('push_fallo'); }
       }
@@ -52,7 +54,7 @@ export async function procesar(deps, limite = 20) {
         const d = `wh:${w.id}`; if (hechos.has(d) || descartados.has(d)) continue;
         const r = await enviarWebhook(w, n.hilo_id, deps, n.evento);
         if (r.ok) await marcar(d);
-        else if (r.motivo && !TEMPORALES.has(r.motivo)) await descartar(d, r.motivo); // destino no permitido o sin secreto: se descarta, no se reintenta
+        else if (r.definitivo) await descartar(d, motivoDb(r)); // fallo definitivo (sin secreto, destino prohibido, 4xx...): se descarta, no se reintenta
         else fallos.add('webhook_fallo');
       }
     }
@@ -62,25 +64,27 @@ export async function procesar(deps, limite = 20) {
   return resumen;
 }
 
+// Motivos que ameritan reintento. Los estados HTTP se clasifican con definitivoHttp (ssrf.js).
 export const TEMPORALES = new Set(['dns_fallo', 'dns_vacio', 'red_o_timeout', 'http']);
 
 // Cabeceras: X-Buzon-Firma (HMAC con el secreto whsec_, si existe) y Authorization: Bearer <clave del receptor>
 // (si el dueño pegó la clave de su receptor, p. ej. la "Webhook key" de una rutina de Grok Bot).
 export async function enviarWebhook(w, hiloId, deps, evento = 'hilo_nuevo') {
-  if (!w.webhook_secreto && !w.webhook_clave) return { ok: false, motivo: 'sin_secreto' };
+  if (!w.webhook_secreto && !w.webhook_clave) return { ok: false, motivo: 'sin_secreto', definitivo: true };
   const v = await validarDestino(w.webhook_url, deps.resolver);
-  if (!v.ok) return v;
+  if (!v.ok) return { ...v, definitivo: !DNS_TEMPORALES.has(v.motivo) };
   const cuerpo = evento === 'mensaje_nuevo' ? payloadMensaje(hiloId) : payloadTarea(hiloId);
   const headers = { 'Content-Type': 'application/json', 'User-Agent': 'buzon-ias-webhook/1' };
   if (w.webhook_secreto) headers['X-Buzon-Firma'] = await firmar(w.webhook_secreto, cuerpo);
   if (w.webhook_clave) headers.Authorization = `Bearer ${w.webhook_clave}`;
-  let ultimo = { ok: false, motivo: 'red_o_timeout' };
+  let ultimo = { ok: false, motivo: 'red_o_timeout', definitivo: false };
   for (const ip of v.ips.slice(0, 3)) { // si una IP no responde, se prueba la siguiente (todas ya validadas)
     try {
       const status = await deps.enviar(w.webhook_url, ip, headers, cuerpo);
-      if (status >= 300 && status < 400) return { ok: false, motivo: 'redireccion_no_permitida' };
-      return status >= 200 && status < 300 ? { ok: true } : { ok: false, motivo: 'http' };
-    } catch { ultimo = { ok: false, motivo: 'red_o_timeout' }; }
+      if (status >= 300 && status < 400) return { ok: false, motivo: 'redireccion_no_permitida', status, definitivo: true };
+      if (status >= 200 && status < 300) return { ok: true, status };
+      return { ok: false, motivo: `http_${status}`, status, definitivo: definitivoHttp(status) };
+    } catch { ultimo = { ok: false, motivo: 'red_o_timeout', definitivo: false }; }
   }
   return ultimo;
 }

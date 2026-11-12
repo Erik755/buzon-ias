@@ -134,7 +134,7 @@ test('webhook con clave del receptor (Grok Bot): Authorization Bearer, sin firma
   const llamadas = [];
   const deps = { resolver: dns({ 'api.grok.ejemplo': ['93.184.216.34'] }), enviar: async (url, ip, headers, body) => { llamadas.push({ url, ip, headers, body }); return 200; } };
   const r = await enviarWebhook({ id: 'g', webhook_url: 'https://api.grok.ejemplo/v1/hooks/abc', webhook_clave: 'clave-grok-123456' }, 'hilo-1', deps);
-  assert.deepEqual(r, { ok: true });
+  assert.deepEqual(r, { ok: true, status: 200 });
   assert.equal(llamadas[0].headers.Authorization, 'Bearer clave-grok-123456');
   assert.equal(llamadas[0].headers['X-Buzon-Firma'], undefined);
   assert.deepEqual(Object.keys(JSON.parse(llamadas[0].body)).sort(), ['aviso', 'evento', 'hilo_id']);
@@ -142,12 +142,12 @@ test('webhook con clave del receptor (Grok Bot): Authorization Bearer, sin firma
   await enviarWebhook({ id: 'g', webhook_url: 'https://api.grok.ejemplo/x', webhook_clave: 'clave-grok-123456', webhook_secreto: 'whsec_z' }, 'h', deps, 'mensaje_nuevo');
   assert.ok(await verificar('whsec_z', llamadas[0].body, llamadas[0].headers['X-Buzon-Firma']), 'con ambas: firma + clave');
   assert.equal(llamadas[0].headers.Authorization, 'Bearer clave-grok-123456');
-  assert.deepEqual(await enviarWebhook({ id: 'g', webhook_url: 'https://api.grok.ejemplo/x' }, 'h', deps), { ok: false, motivo: 'sin_secreto' });
+  assert.deepEqual(await enviarWebhook({ id: 'g', webhook_url: 'https://api.grok.ejemplo/x' }, 'h', deps), { ok: false, motivo: 'sin_secreto', definitivo: true });
 });
 test('webhook: si la primera IP no responde se prueba la siguiente (todas validadas)', async () => {
   const ips = [];
   const deps = { resolver: dns({ 'h.ejemplo.dev': ['93.184.216.34', '93.184.216.35'] }), enviar: async (u, ip) => { ips.push(ip); if (ip.endsWith('34')) throw new Error('timeout'); return 204; } };
-  assert.deepEqual(await enviarWebhook({ webhook_url: 'https://h.ejemplo.dev/', webhook_secreto: 'whsec_a' }, 'h', deps), { ok: true });
+  assert.deepEqual(await enviarWebhook({ webhook_url: 'https://h.ejemplo.dev/', webhook_secreto: 'whsec_a' }, 'h', deps), { ok: true, status: 204 });
   assert.deepEqual(ips, ['93.184.216.34', '93.184.216.35']);
 });
 test('push: un fallo de DNS se reintenta (no se marca entregado); un destino prohibido no', async () => {
@@ -169,6 +169,27 @@ test('push: un fallo de DNS se reintenta (no se marca entregado); un destino pro
   r = await correr(async () => ['10.0.0.1']);
   assert.ok(!r.some(([f]) => f === '_marcar_entregado'), 'IP privada: nunca cuenta como entregado');
   assert.ok(r.some(([f]) => f === '_marcar_descartado'), 'IP privada: se descarta con motivo, no se reintenta');
+});
+test('webhook: clasificación HTTP — 408/429/5xx temporales; otros 4xx y 3xx definitivos con status', async () => {
+  const w = { id: 'g', webhook_url: 'https://h.ejemplo.dev/', webhook_secreto: 'whsec_a' };
+  for (const [status, definitivo] of [[401, true], [404, true], [410, true], [408, false], [429, false], [500, false], [503, false], [302, true]]) {
+    const r = await enviarWebhook(w, 'h', { resolver: dns({ 'h.ejemplo.dev': ['93.184.216.34'] }), enviar: async () => status });
+    assert.equal(r.ok, false); assert.equal(r.status, status); assert.equal(r.definitivo, definitivo, `status ${status}`);
+  }
+});
+test('notificador: un 404 definitivo va a descartados como categoría http (sin código en la BD) y no se reintenta', async () => {
+  const rpcs = [];
+  const deps = { claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+    resolver: dns({ 'h.ejemplo.dev': ['93.184.216.34'] }), enviar: async () => 404,
+    webhooks: async () => [{ id: 'g', webhook_url: 'https://h.ejemplo.dev/', webhook_secreto: 'whsec_a' }],
+    rpc: async (fn, a) => { rpcs.push([fn, a]); return fn === '_tomar_notificaciones' ? [{ id: 4, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: [] }] : null; } };
+  const res = await procesar(deps);
+  assert.ok(!rpcs.some(([f]) => f === '_marcar_entregado'), 'nada se marca entregado');
+  const d = rpcs.find(([f]) => f === '_marcar_descartado');
+  assert.ok(d, 'el destino se descarta'); assert.equal(d[1].p_destino, 'wh:g|http', 'en la BD solo la categoría, sin código HTTP');
+  const cierre = rpcs.find(([f]) => f === '_cerrar_notificacion');
+  assert.equal(cierre[1].p_ok, false); assert.match(cierre[1].p_error, /descartado:wh:g\|http$/);
+  assert.equal(res.errores, 1);
 });
 test('notificador: un fallo definitivo (sin_secreto) va a descartados con motivo, nunca a entregados, y queda error visible', async () => {
   const rpcs = []; let envios = 0;

@@ -1,4 +1,4 @@
-import { validarDestino } from './ssrf.js';
+import { validarDestino, definitivoHttp, DNS_TEMPORALES } from './ssrf.js';
 // Web Push sin dependencias (WebCrypto): cifrado RFC 8291 (aes128gcm) + VAPID RFC 8292 (ES256). Deno y Node 22.
 const enc = new TextEncoder();
 export const b64u = {
@@ -62,12 +62,12 @@ export function payloadPush(evento, hiloId, detalle) {
 
 // enviar(url, ip, headers, body) -> status. Se valida el host, se resuelve UNA vez y se envía a esa IP.
 export async function enviarPush(sub, payload, claves, { resolver, enviar }) {
-  if (!ENDPOINT_PERMITIDO.test(sub.endpoint)) return { ok: false, motivo: 'endpoint_no_permitido' };
+  if (!ENDPOINT_PERMITIDO.test(sub.endpoint)) return { ok: false, motivo: 'endpoint_no_permitido', definitivo: true };
   const v = await validarDestino(sub.endpoint, resolver);
-  if (!v.ok) return v;
+  if (!v.ok) return { ...v, definitivo: !DNS_TEMPORALES.has(v.motivo) };
   const cuerpo = await cifrar(payload, sub);
   const status = await enviar(sub.endpoint, v.ips[0], {
     Authorization: await vapid(sub.endpoint, claves), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: '86400', Urgency: 'normal',
   }, cuerpo);
-  return { ok: status >= 200 && status < 300, status };
+  return { ok: status >= 200 && status < 300, status, definitivo: definitivoHttp(status) };
 }
