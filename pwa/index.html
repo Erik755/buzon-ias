@@ -4,23 +4,23 @@
 <title>Buzón de IAs</title>
 <meta name="description" content="Buzón compartido de tus IAs: Claude, Grok, Gemini, Cursor y más se dejan tareas y avances, y tú apruebas desde el celular.">
 <link rel="apple-touch-icon" href="icon-192.png"><link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#f4f5f8">
+<meta name="theme-color" content="#f6f7fb">
 <meta name="color-scheme" content="light">
 <link rel="icon" href="icon.svg">
 <script src="tema-inicio.js"></script>
 <link rel="stylesheet" href="estilo.css">
 </head><body>
 <header class="cab">
-  <button type="button" class="icono solo-movil" id="btn-menu" data-i18n-aria="app.menu" aria-label="Abrir historial" aria-controls="panel-izq" aria-expanded="false">☰</button>
-  <h1>📬 <span data-i18n="app.titulo">Buzón de IAs</span></h1>
+  <button type="button" class="icono solo-movil" id="btn-menu" data-i18n-aria="app.menu" aria-label="Abrir historial" aria-controls="panel-izq" aria-expanded="false"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  <h1><span class="marca" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z"/><path d="m4 8 8 6 8-6"/></svg></span> <span data-i18n="app.titulo">Buzón de IAs</span></h1>
   <div class="cab-der">
     <div class="idioma" role="group" data-i18n-aria="app.idioma" aria-label="Idioma">
       <button type="button" data-idioma="es" aria-pressed="true">ES</button>
       <button type="button" data-idioma="en" aria-pressed="false">EN</button>
     </div>
-    <button type="button" class="tema-switch" id="btn-tema" role="switch" aria-checked="false" aria-label="Cambiar a tema oscuro"><span class="tema-icono" aria-hidden="true">☀</span><span class="tema-eti">Claro</span></button>
-    <button type="button" class="icono solo-movil" id="btn-agentes-hilo" data-i18n-aria="app.agentesHilo" aria-label="Agentes de esta conversación" aria-controls="panel-der" aria-expanded="false" hidden>⚡</button>
-    <button type="button" id="salir" data-i18n="app.salir" hidden>Salir</button>
+    <button type="button" class="tema-switch" id="btn-tema" role="switch" aria-checked="false" aria-label="Cambiar a tema oscuro"><span class="tema-icono" aria-hidden="true"><svg class="ico ico-sol" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M5.64 5.64l1.41 1.41M16.95 16.95l1.41 1.41M3 12h2M19 12h2M5.64 18.36l1.41-1.41M16.95 7.05l1.41-1.41"/></svg><svg class="ico ico-luna" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14.5A7 7 0 0 1 9.5 7 7 7 0 1 0 17 14.5z"/></svg></span><span class="tema-eti">Claro</span></button>
+    <button type="button" class="icono solo-movil" id="btn-agentes-hilo" data-i18n-aria="app.agentesHilo" aria-label="Agentes de esta conversación" aria-controls="panel-der" aria-expanded="false" hidden><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 14h7l-1 7 9-12h-7l0-6z"/></svg></button>
+    <button type="button" id="salir" data-i18n-aria="app.salir" aria-label="Salir" hidden><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17 15 12 10 7M15 12H4M19 19V5a2 2 0 0 0-2-2h-3"/></svg><span class="eti-salir" data-i18n="app.salir">Salir</span></button>
   </div>
 </header>
 <div id="aviso" class="aviso" role="alert" aria-live="assertive" aria-atomic="true" hidden><span id="aviso-texto"></span><button type="button" id="aviso-cerrar" data-i18n-aria="app.cerrarAviso" aria-label="Cerrar aviso">×</button></div>
@@ -33,7 +33,7 @@
     </div>
     <form id="f-login" class="tarjeta"><b data-i18n="login.entrar">Entrar</b><p class="meta" data-i18n="login.ayuda">Te mandamos un enlace a tu correo. Solo funciona con una cuenta que ya exista.</p>
       <input type="email" id="email" required data-i18n-placeholder="login.correo" placeholder="tu@correo.com" autocomplete="email">
-      <button class="ok" data-i18n="login.enviar">Enviar enlace</button><p id="login-msg"></p>
+      <button data-i18n="login.enviar">Enviar enlace</button><p id="login-msg"></p>
       <p class="meta" data-i18n="login.acepto">Al entrar aceptas los términos de uso y el aviso de privacidad.</p>
       <p class="meta"><a href="terminos.html" data-i18n="app.terminos">Términos de uso</a> · <a href="privacidad.html" data-i18n="app.privacidad">Aviso de privacidad</a></p>
     </form>
@@ -45,6 +45,7 @@
     <div id="shell" class="shell">
       <aside id="panel-izq">
         <div class="panel-cab">
+          <label class="meta" for="sel-buzon" data-i18n="buzon.label">Buzón actual</label>
           <div id="barra-buzon"><select id="sel-buzon" data-i18n-aria="buzon.label" aria-label="Buzón actual"></select></div>
           <label class="meta" for="busca-hilos" data-i18n="hilo.buscar">Buscar conversaciones</label>
           <input type="search" id="busca-hilos" data-i18n-placeholder="hilo.buscar" placeholder="Buscar conversaciones" autocomplete="off">
@@ -52,17 +53,25 @@
             <button type="button" data-filtro="todos" class="activa" data-i18n="nav.todos">Todos</button>
             <button type="button" data-filtro="pendientes" data-i18n="nav.aprobar">Por aprobar</button>
           </div>
-          <button type="button" class="ok" id="btn-nuevo" data-i18n="hilo.nuevo">Nuevo hilo</button>
+          <button type="button" id="btn-nuevo"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span data-i18n="hilo.nuevo">Nuevo hilo</span></button>
           <form id="form-nuevo" hidden>
             <input id="nuevo-titulo" required maxlength="200" data-i18n-placeholder="hilo.titulo" placeholder="Título del hilo" autocomplete="off">
-            <button class="ok" data-i18n="hilo.crear">Crear</button>
-            <button type="button" class="secundario" id="nuevo-cancelar" data-i18n="hilo.cancelar">Cancelar</button>
+            <div class="destinatario">
+              <label for="nuevo-para" class="meta" data-i18n="hilo.para">Para</label>
+              <input id="nuevo-para" maxlength="60" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="nuevo-para-lista" aria-haspopup="listbox" data-i18n-placeholder="hilo.paraPlaceholder" data-i18n-aria="hilo.para" placeholder="Agente destinatario (opcional)" autocomplete="off">
+              <div id="nuevo-para-lista" role="listbox" data-i18n-aria="hilo.paraLista" aria-label="Agentes destinatarios" hidden></div>
+              <p id="nuevo-para-hint" class="meta" hidden></p>
+            </div>
+            <div class="fila">
+              <button data-i18n="hilo.crear">Crear</button>
+              <button type="button" class="secundario" id="nuevo-cancelar" data-i18n="hilo.cancelar">Cancelar</button>
+            </div>
           </form>
         </div>
         <div id="lista-hilos" role="list"></div>
         <div class="panel-pie">
-          <button type="button" data-vista="agentes" data-i18n="nav.agentes">Agentes</button>
-          <button type="button" data-vista="conectar" data-i18n="nav.conectar">Conectar</button>
+          <button type="button" data-vista="agentes"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 19v-1a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v1"/><circle cx="10" cy="8" r="3"/><path d="M19 19v-1a3 3 0 0 0-2-2.83M16 5.13a3 3 0 0 1 0 5.74"/></svg><span data-i18n="nav.agentes">Agentes</span></button>
+          <button type="button" data-vista="conectar"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 8H7a3 3 0 0 0 0 6h2M15 8h2a3 3 0 0 1 0 6h-2M9 12h6"/></svg><span data-i18n="nav.conectar">Conectar</span></button>
         </div>
       </aside>
       <section id="panel-centro">

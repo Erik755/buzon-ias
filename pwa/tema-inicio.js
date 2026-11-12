@@ -3,7 +3,7 @@
 // El valor inicial es siempre claro si no hay una elección guardada.
 (function (g) {
   var CLAVE = 'buzon-tema';
-  var COLORES = { light: '#f4f5f8', dark: '#16181f' };
+  var COLORES = { light: '#f6f7fb', dark: '#16181f' };
   function leer() {
     try {
       var v = g.localStorage && g.localStorage.getItem(CLAVE);

@@ -28,7 +28,7 @@ function docFalso(attrs = {}) {
     setAttribute(n, v) { this.attrs[n] = String(v); },
   };
   const metas = {
-    'theme-color': { content: '#f4f5f8', setAttribute(n, v) { this[n] = v; }, getAttribute(n) { return this[n]; } },
+    'theme-color': { content: '#f6f7fb', setAttribute(n, v) { this[n] = v; }, getAttribute(n) { return this[n]; } },
     'color-scheme': { content: 'light', setAttribute(n, v) { this[n] = v; }, getAttribute(n) { return this[n]; } },
   };
   return {
@@ -77,7 +77,7 @@ test('aplicarTema pone data-theme, color-scheme, theme-color y persiste', () => 
   assert.equal(ls.store[CLAVE_TEMA], 'dark');
   assert.equal(alternarTema(ls, doc), 'light');
   assert.equal(doc.documentElement.getAttribute('data-theme'), 'light');
-  assert.equal(doc.metas['theme-color'].content, '#f4f5f8');
+  assert.equal(doc.metas['theme-color'].content, '#f6f7fb');
   assert.equal(ls.store[CLAVE_TEMA], 'light');
 });
 
@@ -101,7 +101,6 @@ test('el interruptor es un switch etiquetado: aria-checked y textos ES/EN', () =
   assert.equal(btn.attrs['aria-pressed'], undefined);
   assert.equal(btn.attrs['aria-label'], 'Cambiar a tema oscuro');
   assert.equal(eti.textContent, 'Claro');
-  assert.equal(ico.textContent, '☀');
   aplicarTema('dark', almacen(), doc);
   const en = {
     'tema.claro': 'Light', 'tema.oscuro': 'Dark',
@@ -111,7 +110,6 @@ test('el interruptor es un switch etiquetado: aria-checked y textos ES/EN', () =
   assert.equal(btn.attrs['aria-checked'], 'true');
   assert.equal(btn.attrs['aria-label'], 'Switch to light theme');
   assert.equal(eti.textContent, 'Dark');
-  assert.equal(ico.textContent, '☾');
 });
 
 test('WCAG AA: texto ≥ 4.5:1 y UI/foco/borde ≥ 3:1 en ambos temas', () => {
@@ -171,7 +169,7 @@ test('index.html arranca en claro, script temprano antes del CSS, interruptor ac
   const html = pwa('index.html');
   const csp = pwa('vercel.json');
   assert.match(html, /<html lang="es" data-theme="light">/);
-  assert.match(html, /<meta name="theme-color" content="#f4f5f8">/);
+  assert.match(html, /<meta name="theme-color" content="#f6f7fb">/);
   assert.match(html, /<meta name="color-scheme" content="light">/);
   assert.match(html, /<script src="tema-inicio\.js"><\/script>/);
   const iScript = html.indexOf('tema-inicio.js');
@@ -196,7 +194,7 @@ test('tema-inicio.js aplica dark desde localStorage sin destello (vm)', () => {
   const codigo = pwa('tema-inicio.js');
   const el = { attrs: { 'data-theme': 'light' }, style: { colorScheme: 'light' }, setAttribute(n, v) { this.attrs[n] = v; }, getAttribute(n) { return this.attrs[n]; } };
   const metas = {
-    'theme-color': { setAttribute(n, v) { this[n] = v; }, content: '#f4f5f8' },
+    'theme-color': { setAttribute(n, v) { this[n] = v; }, content: '#f6f7fb' },
     'color-scheme': { setAttribute(n, v) { this[n] = v; }, content: 'light' },
   };
   const ls = { getItem: (k) => (k === 'buzon-tema' ? 'oscuro' : null) };
@@ -221,16 +219,61 @@ test('tema-inicio.js aplica dark desde localStorage sin destello (vm)', () => {
   assert.equal(metas['color-scheme'].content, 'dark');
 });
 
-test('el SW sube a buzon-v21-temas y precacha los módulos de tema; el build los copia', () => {
+test('el SW sube a buzon-v23-rediseno y precacha los módulos de tema; el build los copia', () => {
   const sw = pwa('sw.js');
   const build = pwa('build-config.mjs');
   const man = pwa('manifest.webmanifest');
-  assert.match(sw, /const C = 'buzon-v21-temas'/);
+  assert.match(sw, /const C = 'buzon-v23-rediseno'/);
   assert.match(sw, /'tema-inicio\.js'/);
   assert.match(sw, /'temas\.js'/);
-  for (const f of ['i18n.js', 'conectar.js', 'guias-i18n.js', 'layout.js', 'chat.js', 'avisos.js', 'tema-inicio.js', 'temas.js']) {
+  for (const f of ['i18n.js', 'conectar.js', 'guias-i18n.js', 'layout.js', 'destinatarios.js', 'chat.js', 'avisos.js', 'tema-inicio.js', 'temas.js']) {
     assert.match(build, new RegExp(`'${f}'`));
     assert.match(sw, new RegExp(`'${f}'`));
   }
-  assert.match(man, /"theme_color": "#f4f5f8"/);
+  assert.match(man, /"theme_color": "#f6f7fb"/);
+});
+
+test('Inter se autoalojá en woff2 variable, con OFL, CSP font-src y precache del SW', () => {
+  const css = pwa('estilo.css');
+  const csp = pwa('vercel.json');
+  const sw = pwa('sw.js');
+  const build = pwa('build-config.mjs');
+  const html = pwa('index.html');
+  const ofl = pwa('fonts/OFL.txt');
+  const font = pwa('fonts/InterVariable.woff2');
+  assert.match(css, /@font-face/);
+  assert.match(css, /font-family:\s*Inter/);
+  assert.match(css, /font-display:\s*swap/);
+  assert.match(css, /fonts\/InterVariable\.woff2/);
+  assert.match(css, /format\("woff2"\)/);
+  assert.match(css, /font-weight:\s*100 900/);
+  assert.match(css, /font:16px\/var\(--leading-body\)/);
+  assert.match(css, /--leading-body:\s*1\.55/);
+  assert.match(css, /h1\{[^}]*font-weight:600/);
+  assert.match(css, /h1\{[^}]*letter-spacing:-\.02em/);
+  assert.doesNotMatch(css, /fonts\.google|googleapis|gstatic|cdn\.jsdelivr|unpkg|fontshare|bunny/);
+  assert.doesNotMatch(html, /fonts\.google|googleapis|gstatic/);
+  assert.match(csp, /font-src 'self'/);
+  assert.match(sw, /fonts\/InterVariable\.woff2/);
+  assert.match(sw, /const C = 'buzon-v23-rediseno'/);
+  assert.match(build, /fonts\/InterVariable\.woff2/);
+  assert.match(ofl, /SIL Open Font License, Version 1\.1/);
+  assert.ok(font.length > 10000, 'el woff2 de Inter debe existir y no estar vacío');
+  // Burbuja «Tú»: el cuerpo siempre se pinta y permanece visible (el mockup lo perdió).
+  const app = pwa('app.js');
+  assert.match(app, /cuerpo\.className = 'cuerpo'/);
+  assert.match(app, /cuerpo\.textContent = m\.cuerpo/);
+  assert.match(css, /\.burbuja \.cuerpo\{[^}]*display:block/);
+  assert.match(css, /\.burbuja \.cuerpo\{[^}]*color:var\(--texto\)/);
+  assert.match(css, /\.burbuja \.cuerpo\{[^}]*white-space:pre-wrap/);
+  assert.match(css, /\.burbuja\.mia\{[^}]*background:var\(--mia\)/);
+  assert.match(css, /prefers-reduced-motion:\s*no-preference/);
+  assert.match(css, /--linea:/);
+  // Verde solo para aprobar: Nuevo hilo y Enviar ya no llevan class="ok".
+  assert.doesNotMatch(html, /id="btn-nuevo"[^>]*class="ok"/);
+  assert.doesNotMatch(app, /button type="submit" class="ok"/);
+  assert.match(app, /class="ok" id="aprobar"/);
+  assert.match(app, /class="ok" id="cerrar-si"/);
+  assert.match(css, /\.composer/);
+  assert.match(css, /border-radius:var\(--radio-xl\)/);
 });

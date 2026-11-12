@@ -8,6 +8,7 @@ import { fusionarMensajes, idsMensajes, firmaLista, debeEncuestar, debeEncuestar
 import { t, setIdioma, getIdioma, onIdioma, iniciarIdioma } from './i18n.js';
 import { buscarGuias, rellenarPlantilla, enmascararToken, ALIAS } from './conectar.js';
 import { filtrarHilos, inicialDe, hiloCerrado } from './layout.js';
+import { listaDestinatarios, idAgentePorNombre, nombresDeHilos } from './destinatarios.js';
 import { aplicarTema, leerTema, alternarTema as cambiarTema, sincronizarControlTema } from './temas.js';
 
 const { SUPABASE_URL, SUPABASE_ANON_KEY, MCP_URL } = CFG;
@@ -18,7 +19,7 @@ const $$ = (s) => [...document.querySelectorAll(s)];
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fecha = (f) => new Date(f).toLocaleString(getIdioma() === 'en' ? 'en-US' : 'es-MX', { dateStyle: 'short', timeStyle: 'short' });
 let usuario, buzon, buzones = [], vista = 'chat', filtro = 'todos', tokenGuia = '', buscaHilos = '';
-let hiloAbierto = null, listaHilosCache = [];
+let hiloAbierto = null, listaHilosCache = [], listaAgentesCache = [], listaRemitentesExtra = [];
 const URL_MCP = MCP_URL || 'https://buzon-ias-mcp.vercel.app/api/mcp';
 const URL_CANJE = URL_MCP.replace(/\/api\/mcp$/, '/api/canje');
 
@@ -31,7 +32,7 @@ $('#aviso-cerrar') && ($('#aviso-cerrar').onclick = () => mostrarAviso(''));
 iniciarIdioma();
 iniciarTema();
 $$('[data-idioma]').forEach((b) => { b.onclick = () => setIdioma(b.dataset.idioma); });
-onIdioma(() => { sincronizarControlTema($('#btn-tema'), t); if (usuario) pintar(); else { aplicarCabecera(); if (!$('#guias-publicas').hidden && $('#guias-publicas').childElementCount) pintarConectar($('#guias-publicas'), false); } });
+onIdioma(() => { sincronizarControlTema($('#btn-tema'), t); refrescarListaDestino(); if (usuario) pintar(); else { aplicarCabecera(); if (!$('#guias-publicas').hidden && $('#guias-publicas').childElementCount) pintarConectar($('#guias-publicas'), false); } });
 $('#btn-tema') && ($('#btn-tema').onclick = alternarTema);
 
 function iniciarTema() {
@@ -45,6 +46,122 @@ function alternarTema() {
 }
 
 function aplicarCabecera() { /* data-i18n lo aplica setIdioma / iniciarIdioma */ }
+
+function remitentesVistos() {
+  return nombresDeHilos(listaHilosCache).concat(listaRemitentesExtra);
+}
+
+async function cargarAgentesDestino() {
+  if (!buzon) { listaAgentesCache = []; listaRemitentesExtra = []; return; }
+  const { data: ags } = await sb.from('agentes').select('id,nombre').eq('buzon_id', buzon.id).is('eliminado_en', null).order('nombre');
+  listaAgentesCache = ags || [];
+  const ids = (listaHilosCache || []).map((h) => h.id).filter(Boolean);
+  if (!ids.length) { listaRemitentesExtra = []; return; }
+  const { data: msgs, error } = await sb.from('mensajes').select('autor:agentes!mensajes_autor_agente_fkey(nombre)').in('hilo_id', ids).not('autor_agente', 'is', null).limit(200);
+  listaRemitentesExtra = error ? [] : (msgs || []).map((m) => m.autor?.nombre).filter(Boolean);
+}
+
+function opcionesDestino() {
+  const q = $('#nuevo-para')?.value || '';
+  return listaDestinatarios({ agentes: listaAgentesCache, remitentes: remitentesVistos(), consulta: q, incluirLibre: true });
+}
+
+function actualizarHintDestino() {
+  const hint = $('#nuevo-para-hint');
+  const input = $('#nuevo-para');
+  if (!hint || !input) return;
+  const nombre = input.value.trim();
+  if (!nombre) { hint.hidden = true; hint.textContent = ''; return; }
+  const conectado = !!idAgentePorNombre(listaAgentesCache, nombre);
+  hint.textContent = conectado ? '' : t('hilo.paraSinConectar');
+  hint.hidden = conectado;
+}
+
+function ocultarListaDestino() {
+  const lista = $('#nuevo-para-lista');
+  const input = $('#nuevo-para');
+  if (lista) lista.hidden = true;
+  if (input) { input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant'); }
+}
+
+function refrescarListaDestino() {
+  const input = $('#nuevo-para');
+  const lista = $('#nuevo-para-lista');
+  if (!input || !lista) return;
+  const vis = opcionesDestino();
+  const actual = input.getAttribute('aria-activedescendant') || '';
+  const activo = vis.findIndex((_, i) => 'para-opt-' + i === actual);
+  lista.replaceChildren();
+  vis.forEach((o, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'option');
+    b.id = 'para-opt-' + i;
+    b.setAttribute('aria-selected', i === activo ? 'true' : 'false');
+    const nom = document.createElement('span');
+    nom.textContent = o.fuente === 'libre' ? t('hilo.paraLibre', { nombre: o.nombre }) : o.nombre;
+    b.append(nom);
+    if (o.conectado) {
+      const eti = document.createElement('span');
+      eti.className = 'eti';
+      eti.textContent = t('hilo.conectado');
+      b.append(eti);
+    }
+    b.onmousedown = (e) => e.preventDefault();
+    b.onclick = () => elegirDestino(o);
+    lista.append(b);
+  });
+  // Con el formulario abierto la lista se ve siempre (conectados primero, luego la base).
+  lista.hidden = !!$('#form-nuevo')?.hidden || vis.length === 0;
+  input.setAttribute('aria-expanded', lista.hidden ? 'false' : 'true');
+  if (!lista.hidden && vis[activo]) input.setAttribute('aria-activedescendant', 'para-opt-' + activo);
+  else input.removeAttribute('aria-activedescendant');
+  actualizarHintDestino();
+}
+
+function elegirDestino(o) {
+  const input = $('#nuevo-para');
+  if (input) input.value = o.nombre;
+  ocultarListaDestino();
+  actualizarHintDestino();
+}
+
+function armarSelectorDestino() {
+  const input = $('#nuevo-para');
+  const lista = $('#nuevo-para-lista');
+  if (!input || !lista || input.dataset.listo) return;
+  input.dataset.listo = '1';
+  const mover = (delta) => {
+    const vis = opcionesDestino();
+    if (!vis.length) return;
+    const actual = input.getAttribute('aria-activedescendant') || '';
+    let i = vis.findIndex((_, n) => 'para-opt-' + n === actual);
+    i = i < 0 ? (delta > 0 ? 0 : vis.length - 1) : Math.max(0, Math.min(vis.length - 1, i + delta));
+    input.setAttribute('aria-activedescendant', 'para-opt-' + i);
+    refrescarListaDestino();
+    const el = $('#para-opt-' + i);
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  };
+  input.addEventListener('focus', () => { refrescarListaDestino(); });
+  input.addEventListener('input', () => { input.removeAttribute('aria-activedescendant'); refrescarListaDestino(); });
+  input.addEventListener('keydown', (e) => {
+    const vis = opcionesDestino();
+    if (e.key === 'ArrowDown') { e.preventDefault(); mover(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); mover(-1); }
+    else if (e.key === 'Home') { e.preventDefault(); input.setAttribute('aria-activedescendant', 'para-opt-0'); refrescarListaDestino(); }
+    else if (e.key === 'End') { e.preventDefault(); input.setAttribute('aria-activedescendant', 'para-opt-' + (vis.length - 1)); refrescarListaDestino(); }
+    else if (e.key === 'Enter') {
+      const actual = input.getAttribute('aria-activedescendant') || '';
+      const i = vis.findIndex((_, n) => 'para-opt-' + n === actual);
+      if (i >= 0 && vis[i]) { e.preventDefault(); elegirDestino(vis[i]); }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      if (!lista.hidden) ocultarListaDestino();
+      else { input.value = ''; actualizarHintDestino(); }
+    }
+  });
+  input.addEventListener('blur', () => { /* la lista se queda visible mientras el formulario esté abierto */ });
+}
 
 function cerrarCajones() {
   document.body.classList.remove('izq-abierto', 'der-abierto');
@@ -98,23 +215,44 @@ $$('[data-filtro]').forEach((b) => {
   };
 });
 $('#busca-hilos') && ($('#busca-hilos').oninput = (e) => { buscaHilos = e.target.value; dibujarListaHilos(); });
-$('#btn-nuevo') && ($('#btn-nuevo').onclick = () => {
+$('#btn-nuevo') && ($('#btn-nuevo').onclick = async () => {
   const f = $('#form-nuevo'); f.hidden = !f.hidden;
-  if (!f.hidden) $('#nuevo-titulo').focus();
+  if (!f.hidden) {
+    await cargarAgentesDestino();
+    refrescarListaDestino();
+    $('#nuevo-titulo').focus();
+  } else {
+    ocultarListaDestino();
+  }
 });
-$('#nuevo-cancelar') && ($('#nuevo-cancelar').onclick = () => { $('#form-nuevo').hidden = true; });
+$('#nuevo-cancelar') && ($('#nuevo-cancelar').onclick = () => {
+  $('#form-nuevo').hidden = true;
+  const p = $('#nuevo-para'); if (p) p.value = '';
+  ocultarListaDestino();
+  const h = $('#nuevo-para-hint'); if (h) h.hidden = true;
+});
 $('#form-nuevo') && ($('#form-nuevo').onsubmit = async (e) => {
   e.preventDefault();
   const titulo = $('#nuevo-titulo').value.trim() || t('hilo.sinTitulo');
-  const { data, error } = await sb.from('hilos').insert({ buzon_id: buzon.id, tipo: 'avance', titulo }).select('id').single();
+  const paraNombre = ($('#nuevo-para')?.value || '').trim();
+  const fila = { buzon_id: buzon.id, tipo: 'avance', titulo };
+  if (paraNombre) {
+    const dest = idAgentePorNombre(listaAgentesCache, paraNombre);
+    if (dest) fila.para_agente = dest;
+  }
+  const { data, error } = await sb.from('hilos').insert(fila).select('id').single();
   if (error) return avisar(t('err.noCrearHilo'), error);
   $('#nuevo-titulo').value = '';
+  if ($('#nuevo-para')) $('#nuevo-para').value = '';
+  const hint = $('#nuevo-para-hint'); if (hint) hint.hidden = true;
   $('#form-nuevo').hidden = true;
+  ocultarListaDestino();
   hiloAbierto = data.id;
   vista = 'chat';
   await pintar();
   if (window.matchMedia('(max-width:860px)').matches) cerrarCajones();
 });
+armarSelectorDestino();
 
 sb.auth.onAuthStateChange(async (ev, ses) => {
   usuario = ses?.user ?? null;
@@ -228,6 +366,7 @@ async function pintar() {
     if (vista === 'agentes') await pintarAgentes(extra);
     else pintarConectar(extra, true);
     await refrescarListaHilos();
+    await cargarAgentesDestino();
     arrancarEnVivo();
     return;
   }
@@ -236,6 +375,7 @@ async function pintar() {
   $('#panel-centro').hidden = false;
   $('#panel-der').hidden = false;
   await refrescarListaHilos();
+  await cargarAgentesDestino();
   if (!hiloAbierto && listaHilosCache.length) {
     const abiertos = listaHilosCache.filter((h) => !hiloCerrado(h.estado));
     hiloAbierto = (abiertos[0] || listaHilosCache[0]).id;
@@ -415,7 +555,7 @@ async function abrirConversacion(id) {
   if (!cerrado && h.estado !== 'pide_cierre' && h.estado !== 'pide_aprobacion') {
     const form = document.createElement('form');
     form.id = 'f-chat';
-    form.innerHTML = `<textarea id="chat-texto" rows="1" maxlength="20000" data-i18n-placeholder="chat.placeholder" placeholder="${esc(t('chat.placeholder'))}" aria-label="${esc(t('chat.placeholder'))}"></textarea><button type="submit" class="ok">${esc(t('chat.enviar'))}</button>`;
+    form.innerHTML = `<div class="composer"><textarea id="chat-texto" rows="1" maxlength="20000" data-i18n-placeholder="chat.placeholder" placeholder="${esc(t('chat.placeholder'))}" aria-label="${esc(t('chat.placeholder'))}"></textarea><button type="submit" class="enviar" aria-label="${esc(t('chat.enviar'))}" title="${esc(t('chat.enviar'))}"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg><span class="visually-hidden">${esc(t('chat.enviar'))}</span></button></div>`;
     pie.append(form);
     if (h.estado !== 'pide_cierre' && !pie.querySelector('#cerrar-ya')) {
       const fila = document.createElement('div');
@@ -641,12 +781,12 @@ async function pintarAgentes(v) {
   v.innerHTML = (ags.length ? '' : `<div class="vacio"><b>${esc(t('agentes.vacioTitulo'))}</b>${esc(t('agentes.vacio'))}</div>`)
     + `<form id="f-ag" class="tarjeta"><b>${esc(t('agentes.nuevo'))}</b><input id="ag-nombre" required placeholder="${esc(t('agentes.placeholder'))}">
     <select id="ag-dias"><option value="7">${esc(t('agentes.dias7'))}</option><option value="30" selected>${esc(t('agentes.dias30'))}</option><option value="90">${esc(t('agentes.dias90'))}</option></select>
-    <button class="ok">${esc(t('agentes.crear'))}</button></form>
+    <button>${esc(t('agentes.crear'))}</button></form>
     <form id="f-nl" class="tarjeta"><b>${esc(t('agentes.nlTitulo'))}</b>
     <p class="meta">${esc(t('agentes.nlAyuda'))}</p>
     <input id="nl-nombre" required maxlength="60" placeholder="${esc(t('agentes.nlNombre'))}">
     <select id="nl-min"><option value="5">${esc(t('agentes.nl5'))}</option><option value="10" selected>${esc(t('agentes.nl10'))}</option><option value="15">${esc(t('agentes.nl15'))}</option></select>
-    <button class="ok">${esc(t('agentes.nlGenerar'))}</button><div id="nl-lista"></div></form>
+    <button>${esc(t('agentes.nlGenerar'))}</button><div id="nl-lista"></div></form>
     <div class="tarjeta"><b>${esc(t('agentes.tus'))}</b> <span class="meta">(${ags.length})</span>
     <label class="meta" style="display:flex;align-items:center;gap:8px;margin:8px 0"><input type="checkbox" id="solo-act" style="width:20px;height:20px;margin:0;flex:none" ${soloActivos ? 'checked' : ''}> ${esc(t('agentes.soloActivos'))}</label>
     <button class="secundario" id="limpiar">${esc(t('agentes.limpiar'))}</button><div id="limpiar-lista"></div>
@@ -780,7 +920,7 @@ async function pintarPush() {
   }
   const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription();
   if (Notification.permission === 'denied') { caja.innerHTML = `<p class="aviso">${esc(t('push.bloqueado'))}</p>`; return; }
-  caja.innerHTML = sub ? `<p>${esc(t('push.activos'))}</p><button type="button" id="push-off" class="no">${esc(t('push.desactivar'))}</button>` : `<button type="button" id="push-on" class="ok">${esc(t('push.activar'))}</button>`;
+  caja.innerHTML = sub ? `<p>${esc(t('push.activos'))}</p><button type="button" id="push-off" class="no">${esc(t('push.desactivar'))}</button>` : `<button type="button" id="push-on">${esc(t('push.activar'))}</button>`;
   $('#push-on') && ($('#push-on').onclick = async () => {
     if (await Notification.requestPermission() !== 'granted') return pintarPush();
     try {
@@ -833,7 +973,7 @@ function pintarConectar(v, conSesion) {
       ${conSesion ? `<p class="meta">${tokOk ? esc(t('conectar.incluyeClave')) : esc(t('conectar.faltaClave'))}</p>
         ${tokOk ? `<div class="secreto"><input id="tok-guia" type="password" value="${esc(tokenGuia)}" readonly autocomplete="off" aria-label="${esc(t('secreto.clave'))}">
           <button type="button" class="secundario" id="tok-revelar">${esc(t('secreto.revelar'))}</button>
-          <button type="button" class="ok" id="tok-copiar">${esc(t('secreto.copiar'))}</button></div>` : `<button type="button" class="secundario" id="ir-ag">${esc(t('conectar.irAgentes'))}</button>`}` : ''}
+          <button type="button" class="secundario" id="tok-copiar">${esc(t('secreto.copiar'))}</button></div>` : `<button type="button" class="secundario" id="ir-ag">${esc(t('conectar.irAgentes'))}</button>`}` : ''}
     </div>
     <div id="guia-detalle" class="tarjeta" hidden></div>
     ${conSesion ? `<div class="tarjeta" id="caja-probar"><b>${esc(t('conectar.probar'))}</b><div id="probar-caja"></div></div>` : ''}`;
