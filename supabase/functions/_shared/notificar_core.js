@@ -27,6 +27,9 @@ export async function procesar(deps, limite = 20) {
     const descartar = async (d, motivo) => { await deps.rpc('_marcar_descartado', { p_id: n.id, p_destino: `${d}|${motivo}` }); fallos.add(`descartado:${d}|${motivo}`); };
     // En la BD (legible por el dueño) solo se guarda la categoría, nunca el código HTTP.
     const motivoDb = (r) => (!r.motivo || r.motivo.startsWith('http_') ? 'http' : r.motivo);
+    // Una línea de log JSON por destino: el status detallado va solo al log de la función,
+    // no a la BD (legible por el dueño). Sin URLs, claves, secretos ni cuerpos.
+    const bitacora = (d, r, t1) => console.log(JSON.stringify({ paso: 'destino', notif: n.id, destino: d, motivo: r.motivo ?? null, status: r.status ?? null, ms: Date.now() - t1 }));
     // Los mensajes entre IAs no hacen sonar el teléfono del dueño: solo avisan a las otras IAs.
     // Tope de push (QA): máx. 10 push de hilos nuevos por hora y buzón; si la consulta falla, se envía.
     let pushOk = true;
@@ -38,8 +41,10 @@ export async function procesar(deps, limite = 20) {
       if (subs.length && deps.detalleHilo) { try { detalle = await deps.detalleHilo(n.hilo_id, n.evento, n.creado_por_agente); } catch { detalle = null; } }
       for (const s of subs) {
         const d = `push:${s.id}`; if (hechos.has(d) || descartados.has(d)) continue;
+        const t1 = Date.now();
         try {
           const r = await enviarPush(s, payloadPush(n.evento, n.hilo_id, detalle), deps.claves, deps);
+          bitacora(d, r, t1);
           if (r.ok) await marcar(d);
           else if (r.status === 404 || r.status === 410) { await deps.borrarSuscripcion(s.id); await descartar(d, 'http'); } // suscripción muerta: se borra y consta el descarte
           else if (r.definitivo) await descartar(d, motivoDb(r)); // fallo definitivo: se descarta, no se reintenta
@@ -52,7 +57,9 @@ export async function procesar(deps, limite = 20) {
       try { destinos = await deps.webhooks(n.buzon_id, n.creado_por_agente, n); } catch { fallos.add('webhook_fallo'); }
       for (const w of destinos) {
         const d = `wh:${w.id}`; if (hechos.has(d) || descartados.has(d)) continue;
+        const t1 = Date.now();
         const r = await enviarWebhook(w, n.hilo_id, deps, n.evento);
+        bitacora(d, r, t1);
         if (r.ok) await marcar(d);
         else if (r.definitivo) await descartar(d, motivoDb(r)); // fallo definitivo (sin secreto, destino prohibido, 4xx...): se descarta, no se reintenta
         else fallos.add('webhook_fallo');

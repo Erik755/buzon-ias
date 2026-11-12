@@ -206,6 +206,22 @@ test('notificador: un fallo definitivo (sin_secreto) va a descartados con motivo
   assert.equal(cierre[1].p_ok, false); assert.match(cierre[1].p_error, /descartado:wh:g\|sin_secreto/);
   assert.equal(res.errores, 1);
 });
+test('notificador: cada destino deja una línea de log JSON con motivo y status, sin URL ni secretos', async () => {
+  const lineas = [];
+  const original = console.log;
+  console.log = (x) => lineas.push(x);
+  try {
+    await procesar({ claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+      resolver: dns({ 'h.ejemplo.dev': ['93.184.216.34'] }), enviar: async () => 404,
+      webhooks: async () => [{ id: 'g', webhook_url: 'https://h.ejemplo.dev/secreto', webhook_secreto: 'whsec_supersecreto' }],
+      rpc: async (fn) => (fn === '_tomar_notificaciones' ? [{ id: 42, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: [] }] : null) });
+  } finally { console.log = original; }
+  const log = lineas.map((x) => JSON.parse(x)).find((x) => x.paso === 'destino');
+  assert.ok(log, 'hay una línea de log por destino');
+  assert.deepEqual([log.notif, log.destino, log.motivo, log.status], [42, 'wh:g', 'http_404', 404]);
+  assert.ok(typeof log.ms === 'number');
+  assert.ok(!lineas.some((x) => x.includes('h.ejemplo.dev') || x.includes('whsec_')), 'el log no lleva URL ni secretos');
+});
 test('notificador: un descarte previo no se reintenta y el error sigue visible al cerrar', async () => {
   const rpcs = []; let envios = 0;
   const deps = { claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
