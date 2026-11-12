@@ -8,6 +8,18 @@
 // Se usa issue.id (estable al mover el issue entre proyectos), no la key.
 import { leerEnBuzon, ErrorPanel, PWA_URL, UUID_RE } from './comun.js';
 
+// Etiquetas en inglés para el enum interno de estados (que vive en español en la base de
+// datos). El panel de Jira se presenta en inglés; un valor fuera del enum pasa tal cual.
+const ESTADO_EN = {
+  abierto: 'Open',
+  tomado: 'In progress',
+  pide_aprobacion: 'Awaiting approval',
+  aprobado: 'Approved',
+  rechazado: 'Rejected',
+  pide_cierre: 'Ready to close',
+  cerrado: 'Closed',
+};
+
 // Resumen de solo lectura para el panel. Incluye esAdmin para que el front oculte las
 // acciones de vincular/desvincular a quien no es admin (la verificación real es del servidor).
 // deps: { fetchImpl, leerToken, leerVinculo, esAdmin }
@@ -28,7 +40,7 @@ export async function hiloResumen({ issueId }, deps) {
     esAdmin,
     hiloId,
     titulo: hilo.titulo || '(untitled)',
-    estado: hilo.estado || 'unknown',
+    estado: ESTADO_EN[hilo.estado] || hilo.estado || 'unknown',
     totalMensajes: mensajes.length,
     ultimos: mensajes.slice(-5).map((m) => ({ autor: m.autor, creado_en: m.creado_en, cuerpo: (m.cuerpo || '').slice(0, 280) })),
     enlacePwa: `${PWA_URL}?hilo=${hiloId}`,

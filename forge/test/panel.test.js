@@ -70,11 +70,33 @@ test('resumen: devuelve datos de solo lectura, enlace a la PWA y esAdmin', async
   assert.equal(r.vinculado, true);
   assert.equal(r.esAdmin, true);
   assert.equal(r.titulo, 'Cierre con evidencia');
-  assert.equal(r.estado, 'pide_aprobacion');
+  assert.equal(r.estado, 'Awaiting approval');
   assert.equal(r.totalMensajes, 2);
   assert.equal(r.enlacePwa, `${PWA_URL}?hilo=${HILO}`);
   // Solo lectura: el resumen no incluye acciones de cierre
   assert.ok(!('acciones' in r) && !('decidir' in r));
+});
+
+test('resumen: traduce el enum interno de estados a inglés y deja pasar valores desconocidos', async () => {
+  const esperado = {
+    abierto: 'Open',
+    tomado: 'In progress',
+    pide_aprobacion: 'Awaiting approval',
+    aprobado: 'Approved',
+    rechazado: 'Rejected',
+    pide_cierre: 'Ready to close',
+    cerrado: 'Closed',
+  };
+  for (const [es, en] of Object.entries(esperado)) {
+    const deps = depsBase({ fetchImpl: fetchOk({ hilo: { titulo: 'X', estado: es } }) });
+    await deps.guardarVinculo(ISSUE, HILO);
+    const r = await hiloResumen({ issueId: ISSUE }, deps);
+    assert.equal(r.estado, en, `estado ${es}`);
+  }
+  const deps = depsBase({ fetchImpl: fetchOk({ hilo: { titulo: 'X', estado: 'estado_nuevo' } }) });
+  await deps.guardarVinculo(ISSUE, HILO);
+  const r = await hiloResumen({ issueId: ISSUE }, deps);
+  assert.equal(r.estado, 'estado_nuevo');
 });
 
 test('resumen: vínculo almacenado que no es UUID se rechaza (defensa en profundidad)', async () => {
