@@ -73,7 +73,7 @@ test('pestaña Por aprobar, Cerrar hilo discreto, guardado atómico, De en el di
   const html = readFileSync(new URL('../../pwa/index.html', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../../pwa/app.js', import.meta.url), 'utf8');
   const css = readFileSync(new URL('../../pwa/estilo.css', import.meta.url), 'utf8');
-  assert.match(html, /<button data-vista="pendientes" class="activa">Por aprobar<\/button>/); assert.doesNotMatch(html, /class="corto"/);
+  assert.match(html, /data-filtro="pendientes"[^>]*>Por aprobar<\/button>/); assert.doesNotMatch(html, /class="corto"/);
   assert.match(css, /#cerrar-ya\{flex:0 0 auto/); assert.match(app, /<div class="fila">\$\{h\.estado !== 'pide_cierre'/);
   assert.match(app, /sb\.rpc\('guardar_webhook'/); assert.doesNotMatch(app, /update\(\{ webhook_url/);
   assert.match(app, /De: \$\{esc\(nombreAutor\(h\.creador, 'ti'\)\)\} · Para:/);

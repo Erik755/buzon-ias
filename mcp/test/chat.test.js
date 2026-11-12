@@ -70,11 +70,12 @@ test('no se envía dos veces si el botón ya está ocupado, y Enter usa el mismo
   assert.equal(boton.disabled, false);
   assert.equal(altas, 1);
 
-  // Enter y el botón Enviar son el mismo camino: submit del form, sin un keydown que vuelva a mandar.
+  // Enter (sin Shift) y el botón Enviar son el mismo camino: requestSubmit del form.
   assert.match(app, /\$\('#f-chat'\)\.onsubmit/);
   assert.match(app, /e\.preventDefault\(\)/);
   assert.match(app, /button type="submit"/);
-  assert.doesNotMatch(app, /\$\('#chat-texto'\)\.onkeydown/);
+  assert.match(app, /requestSubmit\(\)/);
+  assert.match(app, /e\.key === 'Enter' && !e\.shiftKey/);
   assert.doesNotMatch(app, /\$\('#chat-texto'\)\.onkeypress/);
 });
 
@@ -143,7 +144,7 @@ test('el tiempo real va encendido solo, sin casilla de experimento, y hay sondeo
   assert.match(app, /TOKEN_REFRESHED/);
   assert.match(app, /document\.hidden/);
   // Service worker: nueva carcasa e incluye chat.js (si no, la app vieja se queda en caché).
-  assert.match(sw, /buzon-v19-chat-vivo/);
+  assert.match(sw, /buzon-v20-ui-ia/);
   assert.doesNotMatch(sw, /buzon-v18-un-buzon/);
   assert.match(sw, /'chat\.js'/);
 });

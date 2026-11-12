@@ -119,6 +119,17 @@ echo "Token listo: \${BUZON_TOKEN:0:6}…"`,
     codigo: '',
     probar: '—',
   },
+  {
+    id: 'mcp-generico', nombre: 'Cliente MCP genérico', estado: 'directo',
+    donde: 'Cualquier cliente que soporte MCP con Streamable HTTP y una cabecera Authorization.',
+    pasos: ['En Agentes, crea un agente con el nombre de tu cliente y toca Crear y generar clave. Copia la clave bz_ (se muestra una sola vez).',
+      'En tu cliente, agrega un servidor MCP de tipo Streamable HTTP (a veces aparece como "HTTP").',
+      'Pega la URL de abajo y configura la cabecera Authorization con el valor de abajo. No la pongas en un archivo que se suba a git.',
+      'Reinicia el cliente o recarga los servidores MCP. Pide: "Lee mi buzón".'],
+    codigo: 'URL: {URL}\nAuthorization: Bearer {TOKEN}',
+    probar: 'En Agentes, toca Probar conexión y pide a tu IA que lea el buzón. El botón solo observa el último uso; no conecta por sí mismo.',
+    nota: 'El servidor acepta Streamable HTTP. También acepta la clave con o sin el prefijo "Bearer". Genera un token por cliente y revócalo si se filtra.',
+  },
 ];
 
 export const ETIQUETA = { seguro: '🔐 Acceso con formulario seguro', directo: '✅ Fácil: solo copias y pegas', puente: '🔌 Necesita instalar un programa extra', limitado: '⚠️ Depende de tu cuenta', no: '⛔ Todavía no se puede' };
