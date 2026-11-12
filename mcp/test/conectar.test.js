@@ -63,10 +63,12 @@ test('todas las guías tienen traducción inglesa y Instinct no incluye \{TOKEN\
 });
 
 test('la plantilla rellena la URL del usuario y enmascara un token real', () => {
-  const out = rellenarPlantilla('url={URL} tok={TOKEN}', { url: 'https://ejemplo.test/api/mcp', token: 'bz_ABCDEF123456' });
-  assert.equal(out, 'url=https://ejemplo.test/api/mcp tok=bz_ABCDEF123456');
-  assert.equal(enmascararToken(out, 'bz_ABCDEF123456'), 'url=https://ejemplo.test/api/mcp tok=bz_••••••••');
-  assert.ok(!enmascararToken(out, 'bz_ABCDEF123456').includes('ABCDEF'));
+  // Cadena ficticia, no es un token del servicio (evita un falso positivo de gitleaks).
+  const tok = 'CLAVE_DE_PRUEBA_NO_SECRETA';
+  const out = rellenarPlantilla('url={URL} tok={TOKEN}', { url: 'https://ejemplo.test/api/mcp', token: tok });
+  assert.equal(out, 'url=https://ejemplo.test/api/mcp tok=' + tok);
+  assert.equal(enmascararToken(out, tok), 'url=https://ejemplo.test/api/mcp tok=' + tok.slice(0, 3) + '••••••••');
+  assert.ok(!enmascararToken(out, tok).includes('DE_PRUEBA'));
 });
 
 test('filtrar hilos por texto y Por aprobar; inicial y cerrado', () => {
