@@ -245,6 +245,17 @@ test('notificador: una excepción por destino queda en el log (paso destino_erro
   assert.ok(!errores.some((x) => x.includes('whsec_') || x.includes('h.ejemplo.dev')), 'la línea de error no lleva URL ni secretos');
   assert.ok(lineas.some((x) => JSON.parse(x).paso === 'destino'), 'la línea paso destino sigue existiendo');
 });
+test('notificador: ultimo_error se recorta a 300 (el tope de _cerrar_notificacion), no a 400', async () => {
+  const rpcs = [];
+  const destinos = Array.from({ length: 8 }, (_, i) => ({ id: `webhook-000${i}`, webhook_url: 'https://h.ejemplo.dev/' }));
+  await procesar({ claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+    resolver: dns({}), enviar: async () => assert.fail('sin secreto no se envía'),
+    webhooks: async () => destinos,
+    rpc: async (fn, a) => { rpcs.push([fn, a]); return fn === '_tomar_notificaciones' ? [{ id: 44, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: [] }] : null; } });
+  const cierre = rpcs.find(([f]) => f === '_cerrar_notificacion');
+  assert.ok(cierre[1].p_error.length <= 300, 'p_error nunca supera los 300 caracteres que guarda la BD');
+  assert.equal(rpcs.filter(([f]) => f === '_marcar_descartado').length, 8, 'los 8 destinos quedan descartados');
+});
 test('notificador: un descarte previo no se reintenta y el error sigue visible al cerrar', async () => {
   const rpcs = []; let envios = 0;
   const deps = { claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},

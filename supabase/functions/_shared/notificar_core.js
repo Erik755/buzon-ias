@@ -90,7 +90,8 @@ async function procesarUna(n, deps) {
       } catch (e) { errorDestino(d, e); fallos.add('webhook_fallo'); }
     }
   }
-  await deps.rpc('_cerrar_notificacion', { p_id: n.id, p_ok: fallos.size === 0, p_error: [...fallos].join(',').slice(0, 400) || null });
+  // _cerrar_notificacion guarda left(p_error, 300): se recorta aquí al mismo tope para no perder el final a medias.
+  await deps.rpc('_cerrar_notificacion', { p_id: n.id, p_ok: fallos.size === 0, p_error: [...fallos].join(',').slice(0, 300) || null });
   return fallos.size === 0;
 }
 
