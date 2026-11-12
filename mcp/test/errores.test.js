@@ -41,7 +41,7 @@ test('diálogo accesible y botones claros', () => {
   assert.match(html, /<dialog id="dlg" aria-labelledby="dlg-titulo">/);
   assert.match(html, />Volver<\/button>/); assert.ok(!/<button[^>]*>Cerrar<\/button>/.test(html));
   assert.match(app, /id="dlg-titulo"/); assert.match(app, /<label for="nota"/);
-  assert.match(app, /Aceptar y&nbsp;cerrar/); assert.match(app, />Rechazar<\/button>/);
+  assert.match(app, /Aceptar y&nbsp;cerrar/); assert.match(app, /id="rechazar">\$\{t\('hilo\.rechazar'\)\}<\/button>/);
   assert.match(css, /button,a\.boton\{min-height:44px\}/);
   assert.match(css, /nav button\{flex:1 1 0;min-width:0/);
 });
