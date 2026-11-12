@@ -2,7 +2,7 @@
 // Solo trabaja con las guías del repo (verificadas en docs/CONECTAR.md).
 // No incluye clientes que el servidor MCP no documenta (p. ej. Perplexity).
 
-export const SUGERENCIAS = ['claude-code', 'cursor', 'gemini-cli', 'codex', 'grok', 'chatgpt', 'instinct', 'mcp-generico'];
+export const SUGERENCIAS = ['claude-code', 'cursor', 'gemini-cli', 'codex', 'grok', 'chatgpt', 'instinct', 'labelbox-recursion', 'mcp-generico'];
 
 export const ALIAS = {
   instinct: ['instinct', 'celular', 'telefono', 'phone', 'mobile', 'forge'],
@@ -20,6 +20,7 @@ export const ALIAS = {
   antigravity: ['antigravity', 'google antigravity', 'anti gravity'],
   chatgpt: ['chatgpt', 'chat gpt', 'openai', 'chatgpt web', 'chatgpt app'],
   'mcp-generico': ['mcp', 'generico', 'generic', 'cliente mcp', 'generic mcp', 'otro', 'other', 'custom mcp', 'mcp client'],
+  'labelbox-recursion': ['labelbox', 'recursion', 'labelbox recursion', 'managed agents', 'managed agent', 'agentes administrados', 'label box', 'labelbox mcp'],
 };
 
 export function normalizar(s) {

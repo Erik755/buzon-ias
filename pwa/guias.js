@@ -130,6 +130,19 @@ echo "Token listo: \${BUZON_TOKEN:0:6}…"`,
     probar: 'En Agentes, toca Probar conexión y pide a tu IA que lea el buzón. El botón solo observa el último uso; no conecta por sí mismo.',
     nota: 'El servidor acepta Streamable HTTP. También acepta la clave con o sin el prefijo "Bearer". Genera un token por cliente y revócalo si se filtra.',
   },
+  {
+    // Verificado contra https://docs.labelbox.com/recursion/mcp-servers#connect-mcp-servers (11 nov 2026).
+    id: 'labelbox-recursion', nombre: 'Labelbox Recursion (Managed Agents)', estado: 'directo',
+    donde: 'Consola de Recursion: Agents y Credential vaults. Hace falta el rol de desarrollador o administrador de la organización.',
+    pasos: [
+      'En la consola de Recursion ve a Agents, abre el agente, entra a Configuration → Tools y toca "Add custom MCP server". Pega la URL de abajo (ya rellenada) y toca Save new version.',
+      'En Credential vaults agrega un "Token for an MCP server" (bearer_token). La URL del servidor debe ser exactamente la de abajo (si cambia la ruta, el token no se envía). Pega ahí la clave bz_ del agente del Buzón, nunca en un chat. Concede la bóveda al agente (defaultVaultIds) o a la sesión.',
+      'En la fila de esa credencial, toca Test (probe). Debe listar las herramientas crear, leer y responder. En el agente aparecen como <nombre>__leer, <nombre>__crear y <nombre>__responder.',
+    ],
+    codigo: '{URL}',
+    probar: 'El Test de la bóveda debe salir bien y mostrar crear, leer y responder. Luego, en una sesión del agente, pide: "Lee mi buzón". En Agentes del Buzón también puedes tocar Probar conexión (solo observa el último uso).',
+    nota: 'El servidor del Buzón es Streamable HTTP público, que es lo que Recursion exige (rechaza direcciones privadas o locales). El token se envía como Authorization: Bearer. Usa una clave de agente dedicada, solo para los hilos que quieras compartir, y revócala si se filtra. Hace falta el rol developer o admin de la organización para agregar el servidor y probarlo.',
+  },
 ];
 
 export const ETIQUETA = { seguro: '🔐 Acceso con formulario seguro', directo: '✅ Fácil: solo copias y pegas', puente: '🔌 Necesita instalar un programa extra', limitado: '⚠️ Depende de tu cuenta', no: '⛔ Todavía no se puede' };

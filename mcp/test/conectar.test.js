@@ -114,3 +114,28 @@ test('la PWA no trae un token real en estáticos; el SW precarga los módulos nu
   assert.match(app, /conectar-pregunta/);
   assert.match(app, /conectar\.pregunta/);
 });
+
+test('Labelbox Recursion está en las guías y se encuentra al buscar', () => {
+  const g = GUIAS.find((x) => x.id === 'labelbox-recursion');
+  assert.ok(g);
+  assert.equal(g.estado, 'directo');
+  assert.equal(g.codigo, '{URL}');
+  assert.ok(!JSON.stringify(g).includes('bz_') || g.codigo === '{URL}');
+  assert.match(g.pasos.join(' '), /Add custom MCP server/);
+  assert.match(g.pasos.join(' '), /bearer_token/);
+  assert.match(g.pasos.join(' '), /defaultVaultIds/);
+  assert.match(g.pasos.join(' '), /probe|Test/);
+  assert.match(g.pasos.join(' '), /__leer/);
+  assert.match(g.nota, /Authorization: Bearer/);
+  assert.match(g.nota, /Streamable HTTP/);
+  const en = GUIAS_EN['labelbox-recursion'];
+  assert.ok(en);
+  assert.match(en.pasos.join(' '), /Add custom MCP server/);
+  assert.match(en.pasos.join(' '), /bearer_token/);
+  const r = buscarGuias('labelbox', GUIAS);
+  assert.equal(r.resultados[0].id, 'labelbox-recursion');
+  assert.equal(buscarGuias('recursion', GUIAS).resultados[0].id, 'labelbox-recursion');
+  assert.equal(buscarGuias('managed agents', GUIAS).resultados[0].id, 'labelbox-recursion');
+  // Ningún token real en la guía
+  assert.doesNotMatch(JSON.stringify(g) + JSON.stringify(en), /bz_[A-Za-z0-9_-]{8,}/);
+});
