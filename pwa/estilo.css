@@ -59,6 +59,4 @@ dialog[open]{display:flex;flex-direction:column;max-height:92dvh;padding:0;width
 .chat-form{display:flex;gap:8px;margin-top:10px}
 .chat-form input{flex:1 1 auto;margin:0}
 .chat-form button{flex:0 0 auto}
-.chat-rt{display:flex;align-items:center;gap:6px;margin:0}
-.chat-rt input{width:20px;height:20px;margin:0;flex:none}
 #chat-refrescar{width:auto;margin:0;padding:8px 12px;font-size:.85rem}

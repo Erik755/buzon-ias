@@ -101,7 +101,8 @@ test('un buzón por dueño: sin botón de crear y el aviso va en la página, sin
   assert.match(html, /aria-live="assertive"/);
   assert.match(html, /id="aviso-texto"/);
   assert.match(css, /#aviso\[hidden\]\{display:none/);
-  assert.match(sw, /buzon-v18-un-buzon/);
+  // La carcasa cambia de nombre cuando hay un arreglo en la PWA; no fijamos una versión concreta.
+  assert.match(sw, /const C = 'buzon-v\d+/);
   assert.match(sw, /app\.js/);
   // El texto del aviso se asigna con textContent, nunca con innerHTML.
   assert.match(err, /nodo\.textContent = String\(texto/);

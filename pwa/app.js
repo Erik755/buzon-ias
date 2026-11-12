@@ -2,6 +2,7 @@ import { createClient } from './vendor/supabase.js';
 import * as CFG from './config.js';
 import { GUIAS, ETIQUETA, QUE_HACER } from './guias.js';
 import { mensajeAmable, conBotones, avisar, mostrarAviso } from './errores.js';
+import { fusionarMensajes, idsMensajes, firmaLista, debeEncuestar, debeEncuestarLista, enviarMensajeChat, INTERVALO_SONDEO_MS } from './chat.js';
 
 const { SUPABASE_URL, SUPABASE_ANON_KEY, MCP_URL } = CFG;
 const VAPID = CFG.VAPID_PUBLIC_KEY || '';
@@ -30,15 +31,16 @@ document.querySelectorAll('nav button').forEach((b) => b.onclick = () => {
   document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('activa', x === b)); vista = b.dataset.vista; pintar();
 });
 
-sb.auth.onAuthStateChange(async (_ev, ses) => {
+sb.auth.onAuthStateChange(async (ev, ses) => {
   usuario = ses?.user ?? null;
   $('#login').hidden = !!usuario; $('#app').hidden = !usuario; $('#salir').hidden = !usuario;
-  if (usuario) {
-    try { await asegurarBuzon(); pintar(); const h = new URLSearchParams(location.search).get('hilo'); if (/^[0-9a-f-]{36}$/.test(h || '')) { history.replaceState(null, '', location.pathname); abrirHilo(h); } }
-    catch (e) { $('#vista').innerHTML = !navigator.onLine || /fetch|network/i.test(e.message)
-      ? `<div class="vacio"><b>📡 Sin conexión</b>Tus tareas se cargarán solas cuando vuelva internet.</div>`
-      : `<div class="vacio"><b>No pudimos abrir tu buzón</b>${esc(e.message)}<br><br>Toca <b>Salir</b> y vuelve a entrar con el enlace de tu correo.</div>`; }
-  }
+  if (!usuario) { detenerEnVivo(); return; }
+  // TOKEN_REFRESHED no debe volver a pintar: eso destrozaba el chat, apagaba el sondeo y podía dejar el texto en la caja.
+  if (ev === 'TOKEN_REFRESHED' || ev === 'USER_UPDATED') return;
+  try { await asegurarBuzon(); pintar(); const h = new URLSearchParams(location.search).get('hilo'); if (/^[0-9a-f-]{36}$/.test(h || '')) { history.replaceState(null, '', location.pathname); abrirHilo(h); } }
+  catch (e) { $('#vista').innerHTML = !navigator.onLine || /fetch|network/i.test(e.message)
+    ? `<div class="vacio"><b>📡 Sin conexión</b>Tus tareas se cargarán solas cuando vuelva internet.</div>`
+    : `<div class="vacio"><b>No pudimos abrir tu buzón</b>${esc(e.message)}<br><br>Toca <b>Salir</b> y vuelve a entrar con el enlace de tu correo.</div>`; }
 });
 
 async function asegurarBuzon() {
@@ -61,15 +63,13 @@ $('#sel-buzon').onchange = (e) => {
   const b = buzones.find((x) => x.id === e.target.value);
   if (b) { buzon = b; localStorage.setItem('buzon_actual', b.id); pintar(); }
 };
-async function pintar() {
-  const v = $('#vista'); v.innerHTML = '<p class="meta">Cargando…</p>';
-  if (vista === 'agentes') return pintarAgentes(v);
-  if (vista === 'conectar') { v.innerHTML = ''; return pintarGuias(v, true); }
-  if (vista === 'chat') return pintarChat(v);
+function consultaHilos() {
   let q = sb.from('hilos').select('*, creador:agentes!hilos_creado_por_agente_fkey(nombre,eliminado_en), destino:agentes!hilos_para_agente_fkey(nombre,eliminado_en)').eq('buzon_id', buzon.id).order('creado_en', { ascending: false }).limit(50);
   if (vista === 'pendientes') q = q.in('estado', ['pide_aprobacion', 'pide_cierre']);
-  const { data, error } = await q;
-  if (error) return v.innerHTML = !navigator.onLine || /fetch|network/i.test(error.message) ? '<div class="vacio"><b>📡 Sin conexión</b>Se cargará cuando vuelva internet.</div>' : `<div class="vacio"><b>No pudimos cargar tus hilos</b>${esc(mensajeAmable(error))}</div>`;
+  return q;
+}
+
+async function dibujarHilos(v, data) {
   if (!data.length) {
     const { count } = await sb.from('agentes').select('id', { count: 'exact', head: true }).eq('buzon_id', buzon.id).is('eliminado_en', null);
     v.innerHTML = !count
@@ -90,26 +90,92 @@ async function pintar() {
   }
 }
 
-// Vista Chat: conversación directa con la IA del buzón actual (p. ej. un buzón solo de Erik e Instinct).
-// Experimento honesto: el humano ve mensajes nuevos al instante con «Tiempo real»; la IA responde cuando revisa el buzón (puede tardar minutos).
-let chatHilo = null, chatTimer = null;
+async function pintar() {
+  const v = $('#vista');
+  if (vista === 'chat' && $('#chat-texto')) chatBorrador = $('#chat-texto').value;
+  v.innerHTML = '<p class="meta">Cargando…</p>';
+  if (vista === 'agentes') { detenerEnVivo(); return pintarAgentes(v); }
+  if (vista === 'conectar') { detenerEnVivo(); v.innerHTML = ''; return pintarGuias(v, true); }
+  if (vista === 'chat') return pintarChat(v);
+  const { data, error } = await consultaHilos();
+  if (error) { detenerEnVivo(); return v.innerHTML = !navigator.onLine || /fetch|network/i.test(error.message) ? '<div class="vacio"><b>📡 Sin conexión</b>Se cargará cuando vuelva internet.</div>' : `<div class="vacio"><b>No pudimos cargar tus hilos</b>${esc(mensajeAmable(error))}</div>`; }
+  await dibujarHilos(v, data);
+  v.dataset.firma = firmaLista(data, ['id', 'estado', 'titulo']);
+  arrancarEnVivo();
+}
+
+// Actualiza Por aprobar / Historial sin el parpadeo de «Cargando…». Si no hubo cambio, no redibuja.
+async function refrescarListaHilos() {
+  const v = $('#vista');
+  if (!debeEncuestarLista({ oculto: false, vista }) || !v) return;
+  const { data, error } = await consultaHilos();
+  if (error || !data) return;
+  const firma = firmaLista(data, ['id', 'estado', 'titulo']);
+  if (v.dataset.firma === firma) return;
+  await dibujarHilos(v, data);
+  v.dataset.firma = firma;
+}
+
+// Vista Chat: conversación directa con la IA del buzón actual.
+// Los mensajes nuevos se pintan solos (sondeo cada 5 s con la pestaña visible, y un canal Realtime si la base lo publica).
+// La IA responde cuando revisa el buzón: eso puede tardar unos minutos, no es instantáneo de su lado.
+let chatHilo = null, chatTimer = null, chatCanal = null, chatVis = null, chatBorrador = '';
+const consultaMensajes = (hilo) => sb.from('mensajes').select('id,cuerpo,creado_en,autor_humano,agentes(nombre,eliminado_en)').eq('hilo_id', hilo).order('creado_en');
 const burbuja = (m) => `<div class="burbuja ${m.autor_humano ? 'mia' : 'suya'}"><span class="meta">${m.autor_humano ? 'Tú' : esc(nombreAutor(m.agentes, 'IA'))} · ${fecha(m.creado_en)}</span>${esc(m.cuerpo)}</div>`;
+const htmlMensajes = (ms) => (ms ?? []).map(burbuja).join('') || '<p class="meta">Aún no hay mensajes. Escribe el primero 👇</p>';
+
+function pintarCajaMensajes(caja, lista) {
+  const ids = idsMensajes(lista);
+  if (caja.dataset.ids === ids) return false;
+  caja.dataset.ids = ids;
+  caja.innerHTML = htmlMensajes(lista);
+  caja.scrollTop = caja.scrollHeight;
+  return true;
+}
+
 async function refrescarChat() {
   if (!chatHilo) return;
   const caja = $('#chat-msgs'); if (!caja) return;
-  const { data: ms } = await sb.from('mensajes').select('id,cuerpo,creado_en,autor_humano,agentes(nombre,eliminado_en)').eq('hilo_id', chatHilo).order('creado_en');
-  caja.innerHTML = (ms ?? []).map(burbuja).join('') || '<p class="meta">Aún no hay mensajes. Escribe el primero 👇</p>';
-  caja.scrollTop = caja.scrollHeight;
+  const { data: ms, error } = await consultaMensajes(chatHilo);
+  if (error) return;
+  pintarCajaMensajes(caja, fusionarMensajes([], ms ?? []));
 }
+
+function detenerEnVivo() {
+  clearInterval(chatTimer); chatTimer = null;
+  if (chatVis) { document.removeEventListener('visibilitychange', chatVis); chatVis = null; }
+  if (chatCanal) { try { sb.removeChannel(chatCanal); } catch { /* el canal ya no está */ } chatCanal = null; }
+}
+
+function arrancarEnVivo() {
+  detenerEnVivo();
+  const tick = () => {
+    if (document.hidden) return;
+    if (debeEncuestar({ oculto: false, vista, hilo: chatHilo })) refrescarChat();
+    else if (debeEncuestarLista({ oculto: false, vista })) refrescarListaHilos();
+  };
+  chatVis = () => { if (!document.hidden) tick(); };
+  document.addEventListener('visibilitychange', chatVis);
+  chatTimer = setInterval(tick, INTERVALO_SONDEO_MS);
+  // Canal Realtime: si la publicación no incluye la tabla, no llegan eventos y el sondeo cubre el hueco.
+  if (typeof sb.channel === 'function') {
+    const tema = chatHilo ? `chat:${chatHilo}` : `hilos:${buzon?.id || 'x'}`;
+    let ch = sb.channel(tema);
+    if (chatHilo) ch = ch.on('postgres_changes', { event: '*', schema: 'public', table: 'mensajes', filter: `hilo_id=eq.${chatHilo}` }, () => refrescarChat());
+    if (buzon?.id) ch = ch.on('postgres_changes', { event: '*', schema: 'public', table: 'hilos', filter: `buzon_id=eq.${buzon.id}` }, () => { if (vista === 'pendientes' || vista === 'todos') refrescarListaHilos(); });
+    chatCanal = ch.subscribe();
+  }
+}
+
 async function pintarChat(v) {
-  clearInterval(chatTimer); chatTimer = null; chatHilo = null;
+  detenerEnVivo(); chatHilo = null;
   const { data: hs, error } = await sb.from('hilos').select('id,titulo,estado,creado_en').eq('buzon_id', buzon.id)
     .ilike('titulo', 'Chat%').not('estado', 'in', '(cerrado,aprobado,rechazado)').order('creado_en', { ascending: false }).limit(1);
   if (error) return v.innerHTML = `<div class="vacio"><b>No pudimos cargar el chat</b>${esc(mensajeAmable(error))}</div>`;
   const h = hs?.[0];
   if (!h) {
     v.innerHTML = `<div class="vacio"><b>💬 Chat directo</b>Este espacio es para platicar dentro del buzón «${esc(buzon.nombre)}». Solo escriben aquí los agentes que tú crees en la pestaña <b>Agentes</b> de ESTE buzón.<br><br><button class="ok" id="chat-empezar">Empezar chat</button></div>
-      <p class="meta">⚠️ Experimento: tu IA revisa el buzón cada cierto tiempo, así que su respuesta puede tardar unos minutos. Cuentas, pagos y datos privados se siguen manejando por tu canal habitual, no por aquí.</p>`;
+      <p class="meta">Tu IA revisa el buzón cada cierto tiempo, así que su respuesta puede tardar unos minutos. Cuentas, pagos y datos privados se siguen manejando por tu canal habitual, no por aquí.</p>`;
     $('#chat-empezar').onclick = () => conBotones([$('#chat-empezar')], async () => {
       const { error: e2 } = await sb.from('hilos').insert({ buzon_id: buzon.id, tipo: 'avance', titulo: 'Chat' });
       if (e2) return avisar('No se pudo empezar el chat', e2);
@@ -118,27 +184,37 @@ async function pintarChat(v) {
     return;
   }
   chatHilo = h.id;
-  const { data: ms } = await sb.from('mensajes').select('id,cuerpo,creado_en,autor_humano,agentes(nombre,eliminado_en)').eq('hilo_id', h.id).order('creado_en');
-  v.innerHTML = `<div class="chat-caja" id="chat-msgs">${(ms ?? []).map(burbuja).join('') || '<p class="meta">Aún no hay mensajes. Escribe el primero 👇</p>'}</div>
-    <form id="f-chat" class="chat-form"><input id="chat-texto" autocomplete="off" maxlength="20000" placeholder="Escribe aquí…" required><button class="ok">Enviar</button></form>
-    <div class="fila"><button class="secundario" id="chat-refrescar">Actualizar</button><label class="meta chat-rt"><input type="checkbox" id="chat-rt"> ⚡ Tiempo real (experimento)</label></div>
-    <p class="meta">Experimento: con «Tiempo real» los mensajes nuevos aparecen solos cada pocos segundos. Tu IA responde cuando revisa el buzón: puede tardar unos minutos, no es instantáneo de su lado. Cuentas, pagos y datos privados: solo por tu canal habitual, no aquí.</p>`;
-  const caja = $('#chat-msgs'); caja.scrollTop = caja.scrollHeight;
+  const { data: ms } = await consultaMensajes(h.id);
+  const lista = fusionarMensajes([], ms ?? []);
+  const borrador = chatBorrador;
+  v.innerHTML = `<div class="chat-caja" id="chat-msgs">${htmlMensajes(lista)}</div>
+    <form id="f-chat" class="chat-form"><input id="chat-texto" autocomplete="off" maxlength="20000" placeholder="Escribe aquí…" required><button type="submit" class="ok">Enviar</button></form>
+    <div class="fila"><button type="button" class="secundario" id="chat-refrescar">Actualizar</button></div>
+    <p class="meta">Los mensajes nuevos aparecen solos cada pocos segundos. Tu IA responde cuando revisa el buzón: puede tardar unos minutos, no es instantáneo de su lado. Cuentas, pagos y datos privados: solo por tu canal habitual, no aquí.</p>`;
+  const caja = $('#chat-msgs');
+  caja.dataset.ids = idsMensajes(lista);
+  caja.scrollTop = caja.scrollHeight;
+  const entrada = $('#chat-texto');
+  // Si un refresco completo reconstruye el formulario, se respeta el borrador. Nunca se vacía aquí.
+  if (borrador) entrada.value = borrador;
+  entrada.oninput = () => { chatBorrador = entrada.value; };
   $('#f-chat').onsubmit = (e) => {
     e.preventDefault();
-    const cuerpo = $('#chat-texto').value.trim(); if (!cuerpo) return;
-    conBotones([$('#f-chat').querySelector('button')], async () => {
-      const { error: e3 } = await sb.from('mensajes').insert({ hilo_id: h.id, autor_humano: usuario.id, cuerpo });
-      if (e3) return avisar('No se pudo enviar', e3);
-      await refrescarChat();
+    enviarMensajeChat({
+      cuerpo: entrada.value,
+      boton: $('#f-chat').querySelector('button[type="submit"]'),
+      conBotones,
+      insertar: (cuerpo) => sb.from('mensajes').insert({ hilo_id: h.id, autor_humano: usuario.id, cuerpo }),
+      alError: (err) => avisar('No se pudo enviar', err),
+      alExito: async () => {
+        entrada.value = '';
+        chatBorrador = '';
+        await refrescarChat();
+      },
     });
   };
-  $('#chat-texto').value = ''; 
   $('#chat-refrescar').onclick = () => refrescarChat();
-  $('#chat-rt').onchange = (e) => {
-    clearInterval(chatTimer); chatTimer = null;
-    if (e.target.checked) chatTimer = setInterval(() => { if (vista === 'chat' && chatHilo) refrescarChat(); else clearInterval(chatTimer); }, 5000);
-  };
+  arrancarEnVivo();
 }
 
 const ESTADO = { abierto: 'Abierto', tomado: 'Una IA lo está trabajando', pide_aprobacion: 'Espera tu aprobación', aprobado: 'Aprobado', rechazado: 'Rechazado', pide_cierre: 'Listo para cerrar: espera tu OK', cerrado: 'Cerrado' };
