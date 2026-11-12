@@ -68,7 +68,7 @@ async function procesarUna(n, deps) {
         const r = await enviarPush(s, payloadPush(n.evento, n.hilo_id, detalle), deps.claves, deps);
         bitacora(d, r, t1);
         if (r.ok) await marcar(d);
-        else if (r.status === 404 || r.status === 410) { await deps.borrarSuscripcion(s.id); await descartar(d, 'http'); } // suscripción muerta: se borra y consta el descarte
+        else if (r.status === 404 || r.status === 410) await deps.borrarSuscripcion(s.id); // suscripción muerta: se borra y queda en el log por destino; no es un fallo
         else if (r.definitivo) await descartar(d, motivoDb(r));
         else fallos.add('push_fallo');
       } catch (e) { errorDestino(d, e); fallos.add('push_fallo'); }
