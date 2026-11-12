@@ -15,6 +15,10 @@ import { validarDestino, definitivoHttp, DNS_TEMPORALES } from './ssrf.js';
 import { firmar, payloadTarea, payloadMensaje } from './hmac.js';
 import { enviarPush, payloadPush } from './webpush.js';
 
+// Nunca se registra el mensaje crudo de una excepción (podría llevar una URL, una clave Bearer o un whsec_):
+// solo su tipo, acotado a un identificador (p. ej. TypeError); si no lo es, un código genérico.
+const tipoError = (e) => { const t = e && typeof e.name === 'string' ? e.name : ''; return /^[A-Za-z]{1,40}$/.test(t) ? t : 'Error'; };
+
 export async function procesar(deps, limite = 20) {
   const lote = (await deps.rpc('_tomar_notificaciones', { p_limite: limite })) || [];
   const resumen = { procesadas: 0, ok: 0, errores: 0 };
@@ -25,7 +29,7 @@ export async function procesar(deps, limite = 20) {
       (await procesarUna(n, deps)) ? resumen.ok++ : resumen.errores++;
     } catch (e) {
       try { await deps.rpc('_cerrar_notificacion', { p_id: n.id, p_ok: false, p_error: 'interno' }); } catch { /* queda pendiente para el próximo pase */ }
-      console.error(JSON.stringify({ paso: 'notificacion', notif: n.id, error: 'interno' }));
+      console.error(JSON.stringify({ paso: 'notificacion', notif: n.id, error: 'interno', tipo: tipoError(e) }));
       resumen.errores++;
     }
   }
@@ -43,6 +47,8 @@ async function procesarUna(n, deps) {
   // En la BD solo la categoría ('http', 'sin_secreto'...); el código HTTP va solo al log.
   const motivoDb = (r) => (!r.motivo || r.motivo.startsWith('http_') ? 'http' : r.motivo);
   const bitacora = (d, r, t1) => console.log(JSON.stringify({ paso: 'destino', notif: n.id, destino: d, motivo: r.motivo ?? null, status: r.status ?? null, ms: Date.now() - t1 }));
+  // Rastro de las excepciones por destino (firmar, marcar, descartar): sin él acaban en un *_fallo sin causa visible.
+  const errorDestino = (d, e) => console.error(JSON.stringify({ paso: 'destino_error', notif: n.id, destino: d, error: tipoError(e) }));
 
   // Los mensajes entre IAs no hacen sonar el teléfono del dueño: solo avisan a las otras IAs.
   // Tope de push (QA): máx. 10 push de hilos nuevos por hora y buzón; si la consulta falla, se envía.
@@ -65,7 +71,7 @@ async function procesarUna(n, deps) {
         else if (r.status === 404 || r.status === 410) { await deps.borrarSuscripcion(s.id); await descartar(d, 'http'); } // suscripción muerta: se borra y consta el descarte
         else if (r.definitivo) await descartar(d, motivoDb(r));
         else fallos.add('push_fallo');
-      } catch { fallos.add('push_fallo'); }
+      } catch (e) { errorDestino(d, e); fallos.add('push_fallo'); }
     }
   }
   if (n.evento === 'hilo_nuevo' || n.evento === 'mensaje_nuevo') {
@@ -81,7 +87,7 @@ async function procesarUna(n, deps) {
         if (r.ok) await marcar(d);
         else if (r.definitivo) await descartar(d, motivoDb(r));
         else fallos.add('webhook_fallo');
-      } catch { fallos.add('webhook_fallo'); }
+      } catch (e) { errorDestino(d, e); fallos.add('webhook_fallo'); }
     }
   }
   await deps.rpc('_cerrar_notificacion', { p_id: n.id, p_ok: fallos.size === 0, p_error: [...fallos].join(',').slice(0, 400) || null });

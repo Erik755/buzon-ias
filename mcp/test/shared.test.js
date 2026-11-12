@@ -222,6 +222,29 @@ test('notificador: cada destino deja una línea de log JSON con motivo y status,
   assert.ok(typeof log.ms === 'number');
   assert.ok(!lineas.some((x) => x.includes('h.ejemplo.dev') || x.includes('whsec_')), 'el log no lleva URL ni secretos');
 });
+test('notificador: una excepción por destino queda en el log (paso destino_error) sin URL ni secretos', async () => {
+  const errores = [], lineas = [];
+  const origErr = console.error, origLog = console.log;
+  console.error = (x) => errores.push(String(x));
+  console.log = (x) => lineas.push(String(x));
+  try {
+    await procesar({ claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+      resolver: dns({ 'h.ejemplo.dev': ['93.184.216.34'] }), enviar: async () => 200,
+      webhooks: async () => [{ id: 'g', webhook_url: 'https://h.ejemplo.dev/x', webhook_secreto: 'whsec_uno' }],
+      rpc: async (fn) => {
+        if (fn === '_tomar_notificaciones') return [{ id: 43, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: [] }];
+        if (fn === '_marcar_entregado') throw new TypeError('rpc caída en https://h.ejemplo.dev/oculto?k=whsec_filtrada');
+        return null;
+      } });
+  } finally { console.error = origErr; console.log = origLog; }
+  const err = errores.map((x) => JSON.parse(x)).find((x) => x.paso === 'destino_error');
+  assert.ok(err, 'hay una línea destino_error');
+  assert.deepEqual([err.notif, err.destino], [43, 'wh:g']);
+  assert.equal(err.error, 'TypeError', 'solo el tipo de la excepción, nunca el mensaje crudo');
+  assert.ok(err.error.length <= 120);
+  assert.ok(!errores.some((x) => x.includes('whsec_') || x.includes('h.ejemplo.dev')), 'la línea de error no lleva URL ni secretos');
+  assert.ok(lineas.some((x) => JSON.parse(x).paso === 'destino'), 'la línea paso destino sigue existiendo');
+});
 test('notificador: un descarte previo no se reintenta y el error sigue visible al cerrar', async () => {
   const rpcs = []; let envios = 0;
   const deps = { claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
