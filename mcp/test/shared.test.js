@@ -241,6 +241,20 @@ test('notificador: si falla la consulta de destinos, el aviso queda para reinten
   assert.deepEqual(res, { procesadas: 1, ok: 0, errores: 1 });
   assert.equal(rpcs.find(([f]) => f === '_cerrar_notificacion')[1].p_ok, false);
 });
+test('notificador: una excepción en un aviso no aborta el lote', async () => {
+  const rpcs = [];
+  const deps = { claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+    resolver: dns({}), enviar: async () => 200, webhooks: async () => [],
+    rpc: async (fn, a) => { rpcs.push([fn, a]);
+      if (fn === '_tomar_notificaciones') return [
+        { id: 7, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: [] },
+        { id: 8, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: [] }];
+      if (fn === '_cerrar_notificacion' && a.p_id === 7) throw new Error('db');
+      return null; } };
+  const res = await procesar(deps);
+  assert.equal(res.procesadas, 2);
+  assert.ok(rpcs.some(([f, a]) => f === '_cerrar_notificacion' && a.p_id === 8), 'el segundo aviso se procesa');
+});
 test('postFijo: una conexión que abre después del timeout se cierra (no queda colgada)', async () => {
   let cerrada = false, abrir;
   const p = postFijo({ url: 'https://h.dev/', ip: '1.1.1.1', timeoutMs: 30, conectar: () => new Promise((ok) => { abrir = () => ok({ close() { cerrada = true; } }); }) });
