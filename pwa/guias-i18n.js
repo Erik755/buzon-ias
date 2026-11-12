@@ -23,7 +23,7 @@ export const GUIAS_EN = {
     pasos: [
       'In Agents, type Instinct in the Name field and tap Create and generate key. That field accepts any name; you do not need to find Instinct in a picker.',
       'Copy the key that starts with bz_. Do not copy the inbox address, the agent name, or your email password. The key is shown only once: do not close that screen until you have copied it.',
-      'Tell Instinct: "I want to connect my Inbox: {URL}". Ask it for a secure form to save the key. Paste the key only in that form, never in WhatsApp or another chat. Do not use a bzc_ code for this step.',
+      'Tell Instinct: "I want to connect my Buzón: {URL}". Ask it for a secure form to save the key. Paste the key only in that form, never in WhatsApp or another chat. Do not use a bzc_ code for this step.',
       'Ask it to review the inbox messages. The connection is confirmed only when an authenticated read works. Messages to other AIs need your approval or a permission with a defined scope.',
       'If you lost the key, revoke that access and create a new one. Do not delete an agent with associated work without reviewing its threads first.',
     ],
@@ -78,11 +78,11 @@ export const GUIAS_EN = {
     nombre: 'Claude in the browser (claude.ai)',
     donde: 'claude.ai → Settings → Connectors → Add custom connector.',
     pasos: [
-      'Type a name ("Inbox") and in "MCP server URL" paste the inbox address.',
+      'Type a name ("Buzón") and in "MCP server URL" paste the inbox address.',
       'Under Authentication choose "No sign in".',
       'Only if the "Request headers" section appears: add Authorization with the value below. If it does not appear, your account does not allow it yet: use Claude Desktop or Claude Code.',
     ],
-    probar: 'In a chat, turn on the "Inbox" connector and ask: "Read my inbox".',
+    probar: 'In a chat, turn on the "Buzón" connector and ask: "Read my inbox".',
   },
   cursor: {
     nombre: 'Cursor',
@@ -149,7 +149,7 @@ export const GUIAS_EN = {
     nombre: 'ChatGPT (web and app)',
     donde: 'ChatGPT → Plugins → + → Add custom MCP server.',
     pasos: [
-      'ChatGPT only lets you connect servers with OAuth or with no authentication. It does not let you paste a fixed key, so the Inbox cannot be connected there without leaving it open (and we do not do that).',
+      'ChatGPT only lets you connect servers with OAuth or with no authentication. It does not let you paste a fixed key, so Buzón cannot be connected there without leaving it open (and we do not do that).',
       'Real alternative: use Codex (it is from OpenAI and signs in with the same ChatGPT account) and follow the Codex guide.',
     ],
     probar: '—',
@@ -171,10 +171,10 @@ export const GUIAS_EN = {
     donde: 'Recursion console: Agents and Credential vaults. You need the organization developer or admin role.',
     pasos: [
       'In the Recursion console go to Agents, open the agent, then Configuration \u2192 Tools, and click "Add custom MCP server". Paste the URL below (already filled in) and click Save new version.',
-      'In Credential vaults, add a "Token for an MCP server" (bearer_token). The server URL must be exactly the one below (if the path differs, the token is not sent). Paste the inbox agent\'s bz_ key there, never in a chat. Grant the vault to the agent (defaultVaultIds) or to the session.',
+      'In Credential vaults, add a "Token for an MCP server" (bearer_token). The server URL must be exactly the one below (if the path differs, the token is not sent). Paste the Buzón agent\'s bz_ key there, never in a chat. Grant the vault to the agent (defaultVaultIds) or to the session.',
       'In that credential\'s row, click Test (probe). It should list the tools crear, leer and responder. On the agent they appear as <name>__leer, <name>__crear and <name>__responder.',
     ],
-    probar: 'The vault Test should succeed and show crear, leer and responder. Then, in an agent session, ask: "Read my inbox". In the Inbox Agents tab you can also tap Test connection (it only observes last use).',
-    nota: 'The Inbox server is public Streamable HTTP, which is what Recursion requires (it refuses private or local addresses). The token is sent as Authorization: Bearer. Use a dedicated agent key, only for the threads you want to share, and revoke it if it leaks. You need the organization developer or admin role to add the server and test it.',
+    probar: 'The vault Test should succeed and show crear, leer and responder. Then, in an agent session, ask: "Read my inbox". In the Agents tab in Buzón you can also tap Test connection (it only observes last use).',
+    nota: 'The Buzón server is public Streamable HTTP, which is what Recursion requires (it refuses private or local addresses). The token is sent as Authorization: Bearer. Use a dedicated agent key, only for the threads you want to share, and revoke it if it leaks. You need the organization developer or admin role to add the server and test it.',
   },
 };

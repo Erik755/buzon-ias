@@ -1,6 +1,6 @@
 /* Inter variable autoalojada (SIL OFL 1.1). Ver fonts/OFL.txt. */
 @font-face{
-  font-family:Inter,"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif;
+  font-family:Inter;
   font-style:normal;
   font-weight:100 900;
   font-display:swap;
@@ -17,7 +17,7 @@
   --leading-body:1.55; --leading-ui:1.35;
   --dur-1:120ms; --dur-2:180ms; --dur-3:240ms; --dur-4:320ms;
   --ease:cubic-bezier(.22, 1, .36, 1);
-  --font:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --font:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue","Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 
@@ -338,12 +338,6 @@ body > header:not(.cab) .inicio{color:inherit;text-decoration:none;display:inlin
   #salir .eti-salir{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
   #salir{min-width:44px;padding:8px;border-radius:var(--radio-full)}
   footer{padding:4px 10px;font-size:.7rem}
-}
-@media (max-width:480px){
-  .cab h1{font-size:.8rem;letter-spacing:-.02em}
-  .idioma button{min-width:30px;min-height:36px;padding:5px 4px}
-  .tema-switch,#salir,.btn-icono{min-width:36px!important;min-height:36px;padding:5px}
-  .cab{padding:4px 5px;gap:2px}
   .shell{display:block;height:calc(100dvh - var(--cab) - 28px);position:relative}
   #panel-izq,#panel-der{
     position:fixed;top:var(--cab);bottom:0;width:min(360px, 88vw);z-index:40;
@@ -359,6 +353,12 @@ body > header:not(.cab) .inicio{color:inherit;text-decoration:none;display:inlin
   #f-chat{padding:10px 12px calc(12px + env(safe-area-inset-bottom,0px))}
   .pie{margin-left:16px;margin-right:16px}
   .burbuja{max-width:88%}
+}
+@media (max-width:480px){
+  .cab h1{font-size:.8rem;letter-spacing:-.02em}
+  .idioma button{min-width:30px;min-height:36px;padding:5px 4px}
+  .tema-switch,#salir,.btn-icono{min-width:36px!important;min-height:36px;padding:5px}
+  .cab{padding:4px 5px;gap:2px}
 }
 @media (min-width:861px){
   .fondo-panel{display:none !important}

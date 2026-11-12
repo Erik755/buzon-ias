@@ -238,8 +238,8 @@ $('#form-nuevo') && ($('#form-nuevo').onsubmit = async (e) => {
   const fila = { buzon_id: buzon.id, tipo: 'avance', titulo };
   if (paraNombre) {
     const dest = idAgentePorNombre(listaAgentesCache, paraNombre);
-    if (!dest) { mostrarAviso(t('hilo.paraNoConectado')); return; }
-    fila.para_agente = dest;
+    if (dest) fila.para_agente = dest;
+    else mostrarAviso(t('hilo.paraNoConectado'));
   }
   const { data, error } = await sb.from('hilos').insert(fila).select('id').single();
   if (error) return avisar(t('err.noCrearHilo'), error);
@@ -632,7 +632,8 @@ async function pintarAvisosHilo(hiloId) {
   const { data, error } = await sb.rpc('agentes_para_avisos', { p_hilo: hiloId });
   if (error) {
     // Si la función no existe en este entorno (p. ej. prod aún sin la migración 017), el panel se omite en silencio.
-    if (error.code === 'PGRST202' || /agentes_para_avisos/i.test(String(error.message || ''))) { caja.replaceChildren(); return; }
+    const codigo = String(error.code || error.status || '');
+    if (codigo === 'PGRST202' || codigo === '404' || /agentes_para_avisos/i.test(String(error.message || ''))) { caja.replaceChildren(); return; }
     caja.replaceChildren();
     const p = document.createElement('p'); p.className = 'meta'; p.textContent = mensajeAmable(error);
     caja.append(p);
