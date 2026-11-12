@@ -292,7 +292,10 @@ async function asegurarBuzon() {
 
 function pintarSelectorBuzon() {
   const barra = $('#barra-buzon'); if (!barra) return;
-  barra.hidden = !usuario;
+  const varios = usuario && buzones.length > 1;
+  barra.hidden = !varios;
+  const etiqueta = document.querySelector('label[for="sel-buzon"]');
+  if (etiqueta) etiqueta.hidden = !varios;
   const sel = $('#sel-buzon'); if (!sel) return;
   sel.innerHTML = buzones.map((b) => `<option value="${b.id}"${b.id === buzon.id ? ' selected' : ''}>${esc(b.nombre)}</option>`).join('');
 }
