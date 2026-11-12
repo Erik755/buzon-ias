@@ -62,3 +62,11 @@ dialog[open]{display:flex;flex-direction:column;max-height:92dvh;padding:0;width
 .chat-rt{display:flex;align-items:center;gap:6px;margin:0}
 .chat-rt input{width:20px;height:20px;margin:0;flex:none}
 #chat-refrescar{width:auto;margin:0;padding:8px 12px;font-size:.85rem}
+
+.chat-avisos{margin:12px 0;padding:12px;background:#111827;border:1px solid #1f2937;border-radius:10px}
+.chat-avisos > b{display:block;margin-bottom:4px}
+.chat-aviso-fila{display:flex;align-items:flex-start;gap:10px;margin:8px 0;min-height:44px;cursor:pointer}
+.chat-aviso-fila input{width:22px;height:22px;margin:2px 0 0;flex:none}
+.chat-aviso-fila span{flex:1 1 auto;min-width:0}
+.chat-aviso-nota{display:block;margin-top:2px}
+.chat-aviso-nota.si{color:#86efac}

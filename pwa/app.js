@@ -2,6 +2,7 @@ import { createClient } from './vendor/supabase.js';
 import * as CFG from './config.js';
 import { GUIAS, ETIQUETA, QUE_HACER } from './guias.js';
 import { mensajeAmable, conBotones, avisar, mostrarAviso } from './errores.js';
+import { etiquetaAviso } from './avisos.js';
 
 const { SUPABASE_URL, SUPABASE_ANON_KEY, MCP_URL } = CFG;
 const VAPID = CFG.VAPID_PUBLIC_KEY || '';
@@ -122,6 +123,7 @@ async function pintarChat(v) {
   v.innerHTML = `<div class="chat-caja" id="chat-msgs">${(ms ?? []).map(burbuja).join('') || '<p class="meta">Aún no hay mensajes. Escribe el primero 👇</p>'}</div>
     <form id="f-chat" class="chat-form"><input id="chat-texto" autocomplete="off" maxlength="20000" placeholder="Escribe aquí…" required><button class="ok">Enviar</button></form>
     <div class="fila"><button class="secundario" id="chat-refrescar">Actualizar</button><label class="meta chat-rt"><input type="checkbox" id="chat-rt"> ⚡ Tiempo real (experimento)</label></div>
+    <div class="chat-avisos" id="chat-avisos"></div>
     <p class="meta">Experimento: con «Tiempo real» los mensajes nuevos aparecen solos cada pocos segundos. Tu IA responde cuando revisa el buzón: puede tardar unos minutos, no es instantáneo de su lado. Cuentas, pagos y datos privados: solo por tu canal habitual, no aquí.</p>`;
   const caja = $('#chat-msgs'); caja.scrollTop = caja.scrollHeight;
   $('#f-chat').onsubmit = (e) => {
@@ -139,6 +141,49 @@ async function pintarChat(v) {
     clearInterval(chatTimer); chatTimer = null;
     if (e.target.checked) chatTimer = setInterval(() => { if (vista === 'chat' && chatHilo) refrescarChat(); else clearInterval(chatTimer); }, 5000);
   };
+  pintarAvisosHilo(h.id);
+}
+
+async function pintarAvisosHilo(hiloId) {
+  const caja = $('#chat-avisos'); if (!caja) return;
+  const { data, error } = await sb.rpc('agentes_para_avisos', { p_hilo: hiloId });
+  if (error) {
+    caja.replaceChildren();
+    const p = document.createElement('p'); p.className = 'meta'; p.textContent = mensajeAmable(error);
+    caja.append(p);
+    return;
+  }
+  const lista = data ?? [];
+  caja.replaceChildren();
+  const tit = document.createElement('b'); tit.textContent = 'Avisar a'; caja.append(tit);
+  const intro = document.createElement('p'); intro.className = 'meta';
+  intro.textContent = 'Las IAs marcadas reciben un aviso en cuanto hay un mensaje nuevo (tuyo o de otra IA). Quien escribe no recibe aviso de su propio texto. Si no tienen dirección de aviso, se enterarán cuando revisen el buzón.';
+  caja.append(intro);
+  if (!lista.length) {
+    const v = document.createElement('p'); v.className = 'meta';
+    v.textContent = 'Todavía no hay IAs en este buzón. Créalas en Agentes.';
+    caja.append(v);
+    return;
+  }
+  for (const a of lista) {
+    const lab = document.createElement('label'); lab.className = 'chat-aviso-fila';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!a.suscrito;
+    cb.dataset.avAg = a.id;
+    cb.setAttribute('aria-label', `Avisar a ${a.nombre}`);
+    const txt = document.createElement('span');
+    const nom = document.createElement('b'); nom.textContent = a.nombre;
+    const quien = document.createElement('span'); quien.className = 'meta';
+    quien.textContent = ' · ' + (a.participa ? 'En esta conversación' : 'Otra IA de tu buzón');
+    const nota = document.createElement('span'); nota.className = 'meta chat-aviso-nota' + (a.tiene_aviso ? ' si' : '');
+    nota.textContent = etiquetaAviso(!!a.tiene_aviso);
+    txt.append(nom, quien, document.createElement('br'), nota);
+    lab.append(cb, txt);
+    caja.append(lab);
+    cb.onchange = () => conBotones([cb], async () => {
+      const { error: e2 } = await sb.rpc('suscribir_agente_hilo', { p_hilo: hiloId, p_agente: cb.dataset.avAg, p_activo: cb.checked });
+      if (e2) { cb.checked = !cb.checked; return avisar('No se pudo guardar el aviso', e2); }
+    });
+  }
 }
 
 const ESTADO = { abierto: 'Abierto', tomado: 'Una IA lo está trabajando', pide_aprobacion: 'Espera tu aprobación', aprobado: 'Aprobado', rechazado: 'Rechazado', pide_cierre: 'Listo para cerrar: espera tu OK', cerrado: 'Cerrado' };
