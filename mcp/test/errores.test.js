@@ -41,7 +41,7 @@ test('diálogo accesible y botones claros', () => {
   assert.match(html, /<dialog id="dlg" aria-labelledby="dlg-titulo">/);
   assert.match(html, />Volver<\/button>/); assert.ok(!/<button[^>]*>Cerrar<\/button>/.test(html));
   assert.match(app, /id="dlg-titulo"/); assert.match(app, /<label for="nota"/);
-  assert.match(app, /Aceptar y&nbsp;cerrar/); assert.match(app, />Rechazar<\/button>/);
+  assert.match(app, /Aceptar y&nbsp;cerrar/); assert.match(app, /id="rechazar">\$\{t\('hilo\.rechazar'\)\}<\/button>/);
   assert.match(css, /button,a\.boton\{min-height:44px\}/);
   assert.match(css, /nav button\{flex:1 1 0;min-width:0/);
 });
@@ -73,7 +73,7 @@ test('pestaña Por aprobar, Cerrar hilo discreto, guardado atómico, De en el di
   const html = readFileSync(new URL('../../pwa/index.html', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../../pwa/app.js', import.meta.url), 'utf8');
   const css = readFileSync(new URL('../../pwa/estilo.css', import.meta.url), 'utf8');
-  assert.match(html, /<button data-vista="pendientes" class="activa">Por aprobar<\/button>/); assert.doesNotMatch(html, /class="corto"/);
+  assert.match(html, /data-filtro="pendientes"[^>]*>Por aprobar<\/button>/); assert.doesNotMatch(html, /class="corto"/);
   assert.match(css, /#cerrar-ya\{flex:0 0 auto/); assert.match(app, /<div class="fila">\$\{h\.estado !== 'pide_cierre'/);
   assert.match(app, /sb\.rpc\('guardar_webhook'/); assert.doesNotMatch(app, /update\(\{ webhook_url/);
   assert.match(app, /De: \$\{esc\(nombreAutor\(h\.creador, 'ti'\)\)\} · Para:/);
@@ -101,7 +101,8 @@ test('un buzón por dueño: sin botón de crear y el aviso va en la página, sin
   assert.match(html, /aria-live="assertive"/);
   assert.match(html, /id="aviso-texto"/);
   assert.match(css, /#aviso\[hidden\]\{display:none/);
-  assert.match(sw, /buzon-v18-un-buzon/);
+  // La carcasa cambia de nombre cuando hay un arreglo en la PWA; no fijamos una versión concreta.
+  assert.match(sw, /const C = 'buzon-v\d+/);
   assert.match(sw, /app\.js/);
   // El texto del aviso se asigna con textContent, nunca con innerHTML.
   assert.match(err, /nodo\.textContent = String\(texto/);

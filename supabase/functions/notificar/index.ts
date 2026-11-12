@@ -17,6 +17,19 @@ const conectar = async (ip: string, puerto: number, nombre: string) => {
 const deps = {
   rpc: async (fn: string, args: Record<string, unknown>) => { const { data, error } = await db.rpc(fn, args); if (error) throw new Error(error.message); return data; },
   suscripciones: async (b: string) => (await db.from('push_suscripciones').select('id,endpoint,p256dh,auth').eq('buzon_id', b)).data ?? [],
+  // Título del hilo y quién pide: para hilo_nuevo es quien lo creó; para aprobación/cierre, el autor del último mensaje.
+  detalleHilo: async (hiloId: string, evento: string, creadoPorAgente: string | null) => {
+    const { data: h } = await db.from('hilos').select('titulo,creado_por_agente').eq('id', hiloId).maybeSingle();
+    if (!h) return null;
+    let autor = evento === 'hilo_nuevo' ? (creadoPorAgente ?? h.creado_por_agente) : null;
+    if (!autor) {
+      const { data: m } = await db.from('mensajes').select('autor_agente').eq('hilo_id', hiloId).order('creado_en', { ascending: false }).limit(1).maybeSingle();
+      autor = m?.autor_agente ?? null;
+    }
+    if (!autor) return { tituloHilo: h.titulo, quien: null };
+    const { data: a } = await db.from('agentes').select('nombre').eq('id', autor).maybeSingle();
+    return { tituloHilo: h.titulo, quien: a?.nombre ?? null };
+  },
   borrarSuscripcion: async (id: string) => { await db.from('push_suscripciones').delete().eq('id', id); },
   // Solo las IAs involucradas en el hilo, sin re-despertar a quien no lo ha abierto y con freno anti ping-pong.
   webhooks: async (_b: string, _excepto: string | null, n: { id: number }) => {

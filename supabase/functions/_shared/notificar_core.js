@@ -1,5 +1,6 @@
 // Lógica del notificador (push + webhooks). Dependencias inyectadas para probarla en Node.
-// deps: { rpc, suscripciones(buzon), borrarSuscripcion(id), webhooks(buzon, excepto), resolver(host),
+// deps: { rpc, suscripciones(buzon), borrarSuscripcion(id), detalleHilo?(hilo, evento, creador) -> { tituloHilo, quien } | null,
+//         webhooks(buzon, excepto), resolver(host),
 //         enviar(url, ip, headers, body) -> status   (POST a la IP ya validada; ver http_fijo.js), claves? }
 // * webhooks(buzon, excepto, n): en producción usa _destinos_webhook(n.id) (solo IAs del hilo + freno anti ping-pong).
 // * Un fallo temporal (DNS, red, 5xx) se reintenta; un destino prohibido (IP privada, host bloqueado) no.
@@ -21,10 +22,14 @@ export async function procesar(deps, limite = 20) {
     let pushOk = true;
     if (n.evento === 'hilo_nuevo') { try { pushOk = (await deps.rpc('_permitir_push', { p_id: n.id })) !== false; } catch { pushOk = true; } }
     if (deps.claves && n.evento !== 'mensaje_nuevo' && pushOk) {
-      for (const s of await deps.suscripciones(n.buzon_id)) {
+      const subs = await deps.suscripciones(n.buzon_id);
+      // Título del hilo y quién pide (sin contenido); si la consulta falla, el aviso sale con texto genérico.
+      let detalle = null;
+      if (subs.length && deps.detalleHilo) { try { detalle = await deps.detalleHilo(n.hilo_id, n.evento, n.creado_por_agente); } catch { detalle = null; } }
+      for (const s of subs) {
         const d = `push:${s.id}`; if (hechos.has(d)) continue;
         try {
-          const r = await enviarPush(s, payloadPush(n.evento, n.hilo_id), deps.claves, deps);
+          const r = await enviarPush(s, payloadPush(n.evento, n.hilo_id, detalle), deps.claves, deps);
           if (r.ok) await marcar(d);
           else if (r.status === 404 || r.status === 410) await deps.borrarSuscripcion(s.id);
           else if (r.motivo && !TEMPORALES.has(r.motivo)) await marcar(d); // destino no permitido: no se reintenta

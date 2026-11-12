@@ -130,8 +130,10 @@ test('notificador: push al dueño, webhook firmado a los otros agentes, SSRF blo
   const nuevo = await servicio.crear(T.a, { tipo: 'tarea', titulo: 'Secreto: clave del banco 1234 y más texto largo' });
   const llamadas = [];
   const enviar = async (url, ip, headers, body) => { llamadas.push({ url, ip, o: { headers, body } }); return url.endsWith('viejo') ? 410 : 201; };
+  const detalles = [];
   const r = await procesar({
     rpc: rpcPg(pool, 'service_role'), claves, enviar,
+    detalleHilo: async (h, ev, c) => { detalles.push([h, ev, c]); return { tituloHilo: 'Solo el título', quien: 'Agente A' }; },
     suscripciones: async (b) => (await pool.query('select id,endpoint,p256dh,auth from push_suscripciones where buzon_id=$1', [b])).rows,
     borrarSuscripcion: async (id) => { await pool.query('delete from push_suscripciones where id=$1', [id]); },
     webhooks: async (b, ex) => (await pool.query('select id,webhook_url,webhook_secreto from agentes where buzon_id=$1 and webhook_url is not null and id is distinct from $2', [b, ex])).rows,
@@ -148,6 +150,7 @@ test('notificador: push al dueño, webhook firmado a los otros agentes, SSRF blo
   assert.ok(await verificar('whsec_b', wh[0].o.body, wh[0].o.headers['X-Buzon-Firma']));
   assert.deepEqual(JSON.parse(wh[0].o.body).hilo_id, nuevo.id); assert.ok(!wh[0].o.body.includes('banco'));
   assert.ok(!llamadas.some((l) => l.url.includes('interno')));
+  assert.deepEqual(detalles, [[nuevo.id, 'hilo_nuevo', 'bbbbbbbb-0000-0000-0000-00000000000a']], 'detalle del hilo consultado una sola vez por aviso');
 });
 test('webhook: destino que resuelve a IP privada no se reintenta (error permanente)', async () => {
   await pool.query("update agentes set webhook_url='https://rebind.ejemplo.dev/x' where nombre='Agente B'");

@@ -1,6 +1,6 @@
 // Service worker: carcasa de la app disponible sin conexión. Nunca cachea datos del buzón (Supabase ni MCP).
-const C = 'buzon-v18-un-buzon';
-const CASCARA = ['./', 'index.html', 'app.js', 'config.js', 'guias.js', 'errores.js', 'estilo.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png',
+const C = 'buzon-v23-rediseno';
+const CASCARA = ['./', 'index.html', 'app.js', 'config.js', 'guias.js', 'errores.js', 'chat.js', 'avisos.js', 'i18n.js', 'conectar.js', 'guias-i18n.js', 'layout.js', 'destinatarios.js', 'tema-inicio.js', 'temas.js', 'estilo.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'fonts/InterVariable.woff2',
   'vendor/supabase.js', 'offline.html', 'privacidad.html', 'terminos.html'];
 self.addEventListener('install', (e) => e.waitUntil(caches.open(C).then((c) => c.addAll(CASCARA)).then(() => self.skipWaiting())));
 self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== C).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
