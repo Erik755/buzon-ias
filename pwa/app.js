@@ -8,6 +8,7 @@ import { fusionarMensajes, idsMensajes, firmaLista, debeEncuestar, debeEncuestar
 import { t, setIdioma, getIdioma, onIdioma, iniciarIdioma } from './i18n.js';
 import { buscarGuias, rellenarPlantilla, enmascararToken, ALIAS } from './conectar.js';
 import { filtrarHilos, inicialDe, hiloCerrado } from './layout.js';
+import { aplicarTema, leerTema, alternarTema as cambiarTema, sincronizarControlTema } from './temas.js';
 
 const { SUPABASE_URL, SUPABASE_ANON_KEY, MCP_URL } = CFG;
 const VAPID = CFG.VAPID_PUBLIC_KEY || '';
@@ -30,22 +31,17 @@ $('#aviso-cerrar') && ($('#aviso-cerrar').onclick = () => mostrarAviso(''));
 iniciarIdioma();
 iniciarTema();
 $$('[data-idioma]').forEach((b) => { b.onclick = () => setIdioma(b.dataset.idioma); });
-onIdioma(() => { if (usuario) pintar(); else { aplicarCabecera(); if (!$('#guias-publicas').hidden && $('#guias-publicas').childElementCount) pintarConectar($('#guias-publicas'), false); } });
+onIdioma(() => { sincronizarControlTema($('#btn-tema'), t); if (usuario) pintar(); else { aplicarCabecera(); if (!$('#guias-publicas').hidden && $('#guias-publicas').childElementCount) pintarConectar($('#guias-publicas'), false); } });
 $('#btn-tema') && ($('#btn-tema').onclick = alternarTema);
 
 function iniciarTema() {
-  if (typeof localStorage === 'undefined') return;
-  const g = localStorage.getItem('buzon-tema');
-  const tema = g === 'claro' || g === 'oscuro' ? g
-    : (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches ? 'claro' : 'oscuro');
-  document.documentElement.dataset.tema = tema;
-  localStorage.setItem('buzon-tema', tema);
+  const almacen = typeof localStorage !== 'undefined' ? localStorage : null;
+  aplicarTema(leerTema(almacen), almacen);
+  sincronizarControlTema($('#btn-tema'), t);
 }
 function alternarTema() {
-  const sig = document.documentElement.dataset.tema === 'claro' ? 'oscuro' : 'claro';
-  document.documentElement.dataset.tema = sig;
-  localStorage.setItem('buzon-tema', sig);
-  const b = $('#btn-tema'); if (b) b.setAttribute('aria-label', t(sig === 'claro' ? 'app.temaOscuro' : 'app.temaClaro'));
+  cambiarTema(typeof localStorage !== 'undefined' ? localStorage : null);
+  sincronizarControlTema($('#btn-tema'), t);
 }
 
 function aplicarCabecera() { /* data-i18n lo aplica setIdioma / iniciarIdioma */ }

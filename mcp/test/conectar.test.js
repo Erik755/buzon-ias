@@ -105,7 +105,7 @@ test('la PWA no trae un token real en estáticos; el SW precarga los módulos nu
   assert.match(app, /type = 'password'/);
   assert.match(app, /secreto\.revelar/);
   assert.match(app, /probarConexion/);
-  assert.match(sw, /buzon-v20-ui-ia/);
+  assert.match(sw, /buzon-v21-temas/);
   assert.match(sw, /'i18n\.js'/);
   assert.match(sw, /'conectar\.js'/);
   assert.match(sw, /'avisos\.js'/);

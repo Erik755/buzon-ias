@@ -47,5 +47,5 @@ test('la migración reusa la cola de notificar, fuerza RLS y no cambia el payloa
   // Escritura solo por la RPC: authenticated no tiene INSERT.
   assert.match(mig, /revoke all on public\.hilo_suscripciones from public, anon, authenticated/);
   assert.match(mig, /grant select on public\.hilo_suscripciones to authenticated/);
-  assert.match(sw, /buzon-v20-ui-ia/);
+  assert.match(sw, /buzon-v21-temas/);
 });
