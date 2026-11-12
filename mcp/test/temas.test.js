@@ -277,3 +277,23 @@ test('Inter se autoalojá en woff2 variable, con OFL, CSP font-src y precache de
   assert.match(css, /\.composer/);
   assert.match(css, /border-radius:var\(--radio-xl\)/);
 });
+
+test('el interruptor de avisos push es un switch accesible, con borde visible y permiso solo al activar', () => {
+  const app = pwa('app.js');
+  const css = pwa('estilo.css');
+  const i18n = pwa('i18n.js');
+  assert.match(app, /id="push-int" role="switch"/);
+  assert.match(app, /aria-checked="\$\{sub \? 'true' : 'false'\}"/);
+  assert.match(app, /t\('push\.interruptor'\)/);
+  // El permiso del navegador solo se pide al activar, no al pintar ni al apagar.
+  const pintar = app.slice(app.indexOf('async function pintarPush'), app.indexOf('async function copiar'));
+  assert.match(pintar, /if \(ev\.target\.checked\) \{[\s\S]*Notification\.requestPermission\(\)/);
+  assert.equal((pintar.match(/Notification\.requestPermission/g) || []).length, 1);
+  assert.doesNotMatch(pintar.split('if (ev.target.checked)')[0], /requestPermission/);
+  assert.match(css, /\.interruptor input\{[^}]*border:1px solid var\(--borde\)/);
+  assert.doesNotMatch(css, /\.interruptor input\{[^}]*border:1px solid var\(--linea\)/);
+  assert.match(css, /prefers-reduced-motion: no-preference\) \{\s*\.interruptor input/);
+  assert.match(i18n, /'push\.interruptor': 'Avisarme cuando tenga algo por aprobar'/);
+  assert.match(i18n, /'push\.interruptor': 'Notify me when something needs my approval'/);
+  assert.match(i18n, /'push\.noSoporta': 'Este navegador no admite avisos\. En iPhone:/);
+});

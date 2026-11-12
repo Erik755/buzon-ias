@@ -310,6 +310,8 @@ body > header:not(.cab) .inicio{color:inherit;text-decoration:none;display:inlin
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  .interruptor input { transition: background var(--dur-2) var(--ease), border-color var(--dur-2) var(--ease); }
+  .interruptor input::after { transition: left var(--dur-2) var(--ease), background var(--dur-2) var(--ease); }
   #panel-izq, #panel-der { transition: transform var(--dur-3) var(--ease); }
   .aviso:not([hidden]) { animation: aviso-in var(--dur-4) var(--ease); }
   .burbuja.nueva { animation: msg-in var(--dur-4) var(--ease); }
@@ -362,10 +364,11 @@ body > header:not(.cab) .inicio{color:inherit;text-decoration:none;display:inlin
   #app.es-pagina #vista-pagina{min-height:100%}
 }
 
-/* Interruptor de avisos push (role=switch) */
+/* Interruptor de avisos push (role=switch). El borde usa --borde (≥ 3:1), no --linea. */
 .interruptor{display:inline-flex;align-items:center;gap:10px;cursor:pointer;min-height:44px}
-.interruptor input{appearance:none;-webkit-appearance:none;width:46px;height:26px;flex:none;border-radius:var(--radio-full);background:var(--panel-2);border:1px solid var(--linea);position:relative;transition:background var(--dur-2) var(--ease);margin:0}
-.interruptor input::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:var(--borde);transition:left var(--dur-2) var(--ease),background var(--dur-2) var(--ease)}
+.interruptor input{appearance:none;-webkit-appearance:none;width:46px;height:26px;flex:none;border-radius:var(--radio-full);background:var(--panel-2);border:1px solid var(--borde);position:relative;margin:0}
+.interruptor input::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:var(--borde)}
 .interruptor input:checked{background:var(--acento);border-color:var(--acento)}
 .interruptor input:checked::after{left:22px;background:var(--acento-texto)}
 .interruptor input:focus-visible{outline:2px solid var(--acento);outline-offset:2px}
+.interruptor input:disabled{opacity:.6;cursor:wait}

@@ -44,7 +44,7 @@ test('Web Push: cifrado idéntico al ejemplo del RFC 8291', async () => {
     { privada: 'yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw', publica: 'BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8', salt: 'DGv6ra1nlYgDCS1FRnbzlw' });
   assert.equal(b64u.enc(out), esperado);
 });
-test('Web Push: JWT VAPID ES256 válido y payload solo con título', async () => {
+test('Web Push: JWT VAPID ES256 válido y payload genérico de respaldo', async () => {
   const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
   const jwk = await crypto.subtle.exportKey('jwk', kp.privateKey), raw = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
   const h = await vapid('https://fcm.googleapis.com/fcm/send/abc', { publica: b64u.enc(raw), privada: jwk.d, sujeto: 'mailto:x@y.z' });
