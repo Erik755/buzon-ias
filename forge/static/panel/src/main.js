@@ -38,7 +38,7 @@ function pintarResumen(r) {
     <h2>${esc(r.titulo)} <span class="estado">${esc(r.estado)}</span></h2>
     <p class="aviso">${r.totalMensajes} messages · latest ${r.ultimos.length}:</p>
     ${ultimos || '<p class="aviso">(no messages)</p>'}
-    <a class="boton" href="${esc(r.enlacePwa)}" target="_blank" rel="noopener">Open in the Mailbox to decide</a>
+    <a class="boton" href="${esc(r.enlacePwa)}" target="_blank" rel="noopener">Open in Buzón de IAs to decide</a>
     ${r.esAdmin ? '<p><a href="#" id="desvincular">Unlink thread</a></p>' : ''}
     <p id="msg"></p>`;
   if (r.esAdmin) {
