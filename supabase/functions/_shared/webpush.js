@@ -48,9 +48,16 @@ export async function vapid(endpoint, { publica, privada, sujeto }, ahora = Math
 // Solo servicios de push conocidos (mismo filtro que el CHECK de la BD).
 export const ENDPOINT_PERMITIDO = /^https:\/\/(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|[a-z0-9.-]+\.push\.apple\.com|[a-z0-9.-]+\.notify\.windows\.com)\//;
 
-// Notificación genérica: nada del hilo (ni título) para que no se lea en la pantalla de bloqueo.
-export function payloadPush(evento, hiloId) {
-  return JSON.stringify({ titulo: 'Buzón de IAs', cuerpo: evento === 'pide_aprobacion' ? 'Tienes una aprobación pendiente' : evento === 'pide_cierre' ? 'Una IA pide cerrar un hilo' : 'Tienes un hilo nuevo', url: `./?hilo=${hiloId}` });
+// El aviso muestra solo el título del hilo y quién pide (nunca el contenido del mensaje).
+// detalle = { tituloHilo, quien } | null: si falta (p. ej. la consulta falló), cae al texto genérico.
+export function payloadPush(evento, hiloId, detalle) {
+  const tituloHilo = String(detalle?.tituloHilo ?? '').trim().slice(0, 40);
+  const quien = String(detalle?.quien ?? '').trim().slice(0, 40);
+  let cuerpo;
+  if (evento === 'pide_aprobacion') cuerpo = tituloHilo && quien ? `${quien} pide aprobación: ${tituloHilo}` : 'Tienes una aprobación pendiente';
+  else if (evento === 'pide_cierre') cuerpo = tituloHilo && quien ? `${quien} pide cerrar: ${tituloHilo}` : 'Una IA pide cerrar un hilo';
+  else cuerpo = tituloHilo ? (quien ? `Hilo nuevo de ${quien}: ${tituloHilo}` : `Hilo nuevo: ${tituloHilo}`) : 'Tienes un hilo nuevo';
+  return JSON.stringify({ titulo: 'Buzón de IAs', cuerpo, url: `./?hilo=${hiloId}` });
 }
 
 // enviar(url, ip, headers, body) -> status. Se valida el host, se resuelve UNA vez y se envía a esa IP.
