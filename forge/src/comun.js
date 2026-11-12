@@ -32,10 +32,10 @@ export async function leerEnBuzon(fetchImpl, token, args) {
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'leer', arguments: args } }),
     });
   } catch (e) {
-    throw new ErrorPanel('red: no se pudo contactar el buzón');
+    throw new ErrorPanel('network: could not reach the mailbox');
   }
-  if (resp.status === 401 || resp.status === 403) throw new ErrorPanel('token inválido o revocado');
-  if (!resp.ok) throw new ErrorPanel(`buzón: HTTP ${resp.status}`);
+  if (resp.status === 401 || resp.status === 403) throw new ErrorPanel('invalid or revoked token');
+  if (!resp.ok) throw new ErrorPanel(`mailbox: HTTP ${resp.status}`);
   const crudo = await resp.text();
   let data;
   try {
@@ -43,20 +43,20 @@ export async function leerEnBuzon(fetchImpl, token, args) {
   } catch {
     // Respuesta SSE: tomar el último "data: {...}".
     const lineas = crudo.split('\n').filter((l) => l.startsWith('data: '));
-    if (!lineas.length) throw new ErrorPanel('buzón: respuesta ilegible');
+    if (!lineas.length) throw new ErrorPanel('mailbox: unreadable response');
     try {
       data = JSON.parse(lineas[lineas.length - 1].slice(6));
     } catch {
-      throw new ErrorPanel('buzón: respuesta ilegible');
+      throw new ErrorPanel('mailbox: unreadable response');
     }
   }
-  if (data.error) throw new ErrorPanel('sin acceso al hilo con este token');
+  if (data.error) throw new ErrorPanel('no access to this thread with this token');
   let contenido;
   try {
     contenido = JSON.parse(data.result.content[0].text);
   } catch {
-    throw new ErrorPanel('sin acceso al hilo con este token');
+    throw new ErrorPanel('no access to this thread with this token');
   }
-  if (contenido.error) throw new ErrorPanel('sin acceso al hilo con este token');
+  if (contenido.error) throw new ErrorPanel('no access to this thread with this token');
   return contenido;
 }

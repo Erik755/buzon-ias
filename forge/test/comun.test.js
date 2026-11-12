@@ -36,18 +36,18 @@ test('leerEnBuzon: respuesta SSE se interpreta', async () => {
 test('leerEnBuzon: 401/403 => token inválido o revocado', async () => {
   for (const status of [401, 403]) {
     const fetchImpl = async () => ({ ok: false, status, text: async () => '' });
-    await assert.rejects(() => leerEnBuzon(fetchImpl, TOKEN, {}), (e) => e instanceof ErrorPanel && /token inválido o revocado/.test(e.message));
+    await assert.rejects(() => leerEnBuzon(fetchImpl, TOKEN, {}), (e) => e instanceof ErrorPanel && /invalid or revoked token/.test(e.message));
   }
 });
 
 test('leerEnBuzon: error del buzón => "sin acceso"', async () => {
   const fetchImpl = async () => respJson({ error: '404:hilo no encontrado' });
-  await assert.rejects(() => leerEnBuzon(fetchImpl, TOKEN, {}), /sin acceso/);
+  await assert.rejects(() => leerEnBuzon(fetchImpl, TOKEN, {}), /no access/);
 });
 
 test('leerEnBuzon: red caída => error de red, sin filtrar detalles internos', async () => {
   const fetchImpl = async () => { throw new Error('ECONNREFUSED interno'); };
-  await assert.rejects(() => leerEnBuzon(fetchImpl, TOKEN, {}), (e) => e instanceof ErrorPanel && e.message === 'red: no se pudo contactar el buzón');
+  await assert.rejects(() => leerEnBuzon(fetchImpl, TOKEN, {}), (e) => e instanceof ErrorPanel && e.message === 'network: could not reach the mailbox');
 });
 
 test('leerEnBuzon: HTTP 500 => error con código', async () => {

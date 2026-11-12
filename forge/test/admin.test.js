@@ -23,20 +23,20 @@ function depsBase(sobre = {}) {
 }
 
 function sinAdmin() {
-  return async () => { throw new ErrorPanel('se requiere rol de administrador del sitio'); };
+  return async () => { throw new ErrorPanel('site administrator role required'); };
 }
 
 test('guardarToken: sin rol admin se rechaza y NO escribe el secreto', async () => {
   const deps = depsBase({ requireAdmin: sinAdmin() });
   deps._setSecreto(null);
-  await assert.rejects(() => guardarToken({ token: TOKEN }, deps), (e) => e instanceof ErrorPanel && /administrador/.test(e.message));
+  await assert.rejects(() => guardarToken({ token: TOKEN }, deps), (e) => e instanceof ErrorPanel && /administrator/.test(e.message));
   assert.equal(deps._getSecreto(), null, 'no debe escribir el token sin rol admin');
 });
 
 test('guardarToken: con admin, formato inválido se rechaza sin escribir', async () => {
   const deps = depsBase();
   deps._setSecreto(null);
-  await assert.rejects(() => guardarToken({ token: 'corto' }, deps), /formato/);
+  await assert.rejects(() => guardarToken({ token: 'corto' }, deps), /format/);
   assert.equal(deps._getSecreto(), null);
 });
 
@@ -50,12 +50,12 @@ test('guardarToken: con admin guarda y nunca devuelve el token', async () => {
 
 test('guardarToken: el formato se valida DESPUÉS del rol (un no-admin no sondea el formato)', async () => {
   const deps = depsBase({ requireAdmin: sinAdmin() });
-  await assert.rejects(() => guardarToken({ token: 'corto' }, deps), /administrador/);
+  await assert.rejects(() => guardarToken({ token: 'corto' }, deps), /administrator/);
 });
 
 test('probarToken: sin rol admin se rechaza', async () => {
   const deps = depsBase({ requireAdmin: sinAdmin() });
-  await assert.rejects(() => probarToken({}, deps), /administrador/);
+  await assert.rejects(() => probarToken({}, deps), /administrator/);
 });
 
 test('probarToken: éxito y fracaso sin exponer datos', async () => {
@@ -64,10 +64,10 @@ test('probarToken: éxito y fracaso sin exponer datos', async () => {
   const depsMalo = depsBase({ fetchImpl: async () => ({ ok: false, status: 401, text: async () => '' }) });
   const r = await probarToken({}, depsMalo);
   assert.equal(r.ok, false);
-  assert.ok(/token inválido/.test(r.detalle));
+  assert.ok(/invalid or revoked token/.test(r.detalle));
   const depsSin = depsBase();
   depsSin._setSecreto(null);
-  assert.deepEqual(await probarToken({}, depsSin), { ok: false, detalle: 'sin token configurado' });
+  assert.deepEqual(await probarToken({}, depsSin), { ok: false, detalle: 'no token configured' });
 });
 
 test('aislamiento: el resolver de administración NO expone operaciones del panel', () => {

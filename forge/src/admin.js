@@ -8,7 +8,7 @@ import { leerEnBuzon, ErrorPanel, TOKEN_RE, KVS_TOKEN } from './comun.js';
 // deps: { requireAdmin, guardarSecreto }
 export async function guardarToken({ token }, deps) {
   await deps.requireAdmin();
-  if (!TOKEN_RE.test(token || '')) throw new ErrorPanel('formato de token inválido (bz_…)');
+  if (!TOKEN_RE.test(token || '')) throw new ErrorPanel('invalid token format (bz_…)');
   await deps.guardarSecreto(KVS_TOKEN, token);
   return { guardado: true }; // jamás incluir el token en la respuesta
 }
@@ -18,7 +18,7 @@ export async function guardarToken({ token }, deps) {
 export async function probarToken(_args, deps) {
   await deps.requireAdmin();
   const token = await deps.leerToken();
-  if (!token) return { ok: false, detalle: 'sin token configurado' };
+  if (!token) return { ok: false, detalle: 'no token configured' };
   try {
     await leerEnBuzon(deps.fetchImpl, token, { limite: 1 });
     return { ok: true };

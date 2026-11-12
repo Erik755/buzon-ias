@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Panel de Jira (solo lectura) + página de administración para el Buzón de IAs. Andamiaje local; sin forge register/login/deploy todavía.",
+  "description": "Panel de Jira (solo lectura) + página de administración para el Buzón de IAs. Desplegada en development; producción pendiente de aprobación.",
   "scripts": {
     "test": "node --test test/*.test.js",
     "build:panel": "esbuild static/panel/src/main.js --bundle --format=iife --outfile=static/panel/build/bundle.js && cp static/panel/src/index.html static/panel/build/index.html"

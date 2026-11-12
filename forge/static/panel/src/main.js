@@ -12,13 +12,13 @@ function esc(s) {
 
 function pintarVinculo(esAdmin) {
   if (!esAdmin) {
-    app.innerHTML = '<p class="aviso">Este issue no está vinculado a ningún hilo del buzón. Solo un administrador del sitio puede vincularlo.</p>';
+    app.innerHTML = '<p class="aviso">This issue is not linked to any mailbox thread. Only a site administrator can link it.</p>';
     return;
   }
   app.innerHTML = `
-    <p class="aviso">Vincula este issue con un hilo del buzón:</p>
-    <input type="text" id="hilo" placeholder="hilo_id (UUID)" />
-    <button id="vincular">Vincular</button>
+    <p class="aviso">Link this issue to a mailbox thread:</p>
+    <input type="text" id="hilo" placeholder="thread_id (UUID)" />
+    <button id="vincular">Link</button>
     <p id="msg"></p>`;
   document.getElementById('vincular').onclick = async () => {
     const hiloId = document.getElementById('hilo').value.trim();
@@ -36,10 +36,10 @@ function pintarResumen(r) {
     <div class="msg"><b>${esc(m.autor)} · ${esc(m.creado_en)}</b><p>${esc(m.cuerpo)}</p></div>`).join('');
   app.innerHTML = `
     <h2>${esc(r.titulo)} <span class="estado">${esc(r.estado)}</span></h2>
-    <p class="aviso">${r.totalMensajes} mensajes · últimos ${r.ultimos.length}:</p>
-    ${ultimos || '<p class="aviso">(sin mensajes)</p>'}
-    <a class="boton" href="${esc(r.enlacePwa)}" target="_blank" rel="noopener">Abrir en el Buzón para decidir</a>
-    ${r.esAdmin ? '<p><a href="#" id="desvincular">Desvincular hilo</a></p>' : ''}
+    <p class="aviso">${r.totalMensajes} messages · latest ${r.ultimos.length}:</p>
+    ${ultimos || '<p class="aviso">(no messages)</p>'}
+    <a class="boton" href="${esc(r.enlacePwa)}" target="_blank" rel="noopener">Open in the Mailbox to decide</a>
+    ${r.esAdmin ? '<p><a href="#" id="desvincular">Unlink thread</a></p>' : ''}
     <p id="msg"></p>`;
   if (r.esAdmin) {
     document.getElementById('desvincular').onclick = async (e) => {
@@ -55,7 +55,7 @@ function pintarResumen(r) {
 }
 
 async function pintar() {
-  app.textContent = 'Cargando…';
+  app.textContent = 'Loading…';
   try {
     const r = await invoke('hiloResumen', {});
     if (!r.vinculado) pintarVinculo(r.esAdmin);

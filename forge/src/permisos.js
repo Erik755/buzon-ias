@@ -19,5 +19,5 @@ export async function soyAdmin() {
 }
 
 export async function exigirAdmin() {
-  if (!(await soyAdmin())) throw new ErrorPanel('se requiere rol de administrador del sitio');
+  if (!(await soyAdmin())) throw new ErrorPanel('site administrator role required');
 }

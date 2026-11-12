@@ -80,7 +80,7 @@ test('resumen: devuelve datos de solo lectura, enlace a la PWA y esAdmin', async
 test('resumen: vínculo almacenado que no es UUID se rechaza (defensa en profundidad)', async () => {
   const deps = depsBase();
   await deps.guardarVinculo(ISSUE, 'no-es-un-uuid');
-  await assert.rejects(() => hiloResumen({ issueId: ISSUE }, deps), /vínculo corrupto/);
+  await assert.rejects(() => hiloResumen({ issueId: ISSUE }, deps), /corrupt link/);
 });
 
 test('resumen: esAdmin sale false si la consulta de permisos falla (fail-closed)', async () => {
@@ -94,20 +94,20 @@ test('resumen: esAdmin sale false si la consulta de permisos falla (fail-closed)
 test('resumen: hilo ajeno o token revocado => "sin acceso"', async () => {
   const deps = depsBase({ fetchImpl: fetchSinAcceso() });
   await deps.guardarVinculo(ISSUE, HILO);
-  await assert.rejects(() => hiloResumen({ issueId: ISSUE }, deps), (e) => e instanceof ErrorPanel && /sin acceso/.test(e.message));
+  await assert.rejects(() => hiloResumen({ issueId: ISSUE }, deps), (e) => e instanceof ErrorPanel && /no access/.test(e.message));
 });
 
 test('resumen: 401 del buzón => token inválido', async () => {
   const deps = depsBase({ fetchImpl: async () => ({ ok: false, status: 401, text: async () => '' }) });
   await deps.guardarVinculo(ISSUE, HILO);
-  await assert.rejects(() => hiloResumen({ issueId: ISSUE }, deps), /token inválido o revocado/);
+  await assert.rejects(() => hiloResumen({ issueId: ISSUE }, deps), /invalid or revoked token/);
 });
 
 test('resumen: sin token configurado pide la página de administración', async () => {
   const deps = depsBase();
   deps._setSecreto(null);
   await deps.guardarVinculo(ISSUE, HILO);
-  await assert.rejects(() => hiloResumen({ issueId: ISSUE }, deps), /administración/);
+  await assert.rejects(() => hiloResumen({ issueId: ISSUE }, deps), /administration/);
 });
 
 test('vincular: UUID inválido se rechaza sin verificar rol ni llamar al buzón', async () => {
@@ -125,16 +125,16 @@ test('vincular: sin rol admin se rechaza antes de llamar al buzón y no guarda n
   let llamadas = 0;
   const deps = depsBase({
     fetchImpl: async () => { llamadas++; return fetchOk()(); },
-    requireAdmin: async () => { throw new ErrorPanel('se requiere rol de administrador del sitio'); },
+    requireAdmin: async () => { throw new ErrorPanel('site administrator role required'); },
   });
-  await assert.rejects(() => vincularHilo({ issueId: ISSUE, hiloId: HILO }, deps), (e) => e instanceof ErrorPanel && /administrador/.test(e.message));
+  await assert.rejects(() => vincularHilo({ issueId: ISSUE, hiloId: HILO }, deps), (e) => e instanceof ErrorPanel && /administrator/.test(e.message));
   assert.equal(llamadas, 0, 'no debe consultar el buzón sin rol admin');
   assert.equal(await deps.leerVinculo(ISSUE), null, 'no debe guardar el vínculo');
 });
 
 test('vincular: con admin pero hilo ajeno no guarda (pertenencia hilo-buzón)', async () => {
   const deps = depsBase({ fetchImpl: fetchSinAcceso() });
-  await assert.rejects(() => vincularHilo({ issueId: ISSUE, hiloId: HILO }, deps), /sin acceso/);
+  await assert.rejects(() => vincularHilo({ issueId: ISSUE, hiloId: HILO }, deps), /no access/);
   assert.equal(await deps.leerVinculo(ISSUE), null, 'no debe guardar el vínculo sin acceso');
 });
 
@@ -147,10 +147,10 @@ test('vincular: con admin y acceso guarda el vínculo por issue.id', async () =>
 
 test('desvincular: sin rol admin se rechaza y el vínculo queda intacto', async () => {
   const deps = depsBase({
-    requireAdmin: async () => { throw new ErrorPanel('se requiere rol de administrador del sitio'); },
+    requireAdmin: async () => { throw new ErrorPanel('site administrator role required'); },
   });
   await deps.guardarVinculo(ISSUE, HILO);
-  await assert.rejects(() => desvincularHilo({ issueId: ISSUE }, deps), /administrador/);
+  await assert.rejects(() => desvincularHilo({ issueId: ISSUE }, deps), /administrator/);
   assert.equal(await deps.leerVinculo(ISSUE), HILO);
 });
 

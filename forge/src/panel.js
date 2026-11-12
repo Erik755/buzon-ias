@@ -15,9 +15,9 @@ export async function hiloResumen({ issueId }, deps) {
   const esAdmin = await deps.esAdmin().catch(() => false);
   const hiloId = await deps.leerVinculo(issueId);
   if (!hiloId) return { vinculado: false, esAdmin };
-  if (!UUID_RE.test(hiloId)) throw new ErrorPanel('vínculo corrupto en el almacenamiento');
+  if (!UUID_RE.test(hiloId)) throw new ErrorPanel('corrupt link in storage');
   const token = await deps.leerToken();
-  if (!token) throw new ErrorPanel('falta configurar el token (página de administración)');
+  if (!token) throw new ErrorPanel('token not configured (administration page)');
   const h = await leerEnBuzon(deps.fetchImpl, token, { hilo_id: hiloId });
   // mcp_leer devuelve { hilo: { titulo, estado, ... }, mensajes: [...], ... } (verificado en
   // la integración local contra el servidor real). Defaults si falta h.hilo.
@@ -27,8 +27,8 @@ export async function hiloResumen({ issueId }, deps) {
     vinculado: true,
     esAdmin,
     hiloId,
-    titulo: hilo.titulo || '(sin título)',
-    estado: hilo.estado || 'desconocido',
+    titulo: hilo.titulo || '(untitled)',
+    estado: hilo.estado || 'unknown',
     totalMensajes: mensajes.length,
     ultimos: mensajes.slice(-5).map((m) => ({ autor: m.autor, creado_en: m.creado_en, cuerpo: (m.cuerpo || '').slice(0, 280) })),
     enlacePwa: `${PWA_URL}?hilo=${hiloId}`,
@@ -41,10 +41,10 @@ export async function hiloResumen({ issueId }, deps) {
 // 4. que el token pueda leer el hilo (pertenencia hilo<->buzón). Solo entonces escribe.
 // deps: { fetchImpl, leerToken, requireAdmin, guardarVinculo }
 export async function vincularHilo({ issueId, hiloId }, deps) {
-  if (!UUID_RE.test(hiloId || '')) throw new ErrorPanel('hilo_id no es un UUID');
+  if (!UUID_RE.test(hiloId || '')) throw new ErrorPanel('thread_id is not a UUID');
   await deps.requireAdmin();
   const token = await deps.leerToken();
-  if (!token) throw new ErrorPanel('falta configurar el token (página de administración)');
+  if (!token) throw new ErrorPanel('token not configured (administration page)');
   await leerEnBuzon(deps.fetchImpl, token, { hilo_id: hiloId }); // lanza si no hay acceso
   await deps.guardarVinculo(issueId, hiloId);
   return { vinculado: true, hiloId };

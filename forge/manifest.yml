@@ -1,7 +1,8 @@
 # Forge: panel de Jira (solo lectura) + página de administración para el Buzón de IAs.
 # El veredicto (aceptar/rechazar cierre) NO vive aquí: el panel es de SOLO LECTURA
 # y enlaza a la PWA, donde decide el dueño con su sesión.
-# Estado: andamiaje local. Pendiente: forge register/login/deploy (los lleva Grok con Erik).
+# Estado: registrada y desplegada en development (v2.8 instalada en sanchezerik836.atlassian.net,
+# 11-nov-2026). Deploy a producción y Sharing: pendientes de la aprobación de Erik.
 modules:
   jira:issuePanel:
     - key: buzon-hilo-panel
