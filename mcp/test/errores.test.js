@@ -138,3 +138,31 @@ test('avisar arma el mensaje amable y lo deja en el aviso de la página', () => 
   assert.equal(texto.textContent, 'No se pudo crear el buzón: Ya tienes un buzón. Por ahora solo se permite uno por cuenta.');
   assert.equal(caja.hidden, false);
 });
+
+test('límite de envío: code over_email_send_rate_limit y status 429 dan el aviso de esperar', () => {
+  const re = /Demasiados intentos seguidos\. Espera un minuto/;
+  assert.match(mensajeAmable({
+    code: 'over_email_send_rate_limit',
+    message: 'For security purposes, you can only request this after 18 seconds.',
+    status: 429,
+  }), re);
+  // Solo el code, aunque el mensaje no diga "rate" ni "too many".
+  assert.match(mensajeAmable({
+    code: 'over_email_send_rate_limit',
+    message: 'For security purposes, you can only request this after 18 seconds.',
+  }), re);
+  // Solo el 429, aunque no venga el code.
+  assert.match(mensajeAmable({
+    message: 'For security purposes, you can only request this after 18 seconds.',
+    status: 429,
+  }), re);
+  assert.match(mensajeAmable({ message: 'too many requests' }), re);
+  assert.match(mensajeAmable({ message: 'Email rate limit exceeded' }), re);
+});
+
+test('tras un enlace enviado, el botón de login queda desactivado un minuto', () => {
+  const app = readFileSync(new URL('../../pwa/app.js', import.meta.url), 'utf8');
+  assert.match(app, /login\.enviado/);
+  assert.match(app, /60_000/);
+  assert.match(app, /btn\.disabled = true/);
+});

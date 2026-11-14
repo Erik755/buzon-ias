@@ -15,7 +15,8 @@ export function mensajeAmable(error, enLinea = true) {
   if (/buzones_un_buzon_por_dueno/i.test(todo)) return 'Ya tienes un buzón. Por ahora solo se permite uno por cuenta.';
   if (c === '23505' || /duplicate key|already exists|ya existe/i.test(t)) return 'Ya existe uno con ese nombre. Usa otro nombre.';
   if (c === '23514' || c === '22023' || c === '22001' || /violates check|invalid input|too long|demasiado/i.test(t)) return 'Algún dato no es válido. Revísalo e inténtalo de nuevo.';
-  if (/rate|l[ií]mite|too many/i.test(t)) return 'Demasiados intentos seguidos. Espera un minuto e inténtalo otra vez.';
+  const status = Number(error?.status ?? error?.statusCode ?? 0);
+  if (status === 429 || /rate|l[ií]mite|too many/i.test(`${t} ${c}`)) return 'Demasiados intentos seguidos. Espera un minuto e inténtalo otra vez.';
   if (/denied|notallowed|permiso del navegador|permission/i.test(t)) return 'El teléfono no dio permiso. Actívalo en los ajustes del navegador.';
   return 'Algo salió mal. Inténtalo de nuevo en un momento.';
 }
