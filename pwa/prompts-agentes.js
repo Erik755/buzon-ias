@@ -68,7 +68,7 @@ const ES = {
   paso1: (n, seguro) => [
     `1. Clave del MCP en un espacio seguro. La clave bz_ la creo yo en la app (☰ › Agentes › Crear y generar clave). ${seguro} Después prueba leer; si no conecta, dime que revise la guía de ${n} en la app del Buzón.`,
   ],
-  terminal: 'Pídeme que yo corra en mi propia terminal (tú no) read -rs -p "Clave del Buzón: " BUZON_TOKEN && export BUZON_TOKEN — en Windows (PowerShell 7): [Environment]::SetEnvironmentVariable(\'BUZON_TOKEN\', (Read-Host \'Clave del Buzón\' -MaskInput), \'User\') — para que la clave no se vea al pegarla; si quiero que dure, que la guarde yo en el llavero del sistema o en mi ~/.zshrc, nunca en un repositorio.',
+  terminal: 'Pídeme que yo corra en mi propia terminal (tú no) printf \'Clave del Buzón: \'; read -rs BUZON_TOKEN; echo; export BUZON_TOKEN (sirve en bash y zsh) — en Windows (PowerShell 7): $env:BUZON_TOKEN = Read-Host \'Clave del Buzón\' -MaskInput; [Environment]::SetEnvironmentVariable(\'BUZON_TOKEN\', $env:BUZON_TOKEN, \'User\') — para que la clave no se vea al pegarla; si quiero que dure, que la guarde yo en el llavero del sistema o en mi ~/.zshrc, nunca en un repositorio.',
   final: (k) => [
     `${k}. Cada vez que te llegue un aviso (o en cada revisión): llama a leer con el hilo_id (sin hilo_id para ver tus pendientes), haz el trabajo y contesta en ese hilo con responder.`,
     `${k + 1}. Al terminar, dime en 2 o 3 líneas qué método quedó (aviso inmediato o revisión periódica), qué pego en «Dirección (https)» y de dónde copio yo la clave o la firma, sin mostrármela. Luego crearé un hilo de prueba para ti.`,
@@ -182,7 +182,7 @@ const EN = {
   paso1: (n, seguro) => [
     `1. MCP key in a secure place. I create the bz_ key myself in the app (☰ › Agents › Create and generate key). ${seguro} Then try leer; if it does not connect, tell me to check the ${n} guide in the Inbox app.`,
   ],
-  terminal: 'Ask me to run, in my own terminal (not you), read -rs -p "Inbox key: " BUZON_TOKEN && export BUZON_TOKEN — on Windows (PowerShell 7): [Environment]::SetEnvironmentVariable(\'BUZON_TOKEN\', (Read-Host \'Inbox key\' -MaskInput), \'User\') — so the key is hidden while I paste it; if I want it to persist, I store it myself in the system keychain or my ~/.zshrc, never in a repository.',
+  terminal: 'Ask me to run, in my own terminal (not you), printf \'Inbox key: \'; read -rs BUZON_TOKEN; echo; export BUZON_TOKEN (works in bash and zsh) — on Windows (PowerShell 7): $env:BUZON_TOKEN = Read-Host \'Inbox key\' -MaskInput; [Environment]::SetEnvironmentVariable(\'BUZON_TOKEN\', $env:BUZON_TOKEN, \'User\') — so the key is hidden while I paste it; if I want it to persist, I store it myself in the system keychain or my ~/.zshrc, never in a repository.',
   final: (k) => [
     `${k}. Every time a notice arrives (or on every check): call leer with the hilo_id (without hilo_id to see what is pending for you), do the work and reply in that thread with responder.`,
     `${k + 1}. When you finish, tell me in 2 or 3 lines which method you set up (instant notice or periodic check), what I paste in “Address (https)” and where I copy the key or signature from, without showing it to me. Then I will create a test thread for you.`,

@@ -60,6 +60,8 @@ test('el nombre del agente elige su guía aunque lleve más palabras; nombres si
   assert.equal(id('Gemini CLI'), 'gemini-cli');
   assert.equal(id('Copilot Bot'), 'vscode');
   assert.equal(id('Agente MCP de casa'), null);
+  assert.equal(id('Agente con avisos'), null);
+  assert.equal(id('Agent with alerts'), null);
   assert.equal(id('Zorro'), null);
 });
 
@@ -83,5 +85,7 @@ test('cada prompt abre el espacio seguro real de su herramienta y nunca pide la 
     assert.match(es, mecanismo[id], id);
   }
   assert.match(promptAgente('grok', 'en'), /secret request card/);
-  assert.match(promptAgente('claude', 'es'), /read -rs -p/);
+  assert.match(promptAgente('claude', 'es'), /read -rs BUZON_TOKEN; echo; export BUZON_TOKEN/);
+  assert.doesNotMatch(promptAgente('claude', 'es'), /read -rs -p/); // -p en zsh lee de un coproceso
+  assert.match(promptAgente('claude', 'en'), /\$env:BUZON_TOKEN = Read-Host/); // también en la sesión actual de PowerShell
 });

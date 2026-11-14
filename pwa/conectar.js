@@ -92,7 +92,7 @@ export function buscarGuias(query, guias, { idioma = 'es', nombresEn = {} } = {}
 
 // Guía que corresponde al nombre que el dueño le dio al agente ("Grok", "Grok Bot", "Claude Desktop"…), o null.
 // Primero manda el nombre completo (gana la mejor puntuación; así "Claude Desktop" no cae en Claude Code).
-// Solo si el nombre completo no coincide se prueba palabra por palabra, sin palabras genéricas (bot, cli, mcp…).
+// Solo si el nombre completo no coincide se prueba palabra por palabra (coincidencia exacta), sin palabras genéricas.
 // Solo acepta coincidencias claras (exacta, prefijo o palabra: >= 80).
 const GENERICAS = new Set(['bot', 'cli', 'mcp', 'app', 'web', 'code', 'agent', 'agente', 'desktop', 'terminal', 'casa', 'trabajo', 'personal', 'otro', 'other', 'generic', 'generico']);
 function mejorGuia(q, guias, idioma, nombresEn) {
@@ -106,13 +106,14 @@ function mejorGuia(q, guias, idioma, nombresEn) {
 export function guiaPorNombre(nombre, guias, { idioma = 'es', nombresEn = {} } = {}) {
   const completo = mejorGuia(nombre, guias, idioma, nombresEn);
   if (completo) return completo.g;
-  let r = null;
+  // Respaldo palabra por palabra: solo palabras de 4+ letras que son EXACTAMENTE un nombre o alias (100),
+  // así "con", "with" o "de" nunca eligen guía por prefijo.
   for (const w of normalizar(nombre).split(/[\s()/"'_.-]+/)) {
-    if (w.length < 3 || GENERICAS.has(w)) continue;
+    if (w.length < 4 || GENERICAS.has(w)) continue;
     const m = mejorGuia(w, guias, idioma, nombresEn);
-    if (m && (!r || m.s > r.s)) r = m;
+    if (m && m.s === 100) return m.g;
   }
-  return r ? r.g : null;
+  return null;
 }
 
 export function rellenarPlantilla(texto, { url, token, canje }) {
