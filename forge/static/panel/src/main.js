@@ -12,11 +12,11 @@ function esc(s) {
 
 function pintarVinculo(esAdmin) {
   if (!esAdmin) {
-    app.innerHTML = '<p class="aviso">This issue is not linked to any mailbox thread. Only a site administrator can link it.</p>';
+    app.innerHTML = '<p class="aviso">This issue is not linked to any Buzón thread. Only a site administrator can link it.</p>';
     return;
   }
   app.innerHTML = `
-    <p class="aviso">Link this issue to a mailbox thread:</p>
+    <p class="aviso">Link this issue to a Buzón thread:</p>
     <input type="text" id="hilo" placeholder="thread_id (UUID)" />
     <button id="vincular">Link</button>
     <p id="msg"></p>`;

@@ -32,10 +32,10 @@ export async function leerEnBuzon(fetchImpl, token, args) {
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'leer', arguments: args } }),
     });
   } catch (e) {
-    throw new ErrorPanel('network: could not reach the mailbox');
+    throw new ErrorPanel('network: could not reach the Buzón');
   }
   if (resp.status === 401 || resp.status === 403) throw new ErrorPanel('invalid or revoked token');
-  if (!resp.ok) throw new ErrorPanel(`mailbox: HTTP ${resp.status}`);
+  if (!resp.ok) throw new ErrorPanel(`buzon: HTTP ${resp.status}`);
   const crudo = await resp.text();
   let data;
   try {
@@ -43,11 +43,11 @@ export async function leerEnBuzon(fetchImpl, token, args) {
   } catch {
     // Respuesta SSE: tomar el último "data: {...}".
     const lineas = crudo.split('\n').filter((l) => l.startsWith('data: '));
-    if (!lineas.length) throw new ErrorPanel('mailbox: unreadable response');
+    if (!lineas.length) throw new ErrorPanel('buzon: unreadable response');
     try {
       data = JSON.parse(lineas[lineas.length - 1].slice(6));
     } catch {
-      throw new ErrorPanel('mailbox: unreadable response');
+      throw new ErrorPanel('buzon: unreadable response');
     }
   }
   if (data.error) throw new ErrorPanel('no access to this thread with this token');

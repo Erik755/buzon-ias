@@ -47,7 +47,7 @@ test('leerEnBuzon: error del buzón => "sin acceso"', async () => {
 
 test('leerEnBuzon: red caída => error de red, sin filtrar detalles internos', async () => {
   const fetchImpl = async () => { throw new Error('ECONNREFUSED interno'); };
-  await assert.rejects(() => leerEnBuzon(fetchImpl, TOKEN, {}), (e) => e instanceof ErrorPanel && e.message === 'network: could not reach the mailbox');
+  await assert.rejects(() => leerEnBuzon(fetchImpl, TOKEN, {}), (e) => e instanceof ErrorPanel && e.message === 'network: could not reach the Buzón');
 });
 
 test('leerEnBuzon: HTTP 500 => error con código', async () => {

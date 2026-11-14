@@ -19,7 +19,7 @@ const AdminPage = () => {
       await invoke('guardarToken', { token });
       const prueba = await invoke('probarToken', {});
       setResultado(prueba.ok
-        ? { tipo: 'confirmation', texto: 'Token saved and verified against the mailbox.' }
+        ? { tipo: 'confirmation', texto: 'Token saved and verified against the Buzón.' }
         : { tipo: 'error', texto: `Token saved but the test failed: ${prueba.detalle}` });
     } catch (e) {
       setResultado({ tipo: 'error', texto: e.message });
@@ -33,8 +33,8 @@ const AdminPage = () => {
           @atlaskit/forge-react-types (codegen) y la doc "Upgrade to UI Kit latest version":
           con submitButtonText el host lo ignora en silencio y no pinta botón alguno. */}
       <Form onSubmit={handleSubmit(alEnviar)}>
-        <Label labelFor={getFieldId('token')}>Mailbox token (bz_…)</Label>
-        <Textfield {...register('token', { required: true })} placeholder="bz_…" type="password" />
+        <Label labelFor={getFieldId('token')}>Buzón token (bz_…)</Label>
+        <Textfield {...register('token', { required: true })} placeholder="bz_••••••••" type="password" />
         <Button type="submit" appearance="primary">Save and test token</Button>
       </Form>
       {resultado && (
@@ -42,7 +42,7 @@ const AdminPage = () => {
           <Text>{resultado.texto}</Text>
         </SectionMessage>
       )}
-      <Text>Each site configures its own mailbox.</Text>
+      <Text>Each site connects its own Buzón.</Text>
     </>
   );
 };
