@@ -6,7 +6,7 @@ import { mensajeAmable, conBotones, avisar, mostrarAviso } from './errores.js';
 import { etiquetaAviso } from './avisos.js';
 import { fusionarMensajes, idsMensajes, firmaLista, debeEncuestar, debeEncuestarLista, enviarMensajeChat, INTERVALO_SONDEO_MS } from './chat.js';
 import { t, setIdioma, getIdioma, onIdioma, iniciarIdioma } from './i18n.js';
-import { buscarGuias, puntuacionGuia, rellenarPlantilla, enmascararToken, ALIAS } from './conectar.js';
+import { buscarGuias, guiaPorNombre as guiaPorNombreEn, rellenarPlantilla, enmascararToken, ALIAS } from './conectar.js';
 import { ETIQUETA_PROMPT, promptDeGuia, PROMPT_DE_GUIA } from './prompts-agentes.js';
 import { filtrarHilos, inicialDe, hiloCerrado } from './layout.js';
 import { listaDestinatarios, idAgentePorNombre, nombresDeHilos } from './destinatarios.js';
@@ -969,10 +969,7 @@ function promptLleno(guiaId) {
 // Guía que corresponde al nombre que el dueño le dio al agente (p. ej. "Grok" → grok), o null.
 function guiaPorNombre(nombre) {
   const nombresEn = Object.fromEntries(Object.entries(GUIAS_EN).map(([id, x]) => [id, x.nombre]));
-  // Solo coincidencias claras (nombre exacto, prefijo o palabra): una parecida a medias no elige guía.
-  const g = GUIAS.map((x) => ({ x, s: puntuacionGuia(nombre, x, getIdioma(), nombresEn[x.id]) }))
-    .filter((r) => r.s >= 80).sort((a, b) => b.s - a.s)[0];
-  return g ? g.x : null;
+  return guiaPorNombreEn(nombre, GUIAS, { idioma: getIdioma(), nombresEn });
 }
 function promptParaNombre(nombre) {
   const g = guiaPorNombre(nombre);
@@ -1037,7 +1034,7 @@ function pintarConectar(v, conSesion) {
           <button type="button" class="secundario" id="tok-revelar">${esc(t('secreto.revelar'))}</button>
           <button type="button" class="secundario" id="tok-copiar">${esc(t('secreto.copiar'))}</button></div>` : `<button type="button" class="secundario" id="ir-ag">${esc(t('conectar.irAgentes'))}</button>`}` : ''}
     </div>
-    <div id="guia-detalle" class="tarjeta" tabindex="-1" aria-live="polite" hidden></div>
+    <div id="guia-detalle" class="tarjeta" tabindex="-1" role="region" aria-labelledby="guia-titulo" hidden></div>
     ${conSesion ? `<div class="tarjeta" id="caja-probar"><b>${esc(t('conectar.probar'))}</b><div id="probar-caja"></div></div>` : ''}`;
   v.append(wrap);
   $('#cp-url').onclick = (e) => copiar(URL_MCP, e.target);
@@ -1112,7 +1109,7 @@ function pintarConectar(v, conSesion) {
     const codigoVista = tokOk ? enmascararToken(codigoReal, tokenGuia) : r(tg.codigo || '').replaceAll('{TOKEN}', 'bz_…');
     detalle.hidden = false;
     detalle.replaceChildren();
-    const h = document.createElement('h3'); h.textContent = tg.nombre;
+    const h = document.createElement('h3'); h.id = 'guia-titulo'; h.textContent = tg.nombre; // al enfocar se anuncia solo el título
     const eti = document.createElement('p'); eti.innerHTML = `<b>${esc(etiquetaDe(g.estado))}</b><br><span class="meta">${esc(queHacerDe(g.estado))}</span>`;
     const donde = document.createElement('p');
     const db = document.createElement('b'); db.textContent = t('conectar.donde') + ': ';

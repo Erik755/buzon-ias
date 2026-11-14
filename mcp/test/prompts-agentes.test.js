@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { GUIAS } from '../../pwa/guias.js';
 import { ETIQUETA_PROMPT, PROMPT_DE_GUIA, AGENTES_PROMPT, promptAgente, promptDeGuia } from '../../pwa/prompts-agentes.js';
-import { rellenarPlantilla } from '../../pwa/conectar.js';
+import { rellenarPlantilla, guiaPorNombre } from '../../pwa/conectar.js';
 
 const raiz = new URL('../../', import.meta.url).pathname;
 
@@ -47,4 +47,20 @@ test('el service worker cachea el módulo de prompts y cambió de versión', () 
   assert.match(sw, /'prompts-agentes\.js'/);
   assert.match(sw, /buzon-v25-prompts-agentes/);
   assert.match(readFileSync(raiz + 'pwa/build-config.mjs', 'utf8'), /'prompts-agentes\.js'/);
+});
+
+test('el nombre del agente elige su guía aunque lleve más palabras; nombres sin relación no', () => {
+  const id = (n) => guiaPorNombre(n, GUIAS)?.id ?? null;
+  assert.equal(id('Grok'), 'grok');
+  assert.equal(id('Grok Bot'), 'grok');
+  assert.equal(id('Claude'), 'claude-code');
+  assert.equal(id('Mi Cursor de casa'), 'cursor');
+  assert.equal(id('Instinct'), 'instinct');
+  assert.equal(id('Zorro'), null);
+});
+
+test('la guía elegida no es una región viva (no lee el prompt entero) y se enfoca por su título', () => {
+  const app = readFileSync(raiz + 'pwa/app.js', 'utf8');
+  assert.doesNotMatch(app, /id="guia-detalle"[^>]*aria-live/);
+  assert.match(app, /id="guia-detalle"[^>]*aria-labelledby="guia-titulo"/);
 });

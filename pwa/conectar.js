@@ -90,6 +90,20 @@ export function buscarGuias(query, guias, { idioma = 'es', nombresEn = {} } = {}
   return { vacio: false, resultados: scored.map((x) => x.g), sugerencias: [] };
 }
 
+// Guía que corresponde al nombre que el dueño le dio al agente ("Grok", "Grok Bot", "Claude Code 2"…), o null.
+// Prueba el nombre completo y cada palabra; solo acepta coincidencias claras (exacta, prefijo o palabra, >= 80).
+export function guiaPorNombre(nombre, guias, { idioma = 'es', nombresEn = {} } = {}) {
+  const partes = [nombre, ...normalizar(nombre).split(/[\s()/"'_.-]+/).filter((w) => w.length >= 3)];
+  let mejor = null, max = 0;
+  for (const g of guias) {
+    for (const q of partes) {
+      const s = puntuacionGuia(q, g, idioma, nombresEn[g.id]);
+      if (s > max) { max = s; mejor = g; }
+    }
+  }
+  return max >= 80 ? mejor : null;
+}
+
 export function rellenarPlantilla(texto, { url, token, canje }) {
   let s = String(texto ?? '');
   if (url) s = s.replaceAll('{URL}', url);
