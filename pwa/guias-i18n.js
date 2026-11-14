@@ -145,6 +145,19 @@ export const GUIAS_EN = {
     ],
     probar: 'In Manage MCP Servers, "buzon" should show as active. In the terminal version type /mcp. Ask: "Read my inbox".',
   },
+  hostinger: {
+    nombre: 'Hostinger (Agent in hPanel)',
+    donde: 'In hPanel, inside the Hostinger Agent: Apps tab → Connections → Custom MCP servers → Add server. It is not added from the Agent chat; if you ask there, it replies that it cannot register servers.',
+    pasos: [
+      'In Buzón Agents, create an agent named "Hostinger" and copy its bz_ key. Do not paste it in the Hostinger Agent chat or in screenshots.',
+      'In Connections → Custom MCP servers → Add server: Name "Buzón" and Server address: {URL}.',
+      'Turn on "This server requires an API key or a bearer token" and open the "My provider uses a custom header" link.',
+      'Header name: Authorization (it is already filled in). In Key, type Bearer, a normal space from the space bar, and your bz_ token right after, all in the same field. No underscore between Bearer and the token; keep the underscores that the token already has.',
+      'Save. When Hostinger accepts the server, the connection appears in green as "Connected".',
+    ],
+    probar: 'In the Agent chat, ask: "Use the Buzón connection to show me the titles of up to 3 threads. Do not create, reply, approve, or close anything." Each action through a custom MCP uses Agent mode credits, even if the task is simple.',
+    nota: 'Connections (apps and custom MCP servers) are included in the Agent Plus subscription: if you see a lock and "Upgrade to Agent Plus", your plan does not include them. Limits: 5 custom MCP servers and 50 tools per server. Signup verified on 13 Nov 2026 (it showed "Connected"); reading the tools is still pending a real test. Source: https://www.hostinger.com/support/connect-apps-and-custom-mcp-servers-to-hostinger-agent/',
+  },
   chatgpt: {
     nombre: 'ChatGPT (web and app)',
     donde: 'ChatGPT → Plugins → + → Add custom MCP server.',
