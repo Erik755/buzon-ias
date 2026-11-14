@@ -98,14 +98,14 @@ test('integración: éxito — el token lee su hilo (tools/call directo, sin ini
 test('integración: hilo ajeno — el token de OTRO buzón no lo lee', async () => {
   await assert.rejects(
     () => leerEnBuzon(fetchLocal, T.ajeno, { hilo_id: HILO }),
-    (e) => e instanceof ErrorPanel && /sin acceso/.test(e.message),
+    (e) => e instanceof ErrorPanel && /no access to this thread/.test(e.message),
   );
 });
 
-test('integración: token revocado — la validación SQL lo rechaza como "sin acceso"', async () => {
+test('integración: token revocado — la validación SQL lo rechaza como "no access"', async () => {
   await assert.rejects(
     () => leerEnBuzon(fetchLocal, T.revocado, { hilo_id: HILO }),
-    (e) => e instanceof ErrorPanel && /sin acceso/.test(e.message),
+    (e) => e instanceof ErrorPanel && /no access to this thread/.test(e.message),
   );
 });
 
@@ -133,7 +133,7 @@ test('integración: hiloResumen lee título, estado y mensajes del servidor real
   assert.equal(r.esAdmin, true);
   assert.equal(r.hiloId, HILO);
   assert.equal(r.titulo, 'Integración panel Forge');
-  assert.equal(r.estado, 'abierto');
+  assert.equal(r.estado, 'Open'); // el panel traduce el enum interno ('abierto') a inglés
   assert.equal(r.totalMensajes, 1);
   assert.equal(r.ultimos.length, 1);
   assert.equal(r.ultimos[0].autor, 'Agente A');
