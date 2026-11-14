@@ -50,6 +50,17 @@ jobs:
       - name: Apagar Supabase
         if: always()
         run: supabase stop --no-backup
+  forge:
+    name: Pruebas Forge (app Jira)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: forge/package-lock.json }
+      - name: Pruebas unitarias e integración del panel
+        working-directory: forge
+        run: npm ci && npm test
   secretos:
     name: Escaneo de secretos
     runs-on: ubuntu-latest
