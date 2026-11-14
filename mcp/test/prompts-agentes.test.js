@@ -68,3 +68,20 @@ test('la guía elegida no es una región viva (no lee el prompt entero) y se enf
   assert.doesNotMatch(app, /id="guia-detalle"[^>]*aria-live/);
   assert.match(app, /id="guia-detalle"[^>]*aria-labelledby="guia-titulo"/);
 });
+
+test('cada prompt abre el espacio seguro real de su herramienta y nunca pide la clave en el chat', () => {
+  const mecanismo = {
+    claude: /"Bearer \$\{BUZON_TOKEN\}"/, codex: /bearer_token_env_var = "BUZON_TOKEN"/, gemini: /"Bearer \$BUZON_TOKEN"/,
+    grok: /tarjeta de secreto \(secret request\)/, cursor: /Bearer \$\{env:BUZON_TOKEN\}/, copilot: /"password": true/,
+    windsurf: /Bearer \$\{env:BUZON_TOKEN\}/, antigravity: /PEGA_AQUI_TU_CLAVE/, generico: /campo de secreto, bóveda/,
+  };
+  for (const id of AGENTES_PROMPT) {
+    const es = promptAgente(id, 'es'), en = promptAgente(id, 'en');
+    assert.match(es, /ábreme tu espacio seguro/, id);
+    assert.match(en, /open your secure input for me/, id);
+    assert.match(es, /^1\. Clave del MCP en un espacio seguro\./m, id);
+    assert.match(es, mecanismo[id], id);
+  }
+  assert.match(promptAgente('grok', 'en'), /secret request card/);
+  assert.match(promptAgente('claude', 'es'), /read -rs -p/);
+});
