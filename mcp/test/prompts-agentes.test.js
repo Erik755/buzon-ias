@@ -56,6 +56,10 @@ test('el nombre del agente elige su guía aunque lleve más palabras; nombres si
   assert.equal(id('Claude'), 'claude-code');
   assert.equal(id('Mi Cursor de casa'), 'cursor');
   assert.equal(id('Instinct'), 'instinct');
+  assert.equal(id('Claude Desktop'), 'claude-desktop');
+  assert.equal(id('Gemini CLI'), 'gemini-cli');
+  assert.equal(id('Copilot Bot'), 'vscode');
+  assert.equal(id('Agente MCP de casa'), null);
   assert.equal(id('Zorro'), null);
 });
 

@@ -90,18 +90,29 @@ export function buscarGuias(query, guias, { idioma = 'es', nombresEn = {} } = {}
   return { vacio: false, resultados: scored.map((x) => x.g), sugerencias: [] };
 }
 
-// Guía que corresponde al nombre que el dueño le dio al agente ("Grok", "Grok Bot", "Claude Code 2"…), o null.
-// Prueba el nombre completo y cada palabra; solo acepta coincidencias claras (exacta, prefijo o palabra, >= 80).
-export function guiaPorNombre(nombre, guias, { idioma = 'es', nombresEn = {} } = {}) {
-  const partes = [nombre, ...normalizar(nombre).split(/[\s()/"'_.-]+/).filter((w) => w.length >= 3)];
+// Guía que corresponde al nombre que el dueño le dio al agente ("Grok", "Grok Bot", "Claude Desktop"…), o null.
+// Primero manda el nombre completo (gana la mejor puntuación; así "Claude Desktop" no cae en Claude Code).
+// Solo si el nombre completo no coincide se prueba palabra por palabra, sin palabras genéricas (bot, cli, mcp…).
+// Solo acepta coincidencias claras (exacta, prefijo o palabra: >= 80).
+const GENERICAS = new Set(['bot', 'cli', 'mcp', 'app', 'web', 'code', 'agent', 'agente', 'desktop', 'terminal', 'casa', 'trabajo', 'personal', 'otro', 'other', 'generic', 'generico']);
+function mejorGuia(q, guias, idioma, nombresEn) {
   let mejor = null, max = 0;
   for (const g of guias) {
-    for (const q of partes) {
-      const s = puntuacionGuia(q, g, idioma, nombresEn[g.id]);
-      if (s > max) { max = s; mejor = g; }
-    }
+    const s = puntuacionGuia(q, g, idioma, nombresEn[g.id]);
+    if (s > max) { max = s; mejor = g; }
   }
-  return max >= 80 ? mejor : null;
+  return max >= 80 ? { g: mejor, s: max } : null;
+}
+export function guiaPorNombre(nombre, guias, { idioma = 'es', nombresEn = {} } = {}) {
+  const completo = mejorGuia(nombre, guias, idioma, nombresEn);
+  if (completo) return completo.g;
+  let r = null;
+  for (const w of normalizar(nombre).split(/[\s()/"'_.-]+/)) {
+    if (w.length < 3 || GENERICAS.has(w)) continue;
+    const m = mejorGuia(w, guias, idioma, nombresEn);
+    if (m && (!r || m.s > r.s)) r = m;
+  }
+  return r ? r.g : null;
 }
 
 export function rellenarPlantilla(texto, { url, token, canje }) {
