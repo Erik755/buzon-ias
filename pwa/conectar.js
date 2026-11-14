@@ -106,10 +106,10 @@ function mejorGuia(q, guias, idioma, nombresEn) {
 export function guiaPorNombre(nombre, guias, { idioma = 'es', nombresEn = {} } = {}) {
   const completo = mejorGuia(nombre, guias, idioma, nombresEn);
   if (completo) return completo.g;
-  // Respaldo palabra por palabra: solo palabras de 4+ letras que son EXACTAMENTE un nombre o alias (100),
+  // Respaldo palabra por palabra: solo palabras de 3+ letras que son EXACTAMENTE un nombre o alias (100),
   // así "con", "with" o "de" nunca eligen guía por prefijo.
   for (const w of normalizar(nombre).split(/[\s()/"'_.-]+/)) {
-    if (w.length < 4 || GENERICAS.has(w)) continue;
+    if (w.length < 3 || GENERICAS.has(w)) continue;
     const m = mejorGuia(w, guias, idioma, nombresEn);
     if (m && m.s === 100) return m.g;
   }

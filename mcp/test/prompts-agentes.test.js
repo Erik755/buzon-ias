@@ -62,6 +62,7 @@ test('el nombre del agente elige su guía aunque lleve más palabras; nombres si
   assert.equal(id('Agente MCP de casa'), null);
   assert.equal(id('Agente con avisos'), null);
   assert.equal(id('Agent with alerts'), null);
+  assert.equal(id('xAI Bot'), 'grok');
   assert.equal(id('Zorro'), null);
 });
 
