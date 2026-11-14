@@ -44,6 +44,8 @@ const deps = {
     return [...(a.status === 'fulfilled' ? a.value : []), ...(aaaa.status === 'fulfilled' ? aaaa.value : [])];
   },
   enviar: (url: string, ip: string, headers: Record<string, string>, body: Uint8Array | string) => postFijo({ url, ip, headers, body, conectar }),
+  // Webhooks: además del status, una pista saneada del error del receptor para el log (nunca a la BD).
+  enviarConPista: (url: string, ip: string, headers: Record<string, string>, body: Uint8Array | string) => postFijo({ url, ip, headers, body, conectar, conPista: true }),
   claves: pub && priv ? { publica: pub, privada: priv, sujeto } : null,
 };
 let secretoBd: { v: string; t: number } | null = null;

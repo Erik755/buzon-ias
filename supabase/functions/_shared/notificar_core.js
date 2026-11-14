@@ -46,7 +46,8 @@ async function procesarUna(n, deps) {
   const descartar = async (d, motivo) => { await deps.rpc('_marcar_descartado', { p_id: n.id, p_destino: `${d}|${motivo}` }); fallos.add(`descartado:${d}|${motivo}`); };
   // En la BD solo la categoría ('http', 'sin_secreto'...); el código HTTP va solo al log.
   const motivoDb = (r) => (!r.motivo || r.motivo.startsWith('http_') ? 'http' : r.motivo);
-  const bitacora = (d, r, t1) => console.log(JSON.stringify({ paso: 'destino', notif: n.id, destino: d, motivo: r.motivo ?? null, status: r.status ?? null, ms: Date.now() - t1 }));
+  // receptor: pista saneada del error que devolvió el receptor (p. ej. "Automation [id] is disabled"); solo log.
+  const bitacora = (d, r, t1) => console.log(JSON.stringify({ paso: 'destino', notif: n.id, destino: d, motivo: r.motivo ?? null, status: r.status ?? null, ms: Date.now() - t1, ...(r.pista ? { receptor: r.pista } : {}) }));
   // Rastro de las excepciones por destino (firmar, marcar, descartar): sin él acaban en un *_fallo sin causa visible.
   const errorDestino = (d, e) => console.error(JSON.stringify({ paso: 'destino_error', notif: n.id, destino: d, error: tipoError(e) }));
 
@@ -108,10 +109,13 @@ export async function enviarWebhook(w, hiloId, deps, evento = 'hilo_nuevo') {
   let ultimo = { ok: false, motivo: 'red_o_timeout', definitivo: false };
   for (const ip of v.ips.slice(0, 3)) { // si una IP no responde, se prueba la siguiente (todas ya validadas)
     try {
-      const status = await deps.enviar(w.webhook_url, ip, headers, cuerpo);
-      if (status >= 300 && status < 400) return { ok: false, motivo: 'redireccion_no_permitida', status, definitivo: true };
+      // enviarConPista (producción) devuelve { status, pista }; enviar (pruebas/compat), solo el número.
+      const res = await (deps.enviarConPista ?? deps.enviar)(w.webhook_url, ip, headers, cuerpo);
+      const status = typeof res === 'number' ? res : res.status;
+      const pista = typeof res === 'number' ? null : res.pista ?? null;
+      if (status >= 300 && status < 400) return { ok: false, motivo: 'redireccion_no_permitida', status, definitivo: true, ...(pista ? { pista } : {}) };
       if (status >= 200 && status < 300) return { ok: true, status };
-      return { ok: false, motivo: `http_${status}`, status, definitivo: definitivoHttp(status) };
+      return { ok: false, motivo: `http_${status}`, status, definitivo: definitivoHttp(status), ...(pista ? { pista } : {}) };
     } catch { ultimo = { ok: false, motivo: 'red_o_timeout', definitivo: false }; }
   }
   return ultimo;

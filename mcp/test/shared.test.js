@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { validarDestino, ipv4Bloqueada, ipv6Bloqueada } from '../../supabase/functions/_shared/ssrf.js';
 import { firmar, verificar, payloadTarea } from '../../supabase/functions/_shared/hmac.js';
 import { cifrar, vapid, b64u, payloadPush, enviarPush, ENDPOINT_PERMITIDO } from '../../supabase/functions/_shared/webpush.js';
-import { postFijo } from '../../supabase/functions/_shared/http_fijo.js';
+import { postFijo, pistaReceptor } from '../../supabase/functions/_shared/http_fijo.js';
 import { secretoValido } from '../../supabase/functions/_shared/interno.js';
 import { detectarTipo, deBase64, nombreSeguro, MAX_BYTES } from '../../supabase/functions/_shared/tipos.js';
 
@@ -337,4 +337,34 @@ test('tope de push: si _permitir_push dice que no, el hilo nuevo no suena; pide_
     await procesar(deps);
     assert.equal(subs, esperaSubs, `${evento}/${permitido}`); assert.equal(consultas, esperaConsulta);
   }
+});
+
+test('postFijo conPista: en un error del receptor devuelve una pista saneada (sin ids, URLs ni claves); en 2xx, sin pista', async () => {
+  const conectarCon = (resp) => async () => ({ writable: new WritableStream({ write() {} }),
+    readable: new ReadableStream({ start(c) { for (const p of resp) c.enqueue(new TextEncoder().encode(p)); c.close(); } }), close() {} });
+  const r = await postFijo({ url: 'https://api2.ejemplo.dev/automations/webhook/x', ip: '93.184.216.34', body: '{}', conPista: true,
+    conectar: conectarCon(['HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\n\r\n{"success":false,"error":"Automation 6971d3db-2d13-',
+      '5465-b86f-b185d9453082 is disabled"}']) });
+  assert.deepEqual(r, { status: 400, pista: 'Automation [id] is disabled' });
+  const ok = await postFijo({ url: 'https://h.dev/', ip: '1.1.1.1', body: '{}', conPista: true, conectar: conectarCon(['HTTP/1.1 200 OK\r\n\r\n{"success":true}']) });
+  assert.deepEqual(ok, { status: 200, pista: null });
+  assert.equal(await postFijo({ url: 'https://h.dev/', ip: '1.1.1.1', body: '{}', conectar: conectarCon(['HTTP/1.1 400 X\r\n\r\n{"error":"y"}']) }), 400, 'sin conPista: solo el número');
+  const p = pistaReceptor('HTTP/1.1 401 X\r\n\r\n{"message":"Bad key Bearer crsr_abcdef0123456789abcdef0123456789 at https://x.dev/a?k=1 tok AbCdEfGhIjKlMnOpQrStUvWx <script>"}');
+  assert.ok(!/crsr_|https|AbCdEf|<|>/.test(p), p);
+  assert.equal(pistaReceptor('HTTP/1.1 500 X\r\n\r\nno json'), null);
+});
+test('webhook: la pista del receptor llega al resultado y a la bitácora, nunca a la BD', async () => {
+  const rpcs = [], logs = [];
+  const orig = console.log; console.log = (l) => logs.push(l);
+  try {
+    await procesar({ claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+      resolver: dns({ 'h.ejemplo.dev': ['93.184.216.34'] }), enviar: async () => assert.fail('usa enviarConPista'),
+      enviarConPista: async () => ({ status: 400, pista: 'Automation [id] is disabled' }),
+      webhooks: async () => [{ id: 'g', webhook_url: 'https://h.ejemplo.dev/', webhook_clave: 'k' }],
+      rpc: async (fn, a) => { rpcs.push([fn, a]); return fn === '_tomar_notificaciones' ? [{ id: 9, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: [] }] : null; } });
+  } finally { console.log = orig; }
+  const linea = logs.map((l) => { try { return JSON.parse(l); } catch { return null; } }).find((l) => l?.paso === 'destino');
+  assert.equal(linea.status, 400); assert.equal(linea.receptor, 'Automation [id] is disabled');
+  assert.equal(rpcs.find(([f]) => f === '_marcar_descartado')[1].p_destino, 'wh:g|http', 'en la BD solo la categoría');
+  assert.ok(!JSON.stringify(rpcs).includes('disabled'));
 });
