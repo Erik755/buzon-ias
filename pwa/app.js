@@ -185,12 +185,25 @@ $('#fondo-panel') && ($('#fondo-panel').onclick = cerrarCajones);
 
 $('#f-login').onsubmit = async (e) => {
   e.preventDefault();
-  const { error } = await sb.auth.signInWithOtp({ email: $('#email').value, options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname } });
+  const btn = e.submitter || $('#f-login button');
+  if (btn?.disabled) return;
+  btn && (btn.disabled = true);
   const msg = $('#login-msg');
-  if (!error) { msg.textContent = t('login.enviado'); return; }
-  msg.textContent = /signups? not allowed|not found/i.test(error.message)
-    ? (getIdioma() === 'en' ? 'That email does not have an account yet. Ask the administrator to invite you.' : 'Ese correo no tiene cuenta todavía. Pídele al administrador que te invite.')
-    : mensajeAmable(error);
+  try {
+    const { error } = await sb.auth.signInWithOtp({ email: $('#email').value, options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname } });
+    if (!error) {
+      msg.textContent = t('login.enviado');
+      setTimeout(() => { if (btn) btn.disabled = false; }, 60_000);
+      return;
+    }
+    msg.textContent = /signups? not allowed|not found/i.test(error.message)
+      ? (getIdioma() === 'en' ? 'That email does not have an account yet. Ask the administrator to invite you.' : 'Ese correo no tiene cuenta todavía. Pídele al administrador que te invite.')
+      : mensajeAmable(error);
+    if (btn) btn.disabled = false;
+  } catch (err) {
+    msg.textContent = mensajeAmable(err);
+    if (btn) btn.disabled = false;
+  }
 };
 $('#salir').onclick = () => sb.auth.signOut();
 $('#ver-guias').onclick = () => {

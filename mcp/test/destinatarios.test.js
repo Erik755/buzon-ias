@@ -117,7 +117,7 @@ test('la PWA tiene el selector, lo llena con la lista y guarda para_agente si es
   assert.match(css, /\[data-theme=/);
   assert.match(i18n, /hilo\.paraPlaceholder/);
   assert.match(i18n, /hilo\.conectado/);
-  assert.match(sw, /buzon-v23-rediseno/);
+  assert.match(sw, /buzon-v24-login-aviso/);
   assert.match(sw, /'destinatarios\.js'/);
   assert.match(build, /'destinatarios\.js'/);
 });

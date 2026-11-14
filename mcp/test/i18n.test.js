@@ -47,3 +47,16 @@ test('las cadenas de avisos y de Por aprobar están en ambos idiomas', () => {
   assert.ok(TEXTOS_I18N.en['nav.aprobar']);
   assert.equal(TEXTOS_I18N.es['nav.aprobar'], 'Por aprobar');
 });
+
+test('el login avisa que el correo llega de Supabase y a revisar spam, en los dos idiomas', () => {
+  for (const idioma of ['es', 'en']) {
+    for (const clave of ['login.ayuda', 'login.enviado']) {
+      const texto = TEXTOS_I18N[idioma][clave];
+      assert.match(texto, /Supabase/);
+      assert.match(texto, /noreply@mail\.app\.supabase\.io/);
+      assert.match(texto, /spam/i);
+    }
+  }
+  assert.match(TEXTOS_I18N.es['login.enviado'], /Caduca en 1 hora/);
+  assert.match(TEXTOS_I18N.en['login.enviado'], /expires in 1 hour/i);
+});
