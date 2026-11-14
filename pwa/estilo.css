@@ -252,6 +252,11 @@ nav button{flex:1 1 0;min-width:0}
 .guia-pasos{counter-reset:paso;padding:0;margin:12px 0 12px 0;list-style:none}
 .guia-pasos li{display:flex;gap:12px;margin:0 0 12px;align-items:flex-start}
 .guia-pasos li::before{counter-increment:paso;content:counter(paso);flex:none;width:28px;height:28px;border-radius:50%;background:var(--acento);color:var(--acento-texto);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;margin-top:2px}
+#guias-publicas,#guia-detalle{scroll-margin-top:calc(var(--cab) + 12px);outline:none}
+.prompt-agente{margin-top:16px;padding-top:12px;border-top:1px solid var(--linea)}
+.prompt-etiqueta{margin:0 0 6px}
+.prompt-agente pre{max-height:320px;overflow:auto}
+.resaltar{box-shadow:0 0 0 3px var(--acento);transition:box-shadow .3s ease}
 .bloque-copia{position:relative;background:var(--panel-2);border:1px solid var(--linea);border-radius:var(--radio-md);padding:12px 12px 48px;margin:8px 0}
 .bloque-copia pre,.bloque-copia code,code,pre{font-family:var(--mono);font-size:.85rem;line-height:1.45;white-space:pre-wrap;word-break:break-word;margin:0}
 .bloque-copia .fila{position:absolute;right:8px;bottom:8px}

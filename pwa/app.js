@@ -6,7 +6,8 @@ import { mensajeAmable, conBotones, avisar, mostrarAviso } from './errores.js';
 import { etiquetaAviso } from './avisos.js';
 import { fusionarMensajes, idsMensajes, firmaLista, debeEncuestar, debeEncuestarLista, enviarMensajeChat, INTERVALO_SONDEO_MS } from './chat.js';
 import { t, setIdioma, getIdioma, onIdioma, iniciarIdioma } from './i18n.js';
-import { buscarGuias, rellenarPlantilla, enmascararToken, ALIAS } from './conectar.js';
+import { buscarGuias, puntuacionGuia, rellenarPlantilla, enmascararToken, ALIAS } from './conectar.js';
+import { ETIQUETA_PROMPT, promptDeGuia, PROMPT_DE_GUIA } from './prompts-agentes.js';
 import { filtrarHilos, inicialDe, hiloCerrado } from './layout.js';
 import { listaDestinatarios, idAgentePorNombre, nombresDeHilos } from './destinatarios.js';
 import { aplicarTema, leerTema, alternarTema as cambiarTema, sincronizarControlTema } from './temas.js';
@@ -18,7 +19,7 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fecha = (f) => new Date(f).toLocaleString(getIdioma() === 'en' ? 'en-US' : 'es-MX', { dateStyle: 'short', timeStyle: 'short' });
-let usuario, buzon, buzones = [], vista = 'chat', filtro = 'todos', tokenGuia = '', buscaHilos = '';
+let usuario, buzon, buzones = [], vista = 'chat', filtro = 'todos', tokenGuia = '', guiaPendiente = '', buscaHilos = '';
 let hiloAbierto = null, listaHilosCache = [], listaAgentesCache = [], listaRemitentesExtra = [];
 const URL_MCP = MCP_URL || 'https://buzon-ias-mcp.vercel.app/api/mcp';
 const URL_CANJE = URL_MCP.replace(/\/api\/mcp$/, '/api/canje');
@@ -209,7 +210,7 @@ $('#salir').onclick = () => sb.auth.signOut();
 $('#ver-guias').onclick = () => {
   const g = $('#guias-publicas');
   if (g.childElementCount) g.replaceChildren();
-  else pintarConectar(g, false);
+  else { pintarConectar(g, false); llevarA(g); }
 };
 
 function irA(v) {
@@ -892,14 +893,17 @@ async function pintarAgentes(v) {
     const { data, error } = await sb.rpc('crear_codigo_config', { p_buzon: buzon.id, p_nombre: nombre, p_minutos: +$('#nl-min').value });
     if (error) return avisar('No se pudo generar el código', error);
     const frase = t('agentes.fraseConectate', { url: URL_MCP });
+    const promptNl = promptParaNombre(nombre);
     mostrarSecreto({
       titulo: t('agentes.codigoPara', { nombre }),
       aviso: t('agentes.noPegarChat'),
       valor: data.codigo,
       extraHtml: `<p class="meta">${esc(t('agentes.sirveUna', { fecha: fecha(data.vence_en) }))}</p>
-        <p>${esc(t('agentes.dile'))}</p><pre>${esc(frase)}</pre><button type="button" class="copiar" id="cp-frase">${esc(t('agentes.copiarFrase'))}</button>`,
+        <p>${esc(t('agentes.dile'))}</p><pre>${esc(frase)}</pre><button type="button" class="copiar" id="cp-frase">${esc(t('agentes.copiarFrase'))}</button>
+        ${htmlPrompt(promptNl, 'cp-prompt-nl')}`,
     });
     $('#cp-frase') && ($('#cp-frase').onclick = (ev) => copiar(frase, ev.target));
+    $('#cp-prompt-nl') && ($('#cp-prompt-nl').onclick = (ev) => copiar(promptNl, ev.target));
     $('#nl-nombre').value = ''; pintarCodigos();
   };
   $('#f-ag').onsubmit = async (e) => {
@@ -914,7 +918,7 @@ async function pintarAgentes(v) {
       titulo: t('agentes.claveDe', { nombre: ag.nombre }),
       aviso: t('agentes.claveUnaVez'),
       valor: token,
-      alUsar: () => { tokenGuia = token; $('#dlg').close(); irA('conectar'); },
+      alUsar: () => { tokenGuia = token; guiaPendiente = ag.nombre; $('#dlg').close(); irA('conectar'); },
     });
     pintar();
   };
@@ -957,6 +961,42 @@ async function pintarPush() {
   };
 }
 
+// Prompt para que el agente active sus avisos, con la dirección del MCP ya puesta.
+function promptLleno(guiaId) {
+  const p = promptDeGuia(guiaId, getIdioma());
+  return p ? rellenarPlantilla(p, { url: URL_MCP }) : '';
+}
+// Guía que corresponde al nombre que el dueño le dio al agente (p. ej. "Grok" → grok), o null.
+function guiaPorNombre(nombre) {
+  const nombresEn = Object.fromEntries(Object.entries(GUIAS_EN).map(([id, x]) => [id, x.nombre]));
+  // Solo coincidencias claras (nombre exacto, prefijo o palabra): una parecida a medias no elige guía.
+  const g = GUIAS.map((x) => ({ x, s: puntuacionGuia(nombre, x, getIdioma(), nombresEn[x.id]) }))
+    .filter((r) => r.s >= 80).sort((a, b) => b.s - a.s)[0];
+  return g ? g.x : null;
+}
+function promptParaNombre(nombre) {
+  const g = guiaPorNombre(nombre);
+  if (g?.id === 'instinct' || g?.id === 'chatgpt') return ''; // Instinct ya tiene su prompt; ChatGPT no se conecta con clave.
+  return promptLleno(g && PROMPT_DE_GUIA[g.id] ? g.id : 'mcp-generico');
+}
+function htmlPrompt(texto, idBoton) {
+  if (!texto) return '';
+  return `<div class="prompt-agente"><p class="prompt-etiqueta"><b>${esc(ETIQUETA_PROMPT[getIdioma()] || ETIQUETA_PROMPT.es)}</b></p>
+    <div class="bloque-copia"><pre>${esc(texto)}</pre><div class="fila"><button type="button" class="copiar" id="${idBoton}">${esc(t('conectar.copiarPrompt'))}</button></div></div></div>`;
+}
+// Lleva la vista a un bloque que acaba de aparecer (p. ej. la guía elegida, que en el celular queda bajo el borde):
+// desplaza, enfoca sin volver a saltar y lo resalta un momento. Respeta "reducir movimiento".
+function llevarA(el) {
+  if (!el) return;
+  const quieto = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  requestAnimationFrame(() => {
+    el.scrollIntoView({ behavior: quieto ? 'auto' : 'smooth', block: 'start' });
+    try { el.focus({ preventScroll: true }); } catch { /* navegadores viejos */ }
+    el.classList.remove('resaltar'); void el.offsetWidth; el.classList.add('resaltar');
+    setTimeout(() => el.classList.remove('resaltar'), 1800);
+  });
+}
+
 async function copiar(texto, boton) {
   try { await navigator.clipboard.writeText(texto); } catch {
     const ta = document.createElement('textarea'); ta.value = texto; document.body.append(ta); ta.select(); document.execCommand('copy'); ta.remove();
@@ -997,7 +1037,7 @@ function pintarConectar(v, conSesion) {
           <button type="button" class="secundario" id="tok-revelar">${esc(t('secreto.revelar'))}</button>
           <button type="button" class="secundario" id="tok-copiar">${esc(t('secreto.copiar'))}</button></div>` : `<button type="button" class="secundario" id="ir-ag">${esc(t('conectar.irAgentes'))}</button>`}` : ''}
     </div>
-    <div id="guia-detalle" class="tarjeta" hidden></div>
+    <div id="guia-detalle" class="tarjeta" tabindex="-1" aria-live="polite" hidden></div>
     ${conSesion ? `<div class="tarjeta" id="caja-probar"><b>${esc(t('conectar.probar'))}</b><div id="probar-caja"></div></div>` : ''}`;
   v.append(wrap);
   $('#cp-url').onclick = (e) => copiar(URL_MCP, e.target);
@@ -1061,7 +1101,7 @@ function pintarConectar(v, conSesion) {
     activo = visible.findIndex((x) => x.id === g.id);
     pintarLista();
     mostrarGuia(g);
-    detalle.focus?.();
+    llevarA(detalle);
   };
 
   const mostrarGuia = (g) => {
@@ -1097,6 +1137,13 @@ function pintarConectar(v, conSesion) {
       pr.append(b, document.createTextNode(r(tg.probar)));
       detalle.append(pr);
     }
+    // Junto al link del MCP va el prompt para que el agente active sus avisos (la clave nunca va en él).
+    const prompt = promptLleno(g.id);
+    if (prompt) {
+      const caja = document.createElement('div'); caja.innerHTML = htmlPrompt(prompt, 'cp-prompt-guia');
+      detalle.append(caja.firstElementChild);
+      const bp = detalle.querySelector('#cp-prompt-guia'); bp.onclick = () => copiar(prompt, bp);
+    }
   };
 
   input.addEventListener('input', () => { activo = -1; elegido = null; detalle.hidden = true; pintarLista(); });
@@ -1109,6 +1156,11 @@ function pintarConectar(v, conSesion) {
     else if (e.key === 'End') { e.preventDefault(); activo = visible.length - 1; pintarLista(); }
   });
   pintarLista();
+  // Venimos de "Ver dónde pegarla" con la clave recién creada: abre la guía del agente por su nombre y bájala a la vista.
+  if (guiaPendiente) {
+    const g = guiaPorNombre(guiaPendiente); guiaPendiente = '';
+    if (g) seleccionar(g);
+  }
 
   if (conSesion) cargarProbar(wrap);
 }
