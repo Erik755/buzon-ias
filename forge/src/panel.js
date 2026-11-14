@@ -75,7 +75,9 @@ export async function desvincularHilo({ issueId }, deps) {
 export function panelOps(deps) {
   return {
     hiloResumen: (req) => hiloResumen({ issueId: req.context.extension.issue.id }, deps),
-    vincularHilo: (req) => vincularHilo({ issueId: req.context.extension.issue.id, ...req.payload }, deps),
+    // Del payload solo se toma hiloId: el issue SIEMPRE sale del contexto de Forge, nunca del
+    // cliente (un issueId en el payload no puede redirigir el vínculo a otro issue).
+    vincularHilo: (req) => vincularHilo({ issueId: req.context.extension.issue.id, hiloId: req.payload?.hiloId }, deps),
     desvincularHilo: (req) => desvincularHilo({ issueId: req.context.extension.issue.id }, deps),
   };
 }

@@ -197,3 +197,10 @@ test('panelOps: toma el issue.id (no la key) del contexto del issue panel', asyn
   const r = await panelOps(deps).hiloResumen(reqPanel());
   assert.equal(r.vinculado, true);
 });
+
+test('panelOps: un issueId en el payload no redirige el vínculo a otro issue', async () => {
+  const deps = depsBase();
+  await panelOps(deps).vincularHilo(reqPanel({ hiloId: HILO, issueId: '99999' }));
+  assert.equal(deps._vinculos.get(ISSUE), HILO);
+  assert.equal(deps._vinculos.has('99999'), false);
+});
