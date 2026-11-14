@@ -61,13 +61,15 @@ export function payloadPush(evento, hiloId, detalle) {
 }
 
 // enviar(url, ip, headers, body) -> status. Se valida el host, se resuelve UNA vez y se envía a esa IP.
-export async function enviarPush(sub, payload, claves, { resolver, enviar }) {
+// Urgency 'high' en pide_aprobacion, pide_cierre e hilo_nuevo: con 'normal', Android (p. ej. OPPO) retrasa el aviso en reposo.
+export async function enviarPush(sub, payload, claves, { resolver, enviar }, evento) {
   if (!ENDPOINT_PERMITIDO.test(sub.endpoint)) return { ok: false, motivo: 'endpoint_no_permitido', definitivo: true };
   const v = await validarDestino(sub.endpoint, resolver);
   if (!v.ok) return { ...v, definitivo: !DNS_TEMPORALES.has(v.motivo) };
   const cuerpo = await cifrar(payload, sub);
+  const urgencia = evento === 'pide_aprobacion' || evento === 'pide_cierre' || evento === 'hilo_nuevo' ? 'high' : 'normal';
   const status = await enviar(sub.endpoint, v.ips[0], {
-    Authorization: await vapid(sub.endpoint, claves), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: '86400', Urgency: 'normal',
+    Authorization: await vapid(sub.endpoint, claves), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: '86400', Urgency: urgencia,
   }, cuerpo);
   return { ok: status >= 200 && status < 300, status, definitivo: definitivoHttp(status) };
 }

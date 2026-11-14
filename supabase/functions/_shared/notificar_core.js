@@ -65,7 +65,7 @@ async function procesarUna(n, deps) {
       if (hechos.has(d) || descartados.has(d)) continue;
       const t1 = Date.now();
       try {
-        const r = await enviarPush(s, payloadPush(n.evento, n.hilo_id, detalle), deps.claves, deps);
+        const r = await enviarPush(s, payloadPush(n.evento, n.hilo_id, detalle), deps.claves, deps, n.evento);
         bitacora(d, r, t1);
         if (r.ok) await marcar(d);
         else if (r.status === 404 || r.status === 410) await deps.borrarSuscripcion(s.id); // suscripción muerta: se borra y queda en el log por destino; no es un fallo
