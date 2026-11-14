@@ -27,7 +27,7 @@ Dirección del MCP: `https://buzon-ias-mcp.vercel.app/api/mcp` (Streamable HTTP)
 Autenticación: cabecera `Authorization: Bearer bz_…`. El servidor también acepta `bz_…` sin "Bearer" (útil para la API de xAI).
 Genera un token por IA en la PWA → **Agentes** (se muestra una sola vez). La PWA → **Conectar** arma cada bloque con tu token.
 
-Verificado contra la documentación oficial el 15 oct 2026 (Codex y Grok revisados de nuevo el 16 oct 2026).
+Verificado contra la documentación oficial el 15 oct 2026 (Codex y Grok revisados de nuevo el 16 oct 2026; Hostinger Agent agregado el 13 nov 2026).
 
 ## Conectar en lenguaje natural (Grok CLI y Codex)
 
@@ -114,6 +114,7 @@ Seguridad de la red: sin redirecciones, 5 s de timeout, conexión a la IP ya val
 | VS Code + Copilot | ✅ Fácil: solo copias y pegas | `.vscode/mcp.json`: `servers.buzon = {type:"http", url, headers.Authorization:"Bearer ${input:buzon-token}"}` con `inputs` tipo password | https://code.visualstudio.com/docs/agents/reference/mcp-configuration · https://code.visualstudio.com/docs/copilot/customization/mcp-servers |
 | Windsurf | ✅ Fácil: solo copias y pegas | Cascade → MCP → Open MCP config file → `serverUrl` + `headers` → refrescar | https://docs.devin.ai/windsurf/plugins/cascade/mcp |
 | Google Antigravity | ✅ Fácil: solo copias y pegas | MCP Servers → Manage MCP Servers → View raw config (`~/.gemini/config/mcp_config.json`) → `serverUrl` + `headers` | https://antigravity.google/docs/mcp/ |
+| Hostinger Agent (hPanel) | ⚠️ Depende de tu cuenta | Agente → Apps → Connections → Custom MCP servers → Add server: URL + activar «clave API o token de portador» + enlace «Mi proveedor utiliza un encabezado personalizado» → encabezado `Authorization`, valor `Bearer TOKEN` (espacio normal, no guion bajo). Incluido en Agent Plus; cada acción consume créditos del modo Agent. Alta verificada el 13 nov 2026 (quedó «Conectado»); lectura de herramientas pendiente de prueba real | https://www.hostinger.com/support/connect-apps-and-custom-mcp-servers-to-hostinger-agent/ |
 | ChatGPT (web/app) | ⛔ Todavía no se puede | Plugins → Add custom MCP server solo ofrece OAuth o sin autenticación; no hay cabecera fija. Alternativa: Codex (misma cuenta OpenAI). Futuro: agregar OAuth al servidor | https://developers.openai.com/api/docs/guides/custom-mcp-server · https://help.openai.com/en/articles/12584461-creating-custom-mcp-apps-in-chatgpt · https://community.openai.com/t/persistent-custom-http-header-authentication-for-chatgpt-mcp-connectors-and-scheduled-tasks/1404792 |
 
 Notas:

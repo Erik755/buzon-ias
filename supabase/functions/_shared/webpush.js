@@ -1,4 +1,4 @@
-import { validarDestino } from './ssrf.js';
+import { validarDestino, definitivoHttp, DNS_TEMPORALES } from './ssrf.js';
 // Web Push sin dependencias (WebCrypto): cifrado RFC 8291 (aes128gcm) + VAPID RFC 8292 (ES256). Deno y Node 22.
 const enc = new TextEncoder();
 export const b64u = {
@@ -48,19 +48,26 @@ export async function vapid(endpoint, { publica, privada, sujeto }, ahora = Math
 // Solo servicios de push conocidos (mismo filtro que el CHECK de la BD).
 export const ENDPOINT_PERMITIDO = /^https:\/\/(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|[a-z0-9.-]+\.push\.apple\.com|[a-z0-9.-]+\.notify\.windows\.com)\//;
 
-// Notificación genérica: nada del hilo (ni título) para que no se lea en la pantalla de bloqueo.
-export function payloadPush(evento, hiloId) {
-  return JSON.stringify({ titulo: 'Buzón de IAs', cuerpo: evento === 'pide_aprobacion' ? 'Tienes una aprobación pendiente' : evento === 'pide_cierre' ? 'Una IA pide cerrar un hilo' : 'Tienes un hilo nuevo', url: `./?hilo=${hiloId}` });
+// El aviso muestra solo el título del hilo y quién pide (nunca el contenido del mensaje).
+// detalle = { tituloHilo, quien } | null: si falta (p. ej. la consulta falló), cae al texto genérico.
+export function payloadPush(evento, hiloId, detalle) {
+  const tituloHilo = String(detalle?.tituloHilo ?? '').trim().slice(0, 40);
+  const quien = String(detalle?.quien ?? '').trim().slice(0, 40);
+  let cuerpo;
+  if (evento === 'pide_aprobacion') cuerpo = tituloHilo && quien ? `${quien} pide aprobación: ${tituloHilo}` : 'Tienes una aprobación pendiente';
+  else if (evento === 'pide_cierre') cuerpo = tituloHilo && quien ? `${quien} pide cerrar: ${tituloHilo}` : 'Una IA pide cerrar un hilo';
+  else cuerpo = tituloHilo ? (quien ? `Hilo nuevo de ${quien}: ${tituloHilo}` : `Hilo nuevo: ${tituloHilo}`) : 'Tienes un hilo nuevo';
+  return JSON.stringify({ titulo: 'Buzón de IAs', cuerpo, url: `./?hilo=${hiloId}` });
 }
 
 // enviar(url, ip, headers, body) -> status. Se valida el host, se resuelve UNA vez y se envía a esa IP.
 export async function enviarPush(sub, payload, claves, { resolver, enviar }) {
-  if (!ENDPOINT_PERMITIDO.test(sub.endpoint)) return { ok: false, motivo: 'endpoint_no_permitido' };
+  if (!ENDPOINT_PERMITIDO.test(sub.endpoint)) return { ok: false, motivo: 'endpoint_no_permitido', definitivo: true };
   const v = await validarDestino(sub.endpoint, resolver);
-  if (!v.ok) return v;
+  if (!v.ok) return { ...v, definitivo: !DNS_TEMPORALES.has(v.motivo) };
   const cuerpo = await cifrar(payload, sub);
   const status = await enviar(sub.endpoint, v.ips[0], {
     Authorization: await vapid(sub.endpoint, claves), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: '86400', Urgency: 'normal',
   }, cuerpo);
-  return { ok: status >= 200 && status < 300, status };
+  return { ok: status >= 200 && status < 300, status, definitivo: definitivoHttp(status) };
 }

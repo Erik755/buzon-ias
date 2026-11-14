@@ -846,7 +846,231 @@ do $$ declare h uuid := (select id from _nota where k='anonimo'); begin
   end;
 end $$;
 reset role;
--- 197-203: código de jueces con alcances={leer} y dias_token=90 (rev11, pedido de revisión de Grok):
+
+reset role;
+
+-- 197-210 Avisos por agente y por hilo (017): el dueño elige quién se despierta en cada mensaje.
+-- Fixtures propias, sin reutilizar agentes que las pruebas anteriores pudieron borrar.
+insert into public.agentes(id, buzon_id, nombre, webhook_url, webhook_secreto) values
+  ('bbbbbbbb-0000-0000-0000-0000000000c1','aaaaaaaa-0000-0000-0000-000000000001','Avisable','https://hooks.ejemplo.dev/avisable','whsec_x'),
+  ('bbbbbbbb-0000-0000-0000-0000000000c2','aaaaaaaa-0000-0000-0000-000000000001','SinHook',null,null),
+  ('bbbbbbbb-0000-0000-0000-0000000000c3','aaaaaaaa-0000-0000-0000-000000000001','Participa','https://hooks.ejemplo.dev/participa','whsec_x');
+insert into public.hilos(id, buzon_id, tipo, titulo)
+  values ('cccccccc-0000-0000-0000-0000000000c0','aaaaaaaa-0000-0000-0000-000000000001','avance','Chat avisos');
+
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$
+declare h uuid := 'cccccccc-0000-0000-0000-0000000000c0';
+        a1 uuid := 'bbbbbbbb-0000-0000-0000-0000000000c1';
+        a2 uuid := 'bbbbbbbb-0000-0000-0000-0000000000c2';
+        r record; n int; ok boolean;
+begin
+  -- Lista: las tres IAs, ninguna suscrita; Avisable y Participa tienen aviso inmediato; SinHook no.
+  n := 0;
+  for r in select * from public.agentes_para_avisos(h) loop
+    n := n + 1;
+    if r.id = a1 then
+      if r.suscrito or not r.tiene_aviso or r.participa then perform pg_temp.falla('197 avisable mal'); return; end if;
+    elsif r.id = a2 then
+      if r.suscrito or r.tiene_aviso then perform pg_temp.falla('197 sinhook mal'); return; end if;
+    end if;
+  end loop;
+  if n < 3 then perform pg_temp.falla('197 faltan agentes: '||n); return; end if;
+  if (select to_jsonb(x) from public.agentes_para_avisos(h) x where x.id = a1)
+       ?| array['webhook_url','webhook_clave','webhook_secreto']
+    then perform pg_temp.falla('197 no debe devolver secretos ni url'); return; end if;
+  perform pg_temp.ok('197 el dueño ve las IAs del buzón, con o sin aviso inmediato, sin secretos');
+
+  ok := public.suscribir_agente_hilo(h, a1, true);
+  if ok and exists (select 1 from public.hilo_suscripciones where hilo_id=h and agente_id=a1)
+     and exists (select 1 from public.auditoria where accion='hilo:suscribir' and objeto_id=a1)
+    then perform pg_temp.ok('198 el dueño suscribe a una IA y queda en la auditoría');
+    else perform pg_temp.falla('198'); end if;
+
+  -- SinHook también se puede marcar (se enterará cuando revise): la fila existe, pero no es destino de webhook.
+  perform public.suscribir_agente_hilo(h, a2, true);
+  if exists (select 1 from public.hilo_suscripciones where agente_id=a2)
+    then perform pg_temp.ok('199 se puede marcar una IA sin webhook (se enterará cuando revise)');
+    else perform pg_temp.falla('199'); end if;
+
+  -- No se puede suscribir un agente de otro buzón.
+  begin
+    perform public.suscribir_agente_hilo(h, 'bbbbbbbb-0000-0000-0000-000000000009', true);
+    perform pg_temp.falla('200');
+  exception when insufficient_privilege then
+    perform pg_temp.ok('200 no se suscribe un agente de otro buzón');
+  end;
+
+  -- INSERT directo está revocado.
+  begin
+    insert into public.hilo_suscripciones(hilo_id, agente_id, buzon_id)
+      values (h, 'bbbbbbbb-0000-0000-0000-0000000000c3', 'aaaaaaaa-0000-0000-0000-000000000001');
+    perform pg_temp.falla('201');
+  exception when insufficient_privilege then
+    perform pg_temp.ok('201 el dueño no escribe la tabla directo, solo la RPC');
+  end;
+end $$;
+
+-- Intruso: ni ver ni marcar las suscripciones de Erik.
+select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$
+declare h uuid := 'cccccccc-0000-0000-0000-0000000000c0';
+        a1 uuid := 'bbbbbbbb-0000-0000-0000-0000000000c1';
+begin
+  begin
+    perform public.suscribir_agente_hilo(h, a1, true);
+    perform pg_temp.falla('202');
+  exception when insufficient_privilege then
+    perform pg_temp.ok('202 un dueño ajeno no puede suscribir en el hilo de Erik');
+  end;
+  begin
+    perform public.agentes_para_avisos(h);
+    perform pg_temp.falla('203');
+  exception when insufficient_privilege then
+    perform pg_temp.ok('203 un dueño ajeno no lista las IAs del hilo de Erik');
+  end;
+  if not exists (select 1 from public.hilo_suscripciones)
+    then perform pg_temp.ok('204 RLS: el intruso no ve las suscripciones de Erik');
+    else perform pg_temp.falla('204'); end if;
+end $$;
+
+set role anon;
+do $$ begin
+  begin
+    perform public.suscribir_agente_hilo('cccccccc-0000-0000-0000-0000000000c0', 'bbbbbbbb-0000-0000-0000-0000000000c1', true);
+    perform pg_temp.falla('205');
+  exception when insufficient_privilege then
+    perform pg_temp.ok('205 anon no puede suscribir');
+  end;
+end $$;
+
+reset role;
+-- Destinos: Avisable (suscrita, sin haber escrito) se despierta en cada mensaje;
+-- Participa (involucrada, no suscrita) sigue el freno de "ya se avisó y no leyó";
+-- SinHook nunca es destino; el autor nunca se avisa a sí mismo.
+do $$
+declare h uuid := 'cccccccc-0000-0000-0000-0000000000c0';
+        av uuid := 'bbbbbbbb-0000-0000-0000-0000000000c1';
+        sh uuid := 'bbbbbbbb-0000-0000-0000-0000000000c2';
+        pa uuid := 'bbbbbbbb-0000-0000-0000-0000000000c3';
+        n bigint; ds uuid[];
+begin
+  insert into public.mensajes(hilo_id, autor_humano, cuerpo)
+    values (h, '11111111-1111-1111-1111-111111111111', 'hola a los dos');
+  select max(id) into n from public.notificaciones where hilo_id=h and evento='mensaje_nuevo';
+  select array_agg(id order by id) into ds from public._destinos_webhook(n);
+  if ds = array[av] then
+    perform pg_temp.ok('206 un mensaje del dueño despierta a la IA suscrita, no a la que no tiene webhook');
+  else
+    perform pg_temp.falla('206 ' || coalesce(ds::text,'null'));
+  end if;
+
+  -- Participa escribe: no se avisa a sí misma; Avisable sí (pasaron más de 10 s: atrasamos el aviso anterior).
+  update public.notificaciones set entregados = array['wh:'||av::text], creado_en = now() - interval '11 seconds' where id = n;
+  insert into public.mensajes(hilo_id, autor_agente, cuerpo) values (h, pa, 'respuesta de Participa');
+  select max(id) into n from public.notificaciones where hilo_id=h and evento='mensaje_nuevo';
+  select array_agg(id order by id) into ds from public._destinos_webhook(n);
+  if ds = array[av] and not (pa = any(ds)) and not (sh = any(coalesce(ds, array[]::uuid[]))) then
+    perform pg_temp.ok('207 mensaje de una IA: se avisa a la suscrita, nunca al autor ni a quien no tiene webhook');
+  else
+    perform pg_temp.falla('207 ' || coalesce(ds::text,'null'));
+  end if;
+
+  -- Segundo mensaje inmediato: tope de 10 s, Avisable no se vuelve a despertar.
+  update public.notificaciones set entregados = array['wh:'||av::text] where id = n;
+  insert into public.mensajes(hilo_id, autor_humano, cuerpo)
+    values (h, '11111111-1111-1111-1111-111111111111', 'otro al momento');
+  select max(id) into n from public.notificaciones where hilo_id=h and evento='mensaje_nuevo';
+  select array_agg(id) into ds from public._destinos_webhook(n);
+  if ds is null or not (av = any(ds)) then
+    perform pg_temp.ok('208 tope: no se vuelve a despertar a la misma IA antes de 10 s');
+  else
+    perform pg_temp.falla('208 ' || ds::text);
+  end if;
+
+  -- Pasados 10 s, sí se despierta otra vez (cada mensaje).
+  update public.notificaciones set creado_en = creado_en - interval '11 seconds' where hilo_id=h;
+  insert into public.mensajes(hilo_id, autor_humano, cuerpo)
+    values (h, '11111111-1111-1111-1111-111111111111', 'después de un rato');
+  select max(id) into n from public.notificaciones where hilo_id=h and evento='mensaje_nuevo';
+  select array_agg(id) into ds from public._destinos_webhook(n);
+  if av = any(ds) then
+    perform pg_temp.ok('209 tras 10 s, un mensaje nuevo sí vuelve a despertar a la IA suscrita');
+  else
+    perform pg_temp.falla('209 ' || coalesce(ds::text,'null'));
+  end if;
+end $$;
+
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$
+declare h uuid := 'cccccccc-0000-0000-0000-0000000000c0';
+        a1 uuid := 'bbbbbbbb-0000-0000-0000-0000000000c1';
+        ok boolean;
+begin
+  ok := public.suscribir_agente_hilo(h, a1, false);
+  if ok is not false then perform pg_temp.falla('210 ret='||coalesce(ok::text,'null'));
+  elsif exists (select 1 from public.hilo_suscripciones where hilo_id=h and agente_id=a1) then perform pg_temp.falla('210 sigue suscrito');
+  elsif not exists (select 1 from public.auditoria where accion='hilo:desuscribir' and objeto_id=a1) then perform pg_temp.falla('210 sin auditoria');
+  else perform pg_temp.ok('210 el dueño quita la suscripción y queda en la auditoría'); end if;
+  -- Borrar el agente suscrito (SinHook sigue marcado) olvida su fila.
+  perform public.suscribir_agente_hilo(h, 'bbbbbbbb-0000-0000-0000-0000000000c2', true);
+end $$;
+reset role;
+do $$ begin
+  -- Simula el borrado (soft) que hace borrar_agentes: el trigger limpia suscripciones.
+  update public.agentes set eliminado_en = now() where id = 'bbbbbbbb-0000-0000-0000-0000000000c2';
+  if not exists (select 1 from public.hilo_suscripciones where agente_id = 'bbbbbbbb-0000-0000-0000-0000000000c2')
+    then perform pg_temp.ok('211 al borrar un agente se olvidan sus suscripciones');
+    else perform pg_temp.falla('211'); end if;
+end $$;
+
+-- 212-216 Migración 018: descartados separados de entregados y detalles menores de suscribir_agente_hilo.
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_name='notificaciones' and column_name='descartados')
+    then perform pg_temp.ok('212 la cola tiene descartados separados de entregados');
+    else perform pg_temp.falla('212'); end if;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$
+declare h uuid := 'cccccccc-0000-0000-0000-0000000000c0';
+        a1 uuid := 'bbbbbbbb-0000-0000-0000-0000000000c1';
+        na int;
+begin
+  -- p_activo null: error claro, no borrado silencioso.
+  begin
+    perform public.suscribir_agente_hilo(h, a1, null);
+    perform pg_temp.falla('213');
+  exception when null_value_not_allowed then
+    perform pg_temp.ok('213 p_activo null se rechaza en vez de borrar en silencio');
+  end;
+  -- Repetir la suscripción no duplica la auditoría.
+  perform public.suscribir_agente_hilo(h, a1, true);
+  select count(*) into na from public.auditoria where accion='hilo:suscribir' and objeto_id=a1;
+  perform public.suscribir_agente_hilo(h, a1, true);
+  if (select count(*) from public.auditoria where accion='hilo:suscribir' and objeto_id=a1) = na
+    then perform pg_temp.ok('214 suscribir dos veces no duplica la auditoría');
+    else perform pg_temp.falla('214'); end if;
+  -- Desuscribir sin estar suscrito no escribe auditoría.
+  select count(*) into na from public.auditoria where accion='hilo:desuscribir' and objeto_id=a1;
+  perform public.suscribir_agente_hilo(h, a1, false);
+  perform public.suscribir_agente_hilo(h, a1, false);
+  if (select count(*) from public.auditoria where accion='hilo:desuscribir' and objeto_id=a1) = na + 1
+    then perform pg_temp.ok('215 desuscribir sin cambio no escribe auditoría');
+    else perform pg_temp.falla('215'); end if;
+end $$;
+-- El dueño no puede marcar descartes directamente: solo service_role.
+do $$ begin
+  begin
+    perform public._marcar_descartado(1, 'wh:x|http');
+    perform pg_temp.falla('216');
+  exception when insufficient_privilege then
+    perform pg_temp.ok('216 el dueño no puede marcar descartados, solo service_role');
+  end;
+end $$;
+reset role;
+
+-- 217-223: código de jueces con alcances={leer} y dias_token=90 (rev11, pedido de revisión de Grok):
 -- los parámetros se aplican de verdad (no los defaults), el token lee pero no crea ni responde.
 create temp table if not exists _demo(codigo text, token text, agente uuid);
 grant all on _demo to public;
@@ -855,13 +1079,13 @@ do $$ declare j jsonb; begin
   j := public.crear_codigo_config('aaaaaaaa-0000-0000-0000-000000000001','JuecesCodegeist', 10, '{leer}', 90);
   insert into _demo(codigo) values (j->>'codigo');
   if (select alcances='{leer}'::text[] and dias_token=90 from public.codigos_config where id=(j->>'id')::uuid)
-  then perform pg_temp.ok('197 el código guarda alcances={leer} y dias_token=90 (no los defaults)'); else perform pg_temp.falla('197'); end if;
+  then perform pg_temp.ok('217 el código guarda alcances={leer} y dias_token=90 (no los defaults)'); else perform pg_temp.falla('217'); end if;
 end $$;
 set role anon;
 do $$ declare j jsonb; begin
   j := public.canjear_codigo_config((select codigo from _demo));
   if j->>'token' ~ '^bz_[0-9a-f]{64}$' and j->>'alcances'='["leer"]'
-  then perform pg_temp.ok('198 el canje devuelve un token leer-only'); else perform pg_temp.falla('198'); end if;
+  then perform pg_temp.ok('218 el canje devuelve un token leer-only'); else perform pg_temp.falla('218'); end if;
   update _demo set token=j->>'token';
 end $$;
 reset role;
@@ -869,43 +1093,43 @@ do $$ declare t record; tok text := (select token from _demo); begin
   select tk.* into t from public.tokens tk join public.agentes ag on ag.id=tk.agente_id
    where ag.buzon_id='aaaaaaaa-0000-0000-0000-000000000001' and tk.hash_token=encode(sha256(convert_to(tok,'UTF8')),'hex');
   if t.alcances='{leer}'::text[] and t.vence_en between now()+interval '89 days' and now()+interval '91 days'
-  then perform pg_temp.ok('199 en la BD el token queda con {leer} y vence en ~90 días'); else perform pg_temp.falla('199'); end if;
+  then perform pg_temp.ok('219 en la BD el token queda con {leer} y vence en ~90 días'); else perform pg_temp.falla('219'); end if;
   update _demo set agente=t.agente_id;
 end $$;
 set role anon;
 do $$ declare tok text := (select token from _demo); ag uuid := (select agente from _demo); begin
   if (public.mcp_leer(tok) ? 'hilos') and (public.mcp_leer(tok, 'cccccccc-0000-0000-0000-000000000001') ? 'hilo')
-  then perform pg_temp.ok('200 el token leer-only lista y lee hilos'); else perform pg_temp.falla('200'); end if;
+  then perform pg_temp.ok('220 el token leer-only lista y lee hilos'); else perform pg_temp.falla('220'); end if;
   reset role;
   if exists (select 1 from public.lecturas where agente_id=ag and hilo_id='cccccccc-0000-0000-0000-000000000001')
-  then perform pg_temp.ok('201 la lectura también marca leído con alcance {leer}'); else perform pg_temp.falla('201'); end if;
+  then perform pg_temp.ok('221 la lectura también marca leído con alcance {leer}'); else perform pg_temp.falla('221'); end if;
   set role anon;
-  begin perform public.mcp_crear(tok, 'tarea', 'x'); perform pg_temp.falla('202');
-    exception when others then if sqlerrm like '403:%' then perform pg_temp.ok('202 el token leer-only no puede crear hilos'); else raise; end if; end;
-  begin perform public.mcp_responder(tok, 'cccccccc-0000-0000-0000-000000000001', 'x', 'comentar'); perform pg_temp.falla('203');
-    exception when others then if sqlerrm like '403:%' then perform pg_temp.ok('203 el token leer-only no puede responder'); else raise; end if; end;
+  begin perform public.mcp_crear(tok, 'tarea', 'x'); perform pg_temp.falla('222');
+    exception when others then if sqlerrm like '403:%' then perform pg_temp.ok('222 el token leer-only no puede crear hilos'); else raise; end if; end;
+  begin perform public.mcp_responder(tok, 'cccccccc-0000-0000-0000-000000000001', 'x', 'comentar'); perform pg_temp.falla('223');
+    exception when others then if sqlerrm like '403:%' then perform pg_temp.ok('223 el token leer-only no puede responder'); else raise; end if; end;
 end $$;
 reset role;
 
--- 204-206: aislamiento buzón demo (rev11): un token leer/90 del buzón ajeno NO toca el buzón de Erik.
+-- 224-226: aislamiento buzón demo (rev11): un token leer/90 del buzón ajeno NO toca el buzón de Erik.
 create temp table if not exists _demo2(codigo text, token text);
 grant all on _demo2 to public;
 set role authenticated; select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
 do $$ declare j jsonb; begin
   j := public.crear_codigo_config('aaaaaaaa-0000-0000-0000-000000000002','DemoJueces', 10, '{leer}', 90);
   insert into _demo2(codigo) values (j->>'codigo');
-  perform pg_temp.ok('204 el dueño del buzón demo genera su código leer/90');
+  perform pg_temp.ok('224 el dueño del buzón demo genera su código leer/90');
 end $$;
 set role anon;
 do $$ declare j jsonb; tok text; begin
   j := public.canjear_codigo_config((select codigo from _demo2));
   tok := j->>'token';
   update _demo2 set token=tok;
-  begin perform public.mcp_leer(tok, 'cccccccc-0000-0000-0000-000000000001'); perform pg_temp.falla('205');
-    exception when others then if sqlerrm like '404:%' then perform pg_temp.ok('205 el token del buzón demo NO lee el hilo de Erik (404)'); else raise; end if; end;
+  begin perform public.mcp_leer(tok, 'cccccccc-0000-0000-0000-000000000001'); perform pg_temp.falla('225');
+    exception when others then if sqlerrm like '404:%' then perform pg_temp.ok('225 el token del buzón demo NO lee el hilo de Erik (404)'); else raise; end if; end;
   if (public.mcp_leer(tok)->>'hilos')::text not like '%cccccccc-0000-0000-0000-000000000001%'
-  then perform pg_temp.ok('206 la lista del buzón demo no incluye hilos de Erik'); else perform pg_temp.falla('206'); end if;
+  then perform pg_temp.ok('226 la lista del buzón demo no incluye hilos de Erik'); else perform pg_temp.falla('226'); end if;
 end $$;
 reset role;
-\echo TODAS_LAS_PRUEBAS_PASARON
 
+\echo TODAS_LAS_PRUEBAS_PASARON

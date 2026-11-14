@@ -1,2 +1,4 @@
 # Vector de prueba público del RFC 8291 §5 (no es un secreto real)
 055aae7231165193765d376274cc910cee8eab54:mcp/test/shared.test.js:generic-api-key:41
+# Cadena ficticia de una prueba de enmascarado en conectar.test.js; no es un secreto real
+4a3cf147bbb6e99d544e4fd5b9fc31f1d317c218:mcp/test/conectar.test.js:generic-api-key:66

@@ -40,6 +40,11 @@ export function ipv6Bloqueada(ip) {
 }
 export const HOSTS_BLOQUEADOS = /(^|\.)(localhost|local|internal|localdomain|home\.arpa)$|^metadata(\.google\.internal)?$/i;
 
+// Motivos de DNS que ameritan reintento; el resto de fallos de validación es definitivo.
+export const DNS_TEMPORALES = new Set(['dns_fallo', 'dns_vacio']);
+// 408, 429 y 5xx son temporales (se reintentan); redirecciones y el resto de 4xx son definitivos.
+export const definitivoHttp = (s) => (s >= 300 && s < 400) || (s >= 400 && s < 500 && s !== 408 && s !== 429);
+
 // Valida la URL y resuelve el host. `resolver(host)` devuelve una lista de IPs.
 export async function validarDestino(url, resolver) {
   let u;

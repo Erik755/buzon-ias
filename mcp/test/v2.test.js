@@ -130,14 +130,18 @@ test('notificador: push al dueño, webhook firmado a los otros agentes, SSRF blo
   const nuevo = await servicio.crear(T.a, { tipo: 'tarea', titulo: 'Secreto: clave del banco 1234 y más texto largo' });
   const llamadas = [];
   const enviar = async (url, ip, headers, body) => { llamadas.push({ url, ip, o: { headers, body } }); return url.endsWith('viejo') ? 410 : 201; };
+  const detalles = [];
   const r = await procesar({
     rpc: rpcPg(pool, 'service_role'), claves, enviar,
+    detalleHilo: async (h, ev, c) => { detalles.push([h, ev, c]); return { tituloHilo: 'Solo el título', quien: 'Agente A' }; },
     suscripciones: async (b) => (await pool.query('select id,endpoint,p256dh,auth from push_suscripciones where buzon_id=$1', [b])).rows,
     borrarSuscripcion: async (id) => { await pool.query('delete from push_suscripciones where id=$1', [id]); },
     webhooks: async (b, ex) => (await pool.query('select id,webhook_url,webhook_secreto from agentes where buzon_id=$1 and webhook_url is not null and id is distinct from $2', [b, ex])).rows,
     resolver: async (h) => ({ 'hooks.ejemplo.dev': ['93.184.216.34'], 'interno.ejemplo.dev': ['10.0.0.5'], 'fcm.googleapis.com': ['142.250.1.1'], 'updates.push.services.mozilla.com': ['34.1.1.1'] })[h] ?? [],
   });
-  assert.deepEqual(r, { procesadas: 1, ok: 1, errores: 0 });
+  assert.deepEqual(r, { procesadas: 1, ok: 1, errores: 0 }, 'borrar una suscripción muerta (410) es limpieza normal, no un fallo');
+  const { rows: desc } = await pool.query('select estado, ultimo_error, descartados from notificaciones order by id desc limit 1');
+  assert.deepEqual(desc, [{ estado: 'enviada', ultimo_error: null, descartados: [] }], 'el 410 no deja descarte ni error: no afirma una entrega en ese dispositivo, solo deja de intentarlo');
   const push = llamadas.filter((l) => /fcm|mozilla/.test(l.url));
   assert.equal(push.length, 2); assert.equal(push[0].o.headers['Content-Encoding'], 'aes128gcm'); assert.match(push[0].o.headers.Authorization, /^vapid t=/);
   assert.ok(!Buffer.from(push[0].o.body).toString('latin1').includes('banco'), 'el push va cifrado');
@@ -148,6 +152,31 @@ test('notificador: push al dueño, webhook firmado a los otros agentes, SSRF blo
   assert.ok(await verificar('whsec_b', wh[0].o.body, wh[0].o.headers['X-Buzon-Firma']));
   assert.deepEqual(JSON.parse(wh[0].o.body).hilo_id, nuevo.id); assert.ok(!wh[0].o.body.includes('banco'));
   assert.ok(!llamadas.some((l) => l.url.includes('interno')));
+  assert.deepEqual(detalles, [[nuevo.id, 'hilo_nuevo', 'bbbbbbbb-0000-0000-0000-00000000000a']], 'detalle del hilo consultado una sola vez por aviso');
+});
+test('push: un 403 sigue siendo fallo definitivo: va a descartados con la categoría y el error queda visible', async () => {
+  await pool.query('delete from push_suscripciones');
+  await pool.query("update notificaciones set estado='enviada'");
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const p256dh = Buffer.from(await crypto.subtle.exportKey('raw', kp.publicKey)).toString('base64url');
+  await pool.query(`insert into push_suscripciones(buzon_id,humano_id,endpoint,p256dh,auth) values ('${BZ}','${ERIK}','https://fcm.googleapis.com/fcm/send/e2',$1,$2)`,
+    [p256dh, Buffer.alloc(16, 7).toString('base64url')]);
+  const vk = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
+  const claves = { publica: Buffer.from(await crypto.subtle.exportKey('raw', vk.publicKey)).toString('base64url'), privada: (await crypto.subtle.exportKey('jwk', vk.privateKey)).d, sujeto: 'mailto:t@t.t' };
+  await servicio.crear(T.a, { tipo: 'avance', titulo: 'aviso con push 403' });
+  let envios = 0;
+  const d = { rpc: rpcPg(pool, 'service_role'), claves, enviar: async () => { envios++; return 403; },
+    suscripciones: async (b) => (await pool.query('select id,endpoint,p256dh,auth from push_suscripciones where buzon_id=$1', [b])).rows,
+    borrarSuscripcion: async () => assert.fail('un 403 no borra la suscripción'),
+    webhooks: async () => [], resolver: async () => ['142.250.1.1'] };
+  for (let i = 0; i < 4; i++) { await procesar(d); await pool.query("update notificaciones set proximo_intento=now() where estado='pendiente'"); }
+  assert.equal(envios, 1, 'el destino descartado no se reintenta');
+  const { rows } = await pool.query('select estado, intentos, ultimo_error, descartados from notificaciones order by id desc limit 1');
+  assert.equal(rows[0].estado, 'fallida', 'un push rechazado (403) termina como fallo visible, nunca como enviada');
+  assert.equal(rows[0].intentos, 3);
+  assert.match(rows[0].ultimo_error, /descartado:push:.+\|http/, 'en la BD solo la categoría, sin código HTTP');
+  assert.equal(rows[0].descartados.length, 1);
+  assert.equal((await pool.query('select count(*)::int n from push_suscripciones')).rows[0].n, 1, 'la suscripción 403 se conserva');
 });
 test('webhook: destino que resuelve a IP privada no se reintenta (error permanente)', async () => {
   await pool.query("update agentes set webhook_url='https://rebind.ejemplo.dev/x' where nombre='Agente B'");
@@ -156,8 +185,11 @@ test('webhook: destino que resuelve a IP privada no se reintenta (error permanen
   const d = { rpc: rpcPg(pool, 'service_role'), claves: null, enviar: async () => assert.fail('no debe llamar'), suscripciones: async () => [], borrarSuscripcion: async () => {},
     webhooks: async () => (await pool.query("select id,webhook_url,webhook_secreto from agentes where nombre='Agente B'")).rows, resolver: async () => ['169.254.169.254'] };
   for (let i = 0; i < 4; i++) { await procesar(d); await pool.query("update notificaciones set proximo_intento=now() where estado='pendiente'"); }
-  const { rows } = await pool.query("select estado, intentos from notificaciones order by id desc limit 1");
-  assert.deepEqual(rows, [{ estado: 'enviada', intentos: 1 }], 'un destino prohibido se descarta en el primer intento');
+  const { rows } = await pool.query("select estado, intentos, ultimo_error, descartados from notificaciones order by id desc limit 1");
+  assert.equal(rows[0].estado, 'fallida', 'un destino prohibido termina como fallo visible, nunca como enviada');
+  assert.equal(rows[0].intentos, 3);
+  assert.match(rows[0].ultimo_error, /descartado:wh:.+\|resuelve_a_ip_privada/);
+  assert.deepEqual(rows[0].descartados, ['wh:bbbbbbbb-0000-0000-0000-00000000000b|resuelve_a_ip_privada']);
 });
 
 // ---- Configuración en lenguaje natural ----

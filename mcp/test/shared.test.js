@@ -44,7 +44,7 @@ test('Web Push: cifrado idéntico al ejemplo del RFC 8291', async () => {
     { privada: 'yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw', publica: 'BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8', salt: 'DGv6ra1nlYgDCS1FRnbzlw' });
   assert.equal(b64u.enc(out), esperado);
 });
-test('Web Push: JWT VAPID ES256 válido y payload solo con título', async () => {
+test('Web Push: JWT VAPID ES256 válido y payload genérico de respaldo', async () => {
   const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
   const jwk = await crypto.subtle.exportKey('jwk', kp.privateKey), raw = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
   const h = await vapid('https://fcm.googleapis.com/fcm/send/abc', { publica: b64u.enc(raw), privada: jwk.d, sujeto: 'mailto:x@y.z' });
@@ -52,7 +52,21 @@ test('Web Push: JWT VAPID ES256 válido y payload solo con título', async () =>
   assert.ok(await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, kp.publicKey, b64u.dec(c), new TextEncoder().encode(`${a}.${b}`)));
   assert.equal(JSON.parse(new TextDecoder().decode(b64u.dec(b))).aud, 'https://fcm.googleapis.com');
   const p = JSON.parse(payloadPush('pide_aprobacion', 'id'));
-  assert.deepEqual(p, { titulo: 'Buzón de IAs', cuerpo: 'Tienes una aprobación pendiente', url: './?hilo=id' }, 'texto genérico: nada del hilo en la pantalla de bloqueo');
+  assert.deepEqual(p, { titulo: 'Buzón de IAs', cuerpo: 'Tienes una aprobación pendiente', url: './?hilo=id' }, 'sin detalle: texto genérico de respaldo');
+});
+test('Web Push: payload con título del hilo y quién pide, sin contenido; recortes y respaldos', () => {
+  const j = (s) => JSON.parse(s);
+  assert.equal(j(payloadPush('pide_aprobacion', 'h1', { tituloHilo: 'Factura de mayo', quien: 'Agente B' })).cuerpo, 'Agente B pide aprobación: Factura de mayo');
+  assert.equal(j(payloadPush('pide_cierre', 'h1', { tituloHilo: 'Factura de mayo', quien: 'Agente B' })).cuerpo, 'Agente B pide cerrar: Factura de mayo');
+  assert.equal(j(payloadPush('hilo_nuevo', 'h1', { tituloHilo: 'Presupuesto', quien: 'Agente B' })).cuerpo, 'Hilo nuevo de Agente B: Presupuesto');
+  assert.equal(j(payloadPush('hilo_nuevo', 'h1', { tituloHilo: 'Presupuesto' })).cuerpo, 'Hilo nuevo: Presupuesto', 'sin quién pide: solo el título');
+  assert.equal(j(payloadPush('pide_aprobacion', 'h1', { tituloHilo: 'Factura' })).cuerpo, 'Tienes una aprobación pendiente', 'detalle incompleto: respaldo genérico');
+  assert.equal(j(payloadPush('pide_cierre', 'h1', null)).cuerpo, 'Una IA pide cerrar un hilo');
+  const largo = j(payloadPush('pide_aprobacion', 'h1', { tituloHilo: 'x'.repeat(80), quien: 'y'.repeat(80) }));
+  assert.ok(largo.cuerpo.startsWith('y'.repeat(40)) && !largo.cuerpo.startsWith('y'.repeat(41)), 'quién recortado a 40');
+  assert.ok(largo.cuerpo.includes('x'.repeat(40)) && !largo.cuerpo.includes('x'.repeat(41)), 'título recortado a 40');
+  const u = j(payloadPush('pide_aprobacion', 'h1', { tituloHilo: 'T', quien: 'Q' }));
+  assert.deepEqual(Object.keys(u).sort(), ['cuerpo', 'titulo', 'url'], 'sin campos extra ni contenido del mensaje');
 });
 test('Adjuntos: tipo real por bytes mágicos; rechaza disfraces, SVG y HTML', () => {
   const B = (s) => new TextEncoder().encode(s), H = (...x) => new Uint8Array(x);
@@ -120,7 +134,7 @@ test('webhook con clave del receptor (Grok Bot): Authorization Bearer, sin firma
   const llamadas = [];
   const deps = { resolver: dns({ 'api.grok.ejemplo': ['93.184.216.34'] }), enviar: async (url, ip, headers, body) => { llamadas.push({ url, ip, headers, body }); return 200; } };
   const r = await enviarWebhook({ id: 'g', webhook_url: 'https://api.grok.ejemplo/v1/hooks/abc', webhook_clave: 'clave-grok-123456' }, 'hilo-1', deps);
-  assert.deepEqual(r, { ok: true });
+  assert.deepEqual(r, { ok: true, status: 200 });
   assert.equal(llamadas[0].headers.Authorization, 'Bearer clave-grok-123456');
   assert.equal(llamadas[0].headers['X-Buzon-Firma'], undefined);
   assert.deepEqual(Object.keys(JSON.parse(llamadas[0].body)).sort(), ['aviso', 'evento', 'hilo_id']);
@@ -128,12 +142,12 @@ test('webhook con clave del receptor (Grok Bot): Authorization Bearer, sin firma
   await enviarWebhook({ id: 'g', webhook_url: 'https://api.grok.ejemplo/x', webhook_clave: 'clave-grok-123456', webhook_secreto: 'whsec_z' }, 'h', deps, 'mensaje_nuevo');
   assert.ok(await verificar('whsec_z', llamadas[0].body, llamadas[0].headers['X-Buzon-Firma']), 'con ambas: firma + clave');
   assert.equal(llamadas[0].headers.Authorization, 'Bearer clave-grok-123456');
-  assert.deepEqual(await enviarWebhook({ id: 'g', webhook_url: 'https://api.grok.ejemplo/x' }, 'h', deps), { ok: false, motivo: 'sin_secreto' });
+  assert.deepEqual(await enviarWebhook({ id: 'g', webhook_url: 'https://api.grok.ejemplo/x' }, 'h', deps), { ok: false, motivo: 'sin_secreto', definitivo: true });
 });
 test('webhook: si la primera IP no responde se prueba la siguiente (todas validadas)', async () => {
   const ips = [];
   const deps = { resolver: dns({ 'h.ejemplo.dev': ['93.184.216.34', '93.184.216.35'] }), enviar: async (u, ip) => { ips.push(ip); if (ip.endsWith('34')) throw new Error('timeout'); return 204; } };
-  assert.deepEqual(await enviarWebhook({ webhook_url: 'https://h.ejemplo.dev/', webhook_secreto: 'whsec_a' }, 'h', deps), { ok: true });
+  assert.deepEqual(await enviarWebhook({ webhook_url: 'https://h.ejemplo.dev/', webhook_secreto: 'whsec_a' }, 'h', deps), { ok: true, status: 204 });
   assert.deepEqual(ips, ['93.184.216.34', '93.184.216.35']);
 });
 test('push: un fallo de DNS se reintenta (no se marca entregado); un destino prohibido no', async () => {
@@ -150,9 +164,108 @@ test('push: un fallo de DNS se reintenta (no se marca entregado); un destino pro
   };
   let r = await correr(async () => { throw new Error('SERVFAIL'); });
   assert.ok(!r.some(([f]) => f === '_marcar_entregado'));
+  assert.ok(!r.some(([f]) => f === '_marcar_descartado'), 'un fallo de DNS no se descarta: se reintenta');
   assert.equal(r.find(([f]) => f === '_cerrar_notificacion')[1].p_ok, false, 'queda pendiente para reintentar');
   r = await correr(async () => ['10.0.0.1']);
-  assert.ok(r.some(([f]) => f === '_marcar_entregado'), 'IP privada: se descarta, no se reintenta');
+  assert.ok(!r.some(([f]) => f === '_marcar_entregado'), 'IP privada: nunca cuenta como entregado');
+  assert.ok(r.some(([f]) => f === '_marcar_descartado'), 'IP privada: se descarta con motivo, no se reintenta');
+});
+test('webhook: clasificación HTTP — 408/429/5xx temporales; otros 4xx y 3xx definitivos con status', async () => {
+  const w = { id: 'g', webhook_url: 'https://h.ejemplo.dev/', webhook_secreto: 'whsec_a' };
+  for (const [status, definitivo] of [[401, true], [404, true], [410, true], [408, false], [429, false], [500, false], [503, false], [302, true]]) {
+    const r = await enviarWebhook(w, 'h', { resolver: dns({ 'h.ejemplo.dev': ['93.184.216.34'] }), enviar: async () => status });
+    assert.equal(r.ok, false); assert.equal(r.status, status); assert.equal(r.definitivo, definitivo, `status ${status}`);
+  }
+});
+test('notificador: un 404 definitivo va a descartados como categoría http (sin código en la BD) y no se reintenta', async () => {
+  const rpcs = [];
+  const deps = { claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+    resolver: dns({ 'h.ejemplo.dev': ['93.184.216.34'] }), enviar: async () => 404,
+    webhooks: async () => [{ id: 'g', webhook_url: 'https://h.ejemplo.dev/', webhook_secreto: 'whsec_a' }],
+    rpc: async (fn, a) => { rpcs.push([fn, a]); return fn === '_tomar_notificaciones' ? [{ id: 4, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: [] }] : null; } };
+  const res = await procesar(deps);
+  assert.ok(!rpcs.some(([f]) => f === '_marcar_entregado'), 'nada se marca entregado');
+  const d = rpcs.find(([f]) => f === '_marcar_descartado');
+  assert.ok(d, 'el destino se descarta'); assert.equal(d[1].p_destino, 'wh:g|http', 'en la BD solo la categoría, sin código HTTP');
+  const cierre = rpcs.find(([f]) => f === '_cerrar_notificacion');
+  assert.equal(cierre[1].p_ok, false); assert.match(cierre[1].p_error, /descartado:wh:g\|http$/);
+  assert.equal(res.errores, 1);
+});
+test('notificador: un fallo definitivo (sin_secreto) va a descartados con motivo, nunca a entregados, y queda error visible', async () => {
+  const rpcs = []; let envios = 0;
+  const deps = { claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+    resolver: dns({}), enviar: async () => { envios++; return 200; },
+    webhooks: async () => [{ id: 'g', webhook_url: 'https://h.ejemplo.dev/' }],
+    rpc: async (fn, a) => { rpcs.push([fn, a]); return fn === '_tomar_notificaciones' ? [{ id: 5, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: [] }] : null; } };
+  const res = await procesar(deps);
+  assert.equal(envios, 0, 'sin secreto ni clave no se envía nada');
+  assert.ok(!rpcs.some(([f]) => f === '_marcar_entregado'), 'nada se marca entregado');
+  const d = rpcs.find(([f]) => f === '_marcar_descartado');
+  assert.ok(d, 'el destino se descarta'); assert.equal(d[1].p_destino, 'wh:g|sin_secreto');
+  const cierre = rpcs.find(([f]) => f === '_cerrar_notificacion');
+  assert.equal(cierre[1].p_ok, false); assert.match(cierre[1].p_error, /descartado:wh:g\|sin_secreto/);
+  assert.equal(res.errores, 1);
+});
+test('notificador: cada destino deja una línea de log JSON con motivo y status, sin URL ni secretos', async () => {
+  const lineas = [];
+  const original = console.log;
+  console.log = (x) => lineas.push(x);
+  try {
+    await procesar({ claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+      resolver: dns({ 'h.ejemplo.dev': ['93.184.216.34'] }), enviar: async () => 404,
+      webhooks: async () => [{ id: 'g', webhook_url: 'https://h.ejemplo.dev/secreto', webhook_secreto: 'whsec_supersecreto' }],
+      rpc: async (fn) => (fn === '_tomar_notificaciones' ? [{ id: 42, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: [] }] : null) });
+  } finally { console.log = original; }
+  const log = lineas.map((x) => JSON.parse(x)).find((x) => x.paso === 'destino');
+  assert.ok(log, 'hay una línea de log por destino');
+  assert.deepEqual([log.notif, log.destino, log.motivo, log.status], [42, 'wh:g', 'http_404', 404]);
+  assert.ok(typeof log.ms === 'number');
+  assert.ok(!lineas.some((x) => x.includes('h.ejemplo.dev') || x.includes('whsec_')), 'el log no lleva URL ni secretos');
+});
+test('notificador: una excepción por destino queda en el log (paso destino_error) sin URL ni secretos', async () => {
+  const errores = [], lineas = [];
+  const origErr = console.error, origLog = console.log;
+  console.error = (x) => errores.push(String(x));
+  console.log = (x) => lineas.push(String(x));
+  try {
+    await procesar({ claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+      resolver: dns({ 'h.ejemplo.dev': ['93.184.216.34'] }), enviar: async () => 200,
+      webhooks: async () => [{ id: 'g', webhook_url: 'https://h.ejemplo.dev/x', webhook_secreto: 'whsec_uno' }],
+      rpc: async (fn) => {
+        if (fn === '_tomar_notificaciones') return [{ id: 43, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: [] }];
+        if (fn === '_marcar_entregado') throw new TypeError('rpc caída en https://h.ejemplo.dev/oculto?k=whsec_filtrada');
+        return null;
+      } });
+  } finally { console.error = origErr; console.log = origLog; }
+  const err = errores.map((x) => JSON.parse(x)).find((x) => x.paso === 'destino_error');
+  assert.ok(err, 'hay una línea destino_error');
+  assert.deepEqual([err.notif, err.destino], [43, 'wh:g']);
+  assert.equal(err.error, 'TypeError', 'solo el tipo de la excepción, nunca el mensaje crudo');
+  assert.ok(err.error.length <= 120);
+  assert.ok(!errores.some((x) => x.includes('whsec_') || x.includes('h.ejemplo.dev')), 'la línea de error no lleva URL ni secretos');
+  assert.ok(lineas.some((x) => JSON.parse(x).paso === 'destino'), 'la línea paso destino sigue existiendo');
+});
+test('notificador: ultimo_error se recorta a 300 (el tope de _cerrar_notificacion), no a 400', async () => {
+  const rpcs = [];
+  const destinos = Array.from({ length: 8 }, (_, i) => ({ id: `webhook-000${i}`, webhook_url: 'https://h.ejemplo.dev/' }));
+  await procesar({ claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+    resolver: dns({}), enviar: async () => assert.fail('sin secreto no se envía'),
+    webhooks: async () => destinos,
+    rpc: async (fn, a) => { rpcs.push([fn, a]); return fn === '_tomar_notificaciones' ? [{ id: 44, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: [] }] : null; } });
+  const cierre = rpcs.find(([f]) => f === '_cerrar_notificacion');
+  assert.ok(cierre[1].p_error.length <= 300, 'p_error nunca supera los 300 caracteres que guarda la BD');
+  assert.equal(rpcs.filter(([f]) => f === '_marcar_descartado').length, 8, 'los 8 destinos quedan descartados');
+});
+test('notificador: un descarte previo no se reintenta y el error sigue visible al cerrar', async () => {
+  const rpcs = []; let envios = 0;
+  const deps = { claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+    resolver: dns({}), enviar: async () => { envios++; return 200; },
+    webhooks: async () => [{ id: 'g', webhook_url: 'https://h.ejemplo.dev/' }],
+    rpc: async (fn, a) => { rpcs.push([fn, a]); return fn === '_tomar_notificaciones' ? [{ id: 6, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: ['wh:g|sin_secreto'] }] : null; } };
+  await procesar(deps);
+  assert.equal(envios, 0, 'el destino descartado no se reintenta');
+  const cierre = rpcs.find(([f]) => f === '_cerrar_notificacion');
+  assert.equal(cierre[1].p_ok, false); assert.match(cierre[1].p_error, /descartado:wh:g\|sin_secreto/);
 });
 test('notificador: si falla la consulta de destinos, el aviso queda para reintento (no se pierde)', async () => {
   const rpcs = [];
@@ -161,6 +274,20 @@ test('notificador: si falla la consulta de destinos, el aviso queda para reinten
     rpc: async (fn, a) => { rpcs.push([fn, a]); return fn === '_tomar_notificaciones' ? [{ id: 9, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [] }] : null; } });
   assert.deepEqual(res, { procesadas: 1, ok: 0, errores: 1 });
   assert.equal(rpcs.find(([f]) => f === '_cerrar_notificacion')[1].p_ok, false);
+});
+test('notificador: una excepción en un aviso no aborta el lote', async () => {
+  const rpcs = [];
+  const deps = { claves: null, suscripciones: async () => [], borrarSuscripcion: async () => {},
+    resolver: dns({}), enviar: async () => 200, webhooks: async () => [],
+    rpc: async (fn, a) => { rpcs.push([fn, a]);
+      if (fn === '_tomar_notificaciones') return [
+        { id: 7, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: [] },
+        { id: 8, buzon_id: 'b', hilo_id: 'h', evento: 'mensaje_nuevo', entregados: [], descartados: [] }];
+      if (fn === '_cerrar_notificacion' && a.p_id === 7) throw new Error('db');
+      return null; } };
+  const res = await procesar(deps);
+  assert.equal(res.procesadas, 2);
+  assert.ok(rpcs.some(([f, a]) => f === '_cerrar_notificacion' && a.p_id === 8), 'el segundo aviso se procesa');
 });
 test('postFijo: una conexión que abre después del timeout se cierra (no queda colgada)', async () => {
   let cerrada = false, abrir;
