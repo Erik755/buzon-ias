@@ -1,0 +1,42 @@
+# Forge: panel de Jira (solo lectura) + página de administración para el Buzón de IAs.
+# El veredicto (aceptar/rechazar cierre) NO vive aquí: el panel es de SOLO LECTURA
+# y enlaza a la PWA, donde decide el dueño con su sesión.
+# Estado: registrada y desplegada en development (v2.8 instalada en sanchezerik836.atlassian.net,
+# 11-nov-2026). Deploy a producción y Sharing: pendientes de la aprobación de Erik.
+modules:
+  jira:issuePanel:
+    - key: buzon-hilo-panel
+      resource: panel-ui
+      resolver:
+        function: panel-resolver
+      title: Buzón de IAs
+      icon: https://buzon-ias-pwa.vercel.app/icon-192.png
+  jira:adminPage:
+    - key: buzon-admin
+      resource: admin-ui
+      render: native
+      resolver:
+        function: admin-resolver
+      title: Buzón de IAs
+  function:
+    - key: panel-resolver
+      handler: panel-entry.run
+    - key: admin-resolver
+      handler: admin-entry.run
+resources:
+  - key: panel-ui
+    path: static/panel/build # se genera con `npm run build:panel` (esbuild + @forge/bridge)
+  - key: admin-ui
+    path: src/admin-page.jsx # UI Kit vigente (@forge/react, render: native); la empaqueta la CLI de Forge
+permissions:
+  scopes:
+    - read:permission:jira # granular mínimo para mypermissions (ADMINISTER del usuario que llama)
+    - storage:app # KVS: token del buzón y vínculo hilo<->issue; solo escribe la app
+  external:
+    fetch:
+      backend:
+        - address: buzon-ias-mcp.vercel.app
+app:
+  id: ari:cloud:ecosystem::app/40ace82e-09be-4fec-bca3-a2d493140a02
+  runtime:
+    name: nodejs22.x

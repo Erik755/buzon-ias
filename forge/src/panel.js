@@ -1,0 +1,83 @@
+// Lógica del resolver del PANEL, con dependencias inyectadas para probar sin entorno Forge.
+// Este módulo NO conoce guardarToken ni probarToken: esas operaciones viven en admin.js y el
+// resolver del panel nunca las expone (separación exigida en la revisión de Grok).
+//
+// El vínculo issue<->hilo vive en Forge KVS (clave hilo:<issue.id>), NO en una propiedad del
+// issue: las propiedades las puede escribir cualquier usuario con EDIT_ISSUES por REST,
+// saltándose las validaciones, y las puede leer cualquiera con BROWSE. Solo la app escribe KVS.
+// Se usa issue.id (estable al mover el issue entre proyectos), no la key.
+import { leerEnBuzon, ErrorPanel, PWA_URL, UUID_RE } from './comun.js';
+
+// Etiquetas en inglés para el enum interno de estados (que vive en español en la base de
+// datos). El panel de Jira se presenta en inglés; un valor fuera del enum pasa tal cual.
+const ESTADO_EN = {
+  abierto: 'Open',
+  tomado: 'In progress',
+  pide_aprobacion: 'Awaiting approval',
+  aprobado: 'Approved',
+  rechazado: 'Rejected',
+  pide_cierre: 'Ready to close',
+  cerrado: 'Closed',
+};
+
+// Resumen de solo lectura para el panel. Incluye esAdmin para que el front oculte las
+// acciones de vincular/desvincular a quien no es admin (la verificación real es del servidor).
+// deps: { fetchImpl, leerToken, leerVinculo, esAdmin }
+export async function hiloResumen({ issueId }, deps) {
+  const esAdmin = await deps.esAdmin().catch(() => false);
+  const hiloId = await deps.leerVinculo(issueId);
+  if (!hiloId) return { vinculado: false, esAdmin };
+  if (!UUID_RE.test(hiloId)) throw new ErrorPanel('corrupt link in storage');
+  const token = await deps.leerToken();
+  if (!token) throw new ErrorPanel('token not configured (administration page)');
+  const h = await leerEnBuzon(deps.fetchImpl, token, { hilo_id: hiloId });
+  // mcp_leer devuelve { hilo: { titulo, estado, ... }, mensajes: [...], ... } (verificado en
+  // la integración local contra el servidor real). Defaults si falta h.hilo.
+  const hilo = h.hilo || {};
+  const mensajes = h.mensajes || [];
+  return {
+    vinculado: true,
+    esAdmin,
+    hiloId,
+    titulo: hilo.titulo || '(untitled)',
+    estado: ESTADO_EN[hilo.estado] || hilo.estado || 'unknown',
+    totalMensajes: mensajes.length,
+    ultimos: mensajes.slice(-5).map((m) => ({ autor: m.autor, creado_en: m.creado_en, cuerpo: (m.cuerpo || '').slice(0, 280) })),
+    enlacePwa: `${PWA_URL}?hilo=${hiloId}`,
+  };
+}
+
+// Vincula el issue con un hilo. Solo administradores del sitio (rev4: un editor podría
+// exponer cualquier hilo del buzón a todo el que pueda ver el issue). Exige, en orden:
+// 1. UUID bien formado; 2. rol admin; 3. token configurado;
+// 4. que el token pueda leer el hilo (pertenencia hilo<->buzón). Solo entonces escribe.
+// deps: { fetchImpl, leerToken, requireAdmin, guardarVinculo }
+export async function vincularHilo({ issueId, hiloId }, deps) {
+  if (!UUID_RE.test(hiloId || '')) throw new ErrorPanel('thread_id is not a UUID');
+  await deps.requireAdmin();
+  const token = await deps.leerToken();
+  if (!token) throw new ErrorPanel('token not configured (administration page)');
+  await leerEnBuzon(deps.fetchImpl, token, { hilo_id: hiloId }); // lanza si no hay acceso
+  await deps.guardarVinculo(issueId, hiloId);
+  return { vinculado: true, hiloId };
+}
+
+// Desvincular también es administración del vínculo: mismo requisito de rol admin.
+// deps: { requireAdmin, borrarVinculo }
+export async function desvincularHilo({ issueId }, deps) {
+  await deps.requireAdmin();
+  await deps.borrarVinculo(issueId);
+  return { vinculado: false };
+}
+
+// Definiciones que expone el resolver del panel. Las llaves de este objeto SON la superficie
+// pública del panel: las pruebas verifican que no incluye operaciones de administración.
+export function panelOps(deps) {
+  return {
+    hiloResumen: (req) => hiloResumen({ issueId: req.context.extension.issue.id }, deps),
+    // Del payload solo se toma hiloId: el issue SIEMPRE sale del contexto de Forge, nunca del
+    // cliente (un issueId en el payload no puede redirigir el vínculo a otro issue).
+    vincularHilo: (req) => vincularHilo({ issueId: req.context.extension.issue.id, hiloId: req.payload?.hiloId }, deps),
+    desvincularHilo: (req) => desvincularHilo({ issueId: req.context.extension.issue.id }, deps),
+  };
+}

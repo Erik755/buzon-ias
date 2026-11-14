@@ -1070,4 +1070,66 @@ do $$ begin
 end $$;
 reset role;
 
+-- 217-223: código de jueces con alcances={leer} y dias_token=90 (rev11, pedido de revisión de Grok):
+-- los parámetros se aplican de verdad (no los defaults), el token lee pero no crea ni responde.
+create temp table if not exists _demo(codigo text, token text, agente uuid);
+grant all on _demo to public;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$ declare j jsonb; begin
+  j := public.crear_codigo_config('aaaaaaaa-0000-0000-0000-000000000001','JuecesCodegeist', 10, '{leer}', 90);
+  insert into _demo(codigo) values (j->>'codigo');
+  if (select alcances='{leer}'::text[] and dias_token=90 from public.codigos_config where id=(j->>'id')::uuid)
+  then perform pg_temp.ok('217 el código guarda alcances={leer} y dias_token=90 (no los defaults)'); else perform pg_temp.falla('217'); end if;
+end $$;
+set role anon;
+do $$ declare j jsonb; begin
+  j := public.canjear_codigo_config((select codigo from _demo));
+  if j->>'token' ~ '^bz_[0-9a-f]{64}$' and j->>'alcances'='["leer"]'
+  then perform pg_temp.ok('218 el canje devuelve un token leer-only'); else perform pg_temp.falla('218'); end if;
+  update _demo set token=j->>'token';
+end $$;
+reset role;
+do $$ declare t record; tok text := (select token from _demo); begin
+  select tk.* into t from public.tokens tk join public.agentes ag on ag.id=tk.agente_id
+   where ag.buzon_id='aaaaaaaa-0000-0000-0000-000000000001' and tk.hash_token=encode(sha256(convert_to(tok,'UTF8')),'hex');
+  if t.alcances='{leer}'::text[] and t.vence_en between now()+interval '89 days' and now()+interval '91 days'
+  then perform pg_temp.ok('219 en la BD el token queda con {leer} y vence en ~90 días'); else perform pg_temp.falla('219'); end if;
+  update _demo set agente=t.agente_id;
+end $$;
+set role anon;
+do $$ declare tok text := (select token from _demo); ag uuid := (select agente from _demo); begin
+  if (public.mcp_leer(tok) ? 'hilos') and (public.mcp_leer(tok, 'cccccccc-0000-0000-0000-000000000001') ? 'hilo')
+  then perform pg_temp.ok('220 el token leer-only lista y lee hilos'); else perform pg_temp.falla('220'); end if;
+  reset role;
+  if exists (select 1 from public.lecturas where agente_id=ag and hilo_id='cccccccc-0000-0000-0000-000000000001')
+  then perform pg_temp.ok('221 la lectura también marca leído con alcance {leer}'); else perform pg_temp.falla('221'); end if;
+  set role anon;
+  begin perform public.mcp_crear(tok, 'tarea', 'x'); perform pg_temp.falla('222');
+    exception when others then if sqlerrm like '403:%' then perform pg_temp.ok('222 el token leer-only no puede crear hilos'); else raise; end if; end;
+  begin perform public.mcp_responder(tok, 'cccccccc-0000-0000-0000-000000000001', 'x', 'comentar'); perform pg_temp.falla('223');
+    exception when others then if sqlerrm like '403:%' then perform pg_temp.ok('223 el token leer-only no puede responder'); else raise; end if; end;
+end $$;
+reset role;
+
+-- 224-226: aislamiento buzón demo (rev11): un token leer/90 del buzón ajeno NO toca el buzón de Erik.
+create temp table if not exists _demo2(codigo text, token text);
+grant all on _demo2 to public;
+set role authenticated; select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$ declare j jsonb; begin
+  j := public.crear_codigo_config('aaaaaaaa-0000-0000-0000-000000000002','DemoJueces', 10, '{leer}', 90);
+  insert into _demo2(codigo) values (j->>'codigo');
+  perform pg_temp.ok('224 el dueño del buzón demo genera su código leer/90');
+end $$;
+set role anon;
+do $$ declare j jsonb; tok text; begin
+  j := public.canjear_codigo_config((select codigo from _demo2));
+  tok := j->>'token';
+  update _demo2 set token=tok;
+  begin perform public.mcp_leer(tok, 'cccccccc-0000-0000-0000-000000000001'); perform pg_temp.falla('225');
+    exception when others then if sqlerrm like '404:%' then perform pg_temp.ok('225 el token del buzón demo NO lee el hilo de Erik (404)'); else raise; end if; end;
+  if (public.mcp_leer(tok)->>'hilos')::text not like '%cccccccc-0000-0000-0000-000000000001%'
+  then perform pg_temp.ok('226 la lista del buzón demo no incluye hilos de Erik'); else perform pg_temp.falla('226'); end if;
+end $$;
+reset role;
+
 \echo TODAS_LAS_PRUEBAS_PASARON

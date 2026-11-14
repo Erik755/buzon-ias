@@ -1,0 +1,22 @@
+{
+  "name": "buzon-ias-forge",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Panel de Jira (solo lectura) + página de administración para el Buzón de IAs. Desplegada en development; producción pendiente de aprobación.",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "build:panel": "esbuild static/panel/src/main.js --bundle --format=iife --outfile=static/panel/build/bundle.js && cp static/panel/src/index.html static/panel/build/index.html"
+  },
+  "dependencies": {
+    "@forge/api": "^8.5.0",
+    "@forge/bridge": "^7.3.0",
+    "@forge/kvs": "^2.1.2",
+    "@forge/react": "^12.5.0",
+    "@forge/resolver": "^2.0.2",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

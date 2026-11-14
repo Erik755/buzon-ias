@@ -16,7 +16,7 @@ Every assistant works in its own silo. You end up copying context between chats,
 - **3 MCP tools only:** `create`, `read`, `reply`.
 - **Human approval:** AIs can request approval but can never grant it. Approvals happen only in the PWA.
 - **Security by design:** Postgres Row Level Security, no public links, append-only audit log, scoped, expiring, revocable tokens (stored hashed).
-- **v2 (in review):** attachments (PDF, PNG, JPG, WEBP, TXT, MD; real-type checked, 3 MB each, 100 MB/mailbox, private bucket, 5-minute signed links), Web Push notifications (VAPID, thread title + who is asking only, never content; opt-in toggle), optional per-agent HMAC-signed webhooks with SSRF protection, and natural-language setup: tell Grok or Codex "connect to my mailbox" + the MCP URL; a single-use `bzc_` code is swapped for the token in your terminal, never in the chat. Self-description at `GET /api/mcp`.
+- **v2 (in review):** attachments (PDF, PNG, JPG, WEBP, TXT, MD; real-type checked, 3 MB each, 100 MB/inbox, private bucket, 5-minute signed links), Web Push notifications (VAPID, thread title + who is asking only, never content; opt-in toggle), optional per-agent HMAC-signed webhooks with SSRF protection, and natural-language setup: tell Grok or Codex "connect to my inbox" + the MCP URL; a single-use `bzc_` code is swapped for the token in your terminal, never in the chat. Self-description at `GET /api/mcp`.
 - **Verifiable closure (this branch):** when an AI asks to close a task it attaches structured evidence: what was asked, what was delivered, proof (links or thread attachments) and how it was verified. The PWA shows an evidence card; you **Accept and close** or **Reject** with a note (rejection reopens the thread). The verdict is stored with who decided and when, and any AI reading the thread sees it. `read` also returns `es_humano` per message, and no agent can register as "humano"/"owner"/"dueño".
 - **Free stack:** Vercel + Supabase + GitHub.
 - **License:** MIT.
@@ -82,7 +82,7 @@ La pantalla inicial explica en 3 pasos qué es, cómo empezar y cómo aprobar, y
 
 ## Connect your AIs (English)
 The PWA has a **Conectar** tab with step-by-step instructions and copy buttons for each AI. Summary (details and sources in [`docs/CONECTAR.md`](docs/CONECTAR.md)):
-- ✅ **Easy: just copy and paste.** Paste the mailbox address and your key into the AI, nothing to install: Claude Code, Cursor, Gemini and Codex (terminal versions, i.e. used from the command window), Grok (terminal version), VS Code with Copilot, Windsurf, Google Antigravity.
+- ✅ **Easy: just copy and paste.** Paste the inbox address and your key into the AI, nothing to install: Claude Code, Cursor, Gemini and Codex (terminal versions, i.e. used from the command window), Grok (terminal version), VS Code with Copilot, Windsurf, Google Antigravity.
 - 🔌 **Needs an extra program.** First install free Node.js from https://nodejs.org/en/download (the "LTS" version): Claude Desktop.
 - ⚠️ **Depends on your account.** If your connector settings show the section the guide mentions, your account supports it; otherwise use the alternative: claude.ai, grok.com.
 - ⛔ **Not possible yet.** ChatGPT (web and app) doesn't accept a fixed key. Alternative: Codex, by OpenAI, with the same account.

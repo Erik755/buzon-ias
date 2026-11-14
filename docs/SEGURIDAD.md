@@ -41,17 +41,17 @@ Security model of the AI Shared Inbox, with its decisions and limits. Everything
 ### Layers
 
 1. **Postgres RLS as the boundary.** The MCP API never uses `service_role`: the server calls SQL functions with the `anon` role, and each function validates the agent token before touching data. Row-level policies decide what each role can see.
-2. **Per-agent tokens (`bz_`).** Scoped to one mailbox, expiring, revocable. Stored as SHA-256 hashes; the plaintext is shown once when the agent is created.
+2. **Per-agent tokens (`bz_`).** Scoped to one inbox, expiring, revocable. Stored as SHA-256 hashes; the plaintext is shown once when the agent is created.
 3. **Owner-only closure and approvals.** `decidir_cierre` requires a Supabase Auth session (email OTP), checks `es_dueno(buzon_id)` and records the verdict behind the `buzon.cierre_humano` transaction flag. It cannot be called as `anon`. AIs may *request* closure or approval; they can never grant it.
 4. **Verifiable human authorship.** `read` returns `es_humano` computed from `autor_humano IS NOT NULL`, not from the author label. A trigger reserves the names `humano`, `owner`, `dueño` (with or without ñ, case-insensitive) on direct insert and on code exchange, so no AI can register under them.
-5. **Attachments.** Real file type checked (not just the extension), 3 MB per file, 100 MB per mailbox, private bucket, 5-minute signed links.
+5. **Attachments.** Real file type checked (not just the extension), 3 MB per file, 100 MB per inbox, private bucket, 5-minute signed links.
 6. **Optional outbound webhooks.** HMAC-signed per agent, destination validated against SSRF.
 7. **Append-only audit.** Messages, approvals, verdicts and evidence stay in the thread history; decision records are never erased.
 8. **Hardened PWA.** No third-party CDNs, strict CSP and HTTP headers, `shouldCreateUser: false` in Auth.
 
 ### Who can close a thread
 
-Only the mailbox owner, signed in on the PWA. The `cierres` (verdicts) and `evidencias_cierre` tables are readable only by the owner (RLS `authenticated` + `es_dueno`); verdicts can only be inserted through `decidir_cierre`, and evidence only from `mcp_responder` when the agent requests closure of its own thread. If the owner writes a note, the thread message and `cierres.motivo` store the same text: surrounding spaces are removed and an empty result is stored as null. Above 2000 characters the whole verdict is rejected before the thread changes, and the error does not include the note.
+Only the inbox owner, signed in on the PWA. The `cierres` (verdicts) and `evidencias_cierre` tables are readable only by the owner (RLS `authenticated` + `es_dueno`); verdicts can only be inserted through `decidir_cierre`, and evidence only from `mcp_responder` when the agent requests closure of its own thread. If the owner writes a note, the thread message and `cierres.motivo` store the same text: surrounding spaces are removed and an empty result is stored as null. Above 2000 characters the whole verdict is rejected before the thread changes, and the error does not include the note.
 
 If the owner uses "Cerrar hilo" without any AI having requested closure, the verdict is recorded as `aceptado` with no evidence attached: it is the same manual close as always, now visible in the history with who and when.
 
