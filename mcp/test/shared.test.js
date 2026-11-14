@@ -102,13 +102,20 @@ test('Push: solo FCM, Mozilla, Apple y Windows; valida IP y envía a la IP ya re
   const sub = { p256dh: b64u.enc(await crypto.subtle.exportKey('raw', kp.publicKey)), auth: b64u.enc(new Uint8Array(16)) };
   const vk = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
   const claves = { publica: b64u.enc(await crypto.subtle.exportKey('raw', vk.publicKey)), privada: (await crypto.subtle.exportKey('jwk', vk.privateKey)).d, sujeto: 'mailto:a@b.c' };
-  const llamadas = []; const enviar = async (url, ip) => { llamadas.push({ url, ip }); return 201; };
+  const llamadas = []; const enviar = async (url, ip, headers) => { llamadas.push({ url, ip, Urgency: headers.Urgency }); return 201; };
   assert.equal((await enviarPush({ ...sub, endpoint: 'https://evil.example/x' }, '{}', claves, { resolver: async () => ['8.8.8.8'], enviar })).motivo, 'endpoint_no_permitido');
   assert.equal((await enviarPush({ ...sub, endpoint: 'https://fcm.googleapis.com/x' }, '{}', claves, { resolver: async () => ['169.254.169.254'], enviar })).motivo, 'resuelve_a_ip_privada');
   let n = 0; const rebind = async () => (n++ === 0 ? ['142.250.1.1'] : ['127.0.0.1']);
-  assert.equal((await enviarPush({ ...sub, endpoint: 'https://fcm.googleapis.com/x' }, '{}', claves, { resolver: rebind, enviar })).ok, true);
-  assert.deepEqual(llamadas, [{ url: 'https://fcm.googleapis.com/x', ip: '142.250.1.1' }]);
+  assert.equal((await enviarPush({ ...sub, endpoint: 'https://fcm.googleapis.com/x' }, '{}', claves, { resolver: rebind, enviar }, 'pide_aprobacion')).ok, true);
+  assert.deepEqual(llamadas, [{ url: 'https://fcm.googleapis.com/x', ip: '142.250.1.1', Urgency: 'high' }]);
   assert.equal(n, 1, 'DNS se resuelve una sola vez');
+  llamadas.length = 0;
+  for (const ev of ['pide_cierre', 'hilo_nuevo']) {
+    assert.equal((await enviarPush({ ...sub, endpoint: 'https://fcm.googleapis.com/x' }, '{}', claves, { resolver: async () => ['142.250.1.1'], enviar }, ev)).ok, true, ev);
+    assert.equal(llamadas.at(-1).Urgency, 'high', ev);
+  }
+  assert.equal((await enviarPush({ ...sub, endpoint: 'https://fcm.googleapis.com/x' }, '{}', claves, { resolver: async () => ['142.250.1.1'], enviar })).ok, true);
+  assert.equal(llamadas.at(-1).Urgency, 'normal', 'sin evento: se mantiene normal');
 });
 test('postFijo: conecta a la IP validada con SNI/Host originales y lee solo el estado', async () => {
   let visto, escrito = '';
@@ -297,6 +304,28 @@ test('postFijo: una conexión que abre después del timeout se cierra (no queda 
   assert.equal(cerrada, true);
 });
 
+test('notificador: pide_aprobacion envía Urgency high y deja el status HTTP en el log; mensaje_nuevo no hace push', async () => {
+  const vk = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
+  const claves = { publica: Buffer.from(await crypto.subtle.exportKey('raw', vk.publicKey)).toString('base64url'), privada: (await crypto.subtle.exportKey('jwk', vk.privateKey)).d, sujeto: 'mailto:t@t.t' };
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const sub = { id: 's1', endpoint: 'https://fcm.googleapis.com/fcm/send/x', p256dh: Buffer.from(await crypto.subtle.exportKey('raw', kp.publicKey)).toString('base64url'), auth: Buffer.alloc(16, 1).toString('base64url') };
+  const cabeceras = []; const lineas = []; const original = console.log; console.log = (x) => lineas.push(x);
+  try {
+    for (const evento of ['pide_aprobacion', 'mensaje_nuevo']) {
+      cabeceras.length = 0; lineas.length = 0;
+      await procesar({ claves, resolver: async () => ['142.250.1.1'], enviar: async (u, ip, h) => { cabeceras.push(h); return 201; },
+        suscripciones: async () => [sub], borrarSuscripcion: async () => {}, webhooks: async () => [],
+        rpc: async (fn) => (fn === '_tomar_notificaciones' ? [{ id: 11, buzon_id: 'b', hilo_id: 'h', evento, entregados: [] }] : null) });
+      if (evento === 'pide_aprobacion') {
+        assert.equal(cabeceras[0].Urgency, 'high');
+        const log = JSON.parse(lineas.find((l) => { try { return JSON.parse(l).paso === 'destino'; } catch { return false; } }));
+        assert.equal(log.status, 201, 'el status HTTP del servicio de push va al log');
+      } else {
+        assert.equal(cabeceras.length, 0, 'mensaje_nuevo no hace push');
+      }
+    }
+  } finally { console.log = original; }
+});
 test('tope de push: si _permitir_push dice que no, el hilo nuevo no suena; pide_cierre no se consulta', async () => {
   const { procesar } = await import('../../supabase/functions/_shared/notificar_core.js');
   for (const [evento, permitido, esperaSubs, esperaConsulta] of [['hilo_nuevo', false, 0, 1], ['hilo_nuevo', true, 1, 1], ['pide_cierre', false, 1, 0]]) {
