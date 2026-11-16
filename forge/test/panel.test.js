@@ -113,10 +113,56 @@ test('resumen: esAdmin sale false si la consulta de permisos falla (fail-closed)
   assert.equal(r.esAdmin, false);
 });
 
-test('resumen: hilo ajeno o token revocado => "sin acceso"', async () => {
+test('resumen: hilo ajeno => estado no_access (no lanza) y no filtra datos del hilo', async () => {
   const deps = depsBase({ fetchImpl: fetchSinAcceso() });
   await deps.guardarVinculo(ISSUE, HILO);
-  await assert.rejects(() => hiloResumen({ issueId: ISSUE }, deps), (e) => e instanceof ErrorPanel && /no access/.test(e.message));
+  const r = await hiloResumen({ issueId: ISSUE }, deps);
+  assert.deepEqual(r, { ok: false, code: 'no_access', vinculado: true, esAdmin: true, hiloId: HILO });
+  assert.ok(!JSON.stringify(r).includes(TOKEN), 'el token nunca sale al front');
+  // el vínculo sigue guardado hasta que un admin lo desvincule
+  assert.equal(await deps.leerVinculo(ISSUE), HILO);
+});
+
+test('resumen: no_access informa esAdmin=false a quien no es admin', async () => {
+  const deps = depsBase({ fetchImpl: fetchSinAcceso(), esAdmin: async () => false });
+  await deps.guardarVinculo(ISSUE, HILO);
+  const r = await hiloResumen({ issueId: ISSUE }, deps);
+  assert.equal(r.code, 'no_access');
+  assert.equal(r.esAdmin, false);
+});
+
+test('resumen: error JSON-RPC del MCP también => no_access', async () => {
+  const deps = depsBase({
+    fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'x' } }) }),
+  });
+  await deps.guardarVinculo(ISSUE, HILO);
+  const r = await hiloResumen({ issueId: ISSUE }, deps);
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'no_access');
+});
+
+test('resumen: con vínculo legible devuelve ok:true', async () => {
+  const deps = depsBase();
+  await deps.guardarVinculo(ISSUE, HILO);
+  const r = await hiloResumen({ issueId: ISSUE }, deps);
+  assert.equal(r.ok, true);
+});
+
+test('flujo no_access: un admin desvincula y el panel vuelve al formulario de vínculo', async () => {
+  const deps = depsBase({ fetchImpl: fetchSinAcceso() });
+  await deps.guardarVinculo(ISSUE, HILO);
+  const ops = panelOps(deps);
+  const r1 = await ops.hiloResumen(reqPanel());
+  assert.equal(r1.code, 'no_access');
+  await ops.desvincularHilo(reqPanel());
+  const r2 = await ops.hiloResumen(reqPanel());
+  assert.equal(r2.vinculado, false);
+  assert.equal(r2.esAdmin, true);
+});
+
+test('leerEnBuzon: el error sin acceso lleva code no_access', async () => {
+  const { leerEnBuzon } = await import('../src/comun.js');
+  await assert.rejects(() => leerEnBuzon(fetchSinAcceso(), TOKEN, { hilo_id: HILO }), (e) => e instanceof ErrorPanel && e.code === 'no_access' && /no access/.test(e.message));
 });
 
 test('resumen: 401 del buzón => token inválido', async () => {

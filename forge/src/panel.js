@@ -6,7 +6,7 @@
 // issue: las propiedades las puede escribir cualquier usuario con EDIT_ISSUES por REST,
 // saltándose las validaciones, y las puede leer cualquiera con BROWSE. Solo la app escribe KVS.
 // Se usa issue.id (estable al mover el issue entre proyectos), no la key.
-import { leerEnBuzon, ErrorPanel, PWA_URL, UUID_RE } from './comun.js';
+import { leerEnBuzon, ErrorPanel, PWA_URL, UUID_RE, SIN_ACCESO } from './comun.js';
 
 // Etiquetas en inglés para el enum interno de estados (que vive en español en la base de
 // datos). El panel de Jira se presenta en inglés; un valor fuera del enum pasa tal cual.
@@ -30,12 +30,25 @@ export async function hiloResumen({ issueId }, deps) {
   if (!UUID_RE.test(hiloId)) throw new ErrorPanel('corrupt link in storage');
   const token = await deps.leerToken();
   if (!token) throw new ErrorPanel('token not configured (administration page)');
-  const h = await leerEnBuzon(deps.fetchImpl, token, { hilo_id: hiloId });
+  let h;
+  try {
+    h = await leerEnBuzon(deps.fetchImpl, token, { hilo_id: hiloId });
+  } catch (e) {
+    // Vínculo a un hilo que este token no puede leer (p. ej. tras cambiar el token en la
+    // administración): se devuelve un estado en vez de lanzar, para que el panel muestre el
+    // aviso y (a un admin) el botón de desvincular. No se expone nada del hilo: solo su id,
+    // que ya estaba guardado en el vínculo. Otros errores (401, red, etc.) siguen lanzando.
+    if (e instanceof ErrorPanel && e.code === SIN_ACCESO) {
+      return { ok: false, code: SIN_ACCESO, vinculado: true, esAdmin, hiloId };
+    }
+    throw e;
+  }
   // mcp_leer devuelve { hilo: { titulo, estado, ... }, mensajes: [...], ... } (verificado en
   // la integración local contra el servidor real). Defaults si falta h.hilo.
   const hilo = h.hilo || {};
   const mensajes = h.mensajes || [];
   return {
+    ok: true,
     vinculado: true,
     esAdmin,
     hiloId,

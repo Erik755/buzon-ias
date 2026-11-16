@@ -15,7 +15,17 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const TOKEN_RE = /^bz_[A-Za-z0-9_-]{20,}$/;
 export { UUID_RE, TOKEN_RE };
 
-export class ErrorPanel extends Error {}
+export class ErrorPanel extends Error {
+  // code opcional y estable (p. ej. 'no_access') para que el resolver distinga casos sin
+  // depender del texto del mensaje.
+  constructor(message, code) {
+    super(message);
+    if (code) this.code = code;
+  }
+}
+
+export const SIN_ACCESO = 'no_access';
+const MSG_SIN_ACCESO = 'no access to this thread with this token';
 
 // Llama tools/call `leer` del MCP con el token de la instalación.
 export async function leerEnBuzon(fetchImpl, token, args) {
@@ -50,13 +60,13 @@ export async function leerEnBuzon(fetchImpl, token, args) {
       throw new ErrorPanel('buzon: unreadable response');
     }
   }
-  if (data.error) throw new ErrorPanel('no access to this thread with this token');
+  if (data.error) throw new ErrorPanel(MSG_SIN_ACCESO, SIN_ACCESO);
   let contenido;
   try {
     contenido = JSON.parse(data.result.content[0].text);
   } catch {
-    throw new ErrorPanel('no access to this thread with this token');
+    throw new ErrorPanel(MSG_SIN_ACCESO, SIN_ACCESO);
   }
-  if (contenido.error) throw new ErrorPanel('no access to this thread with this token');
+  if (contenido.error) throw new ErrorPanel(MSG_SIN_ACCESO, SIN_ACCESO);
   return contenido;
 }
