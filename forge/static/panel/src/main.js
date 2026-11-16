@@ -54,11 +54,34 @@ function pintarResumen(r) {
   }
 }
 
+// El issue está vinculado a un hilo que el token actual no puede leer (r.code === 'no_access').
+// Un admin puede desvincularlo para volver a mostrar el formulario de vínculo.
+function pintarSinAcceso(r) {
+  app.innerHTML = `
+    <p class="error">This issue is linked to a thread this token can't read.</p>
+    <p class="aviso">Thread: <code>${esc(r.hiloId)}</code></p>
+    ${r.esAdmin
+      ? '<button id="desvincular">Unlink thread</button>'
+      : '<p class="aviso">Ask a site administrator to unlink it or update the token.</p>'}
+    <p id="msg"></p>`;
+  if (r.esAdmin) {
+    document.getElementById('desvincular').onclick = async () => {
+      try {
+        await invoke('desvincularHilo', {});
+        pintar();
+      } catch (err) {
+        document.getElementById('msg').innerHTML = `<span class="error">${esc(err.message || err)}</span>`;
+      }
+    };
+  }
+}
+
 async function pintar() {
   app.textContent = 'Loading…';
   try {
     const r = await invoke('hiloResumen', {});
     if (!r.vinculado) pintarVinculo(r.esAdmin);
+    else if (r.ok === false && r.code === 'no_access') pintarSinAcceso(r);
     else pintarResumen(r);
   } catch (e) {
     app.innerHTML = `<p class="error">${esc(e.message || e)}</p>`;
