@@ -365,6 +365,22 @@ test('webhook: la pista del receptor llega al resultado y a la bitácora, nunca 
   } finally { console.log = orig; }
   const linea = logs.map((l) => { try { return JSON.parse(l); } catch { return null; } }).find((l) => l?.paso === 'destino');
   assert.equal(linea.status, 400); assert.equal(linea.receptor, 'Automation [id] is disabled');
-  assert.equal(rpcs.find(([f]) => f === '_marcar_descartado')[1].p_destino, 'wh:g|http', 'en la BD solo la categoría');
-  assert.ok(!JSON.stringify(rpcs).includes('disabled'));
+  assert.equal(linea.motivo, 'receptor_desactivado');
+  assert.ok(!rpcs.some(([f]) => f === '_marcar_descartado'), 'un receptor desactivado no se descarta: se reintenta');
+  const cierre = rpcs.find(([f]) => f === '_cerrar_notificacion');
+  assert.equal(cierre[1].p_ok, false);
+  assert.match(cierre[1].p_error, /receptor_desactivado/);
+  assert.ok(!JSON.stringify(rpcs).includes('disabled'), 'el texto del receptor no se guarda en la BD');
+});
+test('webhook: solo el 4xx que dice disabled/paused se reintenta; un 400 o 404 normal sigue siendo definitivo', async () => {
+  const w = { id: 'g', webhook_url: 'https://h.ejemplo.dev/', webhook_secreto: 'whsec_a' };
+  const deps = { resolver: dns({ 'h.ejemplo.dev': ['93.184.216.34'] }) };
+  const off = await enviarWebhook(w, 'h', { ...deps, enviarConPista: async () => ({ status: 400, pista: 'Automation [id] is disabled' }) });
+  assert.equal(off.definitivo, false); assert.equal(off.motivo, 'receptor_desactivado');
+  const pausa = await enviarWebhook(w, 'h', { ...deps, enviarConPista: async () => ({ status: 409, pista: 'Workflow paused' }) });
+  assert.equal(pausa.definitivo, false); assert.equal(pausa.motivo, 'receptor_desactivado');
+  const malo = await enviarWebhook(w, 'h', { ...deps, enviarConPista: async () => ({ status: 400, pista: 'bad request' }) });
+  assert.equal(malo.definitivo, true); assert.equal(malo.motivo, 'http_400');
+  const perdido = await enviarWebhook(w, 'h', { ...deps, enviarConPista: async () => ({ status: 404, pista: 'not found' }) });
+  assert.equal(perdido.definitivo, true);
 });

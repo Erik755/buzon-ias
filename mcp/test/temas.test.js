@@ -219,11 +219,11 @@ test('tema-inicio.js aplica dark desde localStorage sin destello (vm)', () => {
   assert.equal(metas['color-scheme'].content, 'dark');
 });
 
-test('el SW sube a buzon-v25-prompts-agentes y precacha los módulos de tema; el build los copia', () => {
+test('el SW sube a buzon-v26-menciones y precacha los módulos de tema; el build los copia', () => {
   const sw = pwa('sw.js');
   const build = pwa('build-config.mjs');
   const man = pwa('manifest.webmanifest');
-  assert.match(sw, /const C = 'buzon-v25-prompts-agentes'/);
+  assert.match(sw, /const C = 'buzon-v26-menciones'/);
   assert.match(sw, /'tema-inicio\.js'/);
   assert.match(sw, /'temas\.js'/);
   for (const f of ['i18n.js', 'conectar.js', 'guias-i18n.js', 'layout.js', 'destinatarios.js', 'chat.js', 'avisos.js', 'tema-inicio.js', 'temas.js']) {
@@ -255,7 +255,7 @@ test('Inter se autoalojá en woff2 variable, con OFL, CSP font-src y precache de
   assert.doesNotMatch(html, /fonts\.google|googleapis|gstatic/);
   assert.match(csp, /font-src 'self'/);
   assert.match(sw, /fonts\/InterVariable\.woff2/);
-  assert.match(sw, /const C = 'buzon-v25-prompts-agentes'/);
+  assert.match(sw, /const C = 'buzon-v26-menciones'/);
   assert.match(build, /fonts\/InterVariable\.woff2/);
   assert.match(ofl, /SIL Open Font License, Version 1\.1/);
   assert.ok(font.length > 10000, 'el woff2 de Inter debe existir y no estar vacío');

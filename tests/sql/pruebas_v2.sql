@@ -1132,4 +1132,362 @@ do $$ declare j jsonb; tok text; begin
 end $$;
 reset role;
 
+-- 227-244 Menciones @Nombre (migración 019). No dan derechos: solo despiertan.
+reset role;
+-- El canje de la prueba 77 ya dejó un agente "Grok" en el buzón de Erik: se reutiliza
+-- (si se insertara otro, @Grok sería ambiguo). Se le pone webhook para poder despertarlo.
+update public.agentes set webhook_url='https://hooks.ejemplo.dev/gk', webhook_secreto='whsec_gk'
+ where buzon_id='aaaaaaaa-0000-0000-0000-000000000001' and nombre='Grok' and eliminado_en is null;
+insert into public.agentes(id,buzon_id,nombre,webhook_url,webhook_secreto) values
+  ('bbbbbbbb-0000-0000-0000-0000000000b1','aaaaaaaa-0000-0000-0000-000000000001','AutorM','https://hooks.ejemplo.dev/am','whsec_am'),
+  ('bbbbbbbb-0000-0000-0000-0000000000b3','aaaaaaaa-0000-0000-0000-000000000001','Instinct','https://hooks.ejemplo.dev/in','whsec_in'),
+  ('bbbbbbbb-0000-0000-0000-0000000000b4','aaaaaaaa-0000-0000-0000-000000000001','Mudo',null,null),
+  ('bbbbbbbb-0000-0000-0000-0000000000b5','aaaaaaaa-0000-0000-0000-000000000001','Norte','https://hooks.ejemplo.dev/no','whsec_no'),
+  ('bbbbbbbb-0000-0000-0000-0000000000b6','aaaaaaaa-0000-0000-0000-000000000001','Sur','https://hooks.ejemplo.dev/su','whsec_su'),
+  ('bbbbbbbb-0000-0000-0000-0000000000b8','aaaaaaaa-0000-0000-0000-000000000002','Grok','https://hooks.ejemplo.dev/aj','whsec_aj');
+insert into public.agentes(id,buzon_id,nombre,webhook_url,webhook_secreto) values
+  ('bbbbbbbb-0000-0000-0000-0000000000b7','aaaaaaaa-0000-0000-0000-000000000001','Fantasma','https://hooks.ejemplo.dev/fa','whsec_fa');
+insert into public.tokens(agente_id,hash_token) values
+  ('bbbbbbbb-0000-0000-0000-0000000000b1', encode(sha256(convert_to('bz_'||repeat('m',30),'UTF8')),'hex'));
+update public.agentes set eliminado_en = now() where id = 'bbbbbbbb-0000-0000-0000-0000000000b7';
+
+do $$
+declare
+  tok text := 'bz_'||repeat('m',30);
+  autor uuid := 'bbbbbbbb-0000-0000-0000-0000000000b1';
+  grok uuid;
+  inst uuid := 'bbbbbbbb-0000-0000-0000-0000000000b3';
+  h uuid; h2 uuid; h3 uuid; hh uuid; hc uuid; hl uuid; hr uuid;
+  r jsonb; n bigint; ds uuid[]; i int; ag uuid;
+begin
+  select id into grok from public.agentes
+   where buzon_id='aaaaaaaa-0000-0000-0000-000000000001' and nombre='Grok' and eliminado_en is null;
+  if (select string_agg(token, ',' order by orden) from public.extraer_menciones(E'@Grok
+hola @Instínct erik@grok.com (@Codex)
+```
+@Nadie
+```
+`no @Grok` @GROK-bot')) = 'Grok,Instínct,GROK-bot'
+     and public.mencion_norm('Instínct') = 'instinct'
+     and not exists (select 1 from public.extraer_menciones('erik@grok.com'))
+  then perform pg_temp.ok('227 el parser ignora correos, código y (@); no distingue tildes ni mayúsculas');
+  else perform pg_temp.falla('227'); end if;
+
+  if exists (select 1 from public.agente_alias where agente_id = grok and alias_norm = 'grokbot')
+     and not exists (select 1 from public.agente_alias where agente_id = 'bbbbbbbb-0000-0000-0000-0000000000b7')
+  then perform pg_temp.ok('228 @grokbot es alias de Grok; un agente borrado no conserva alias');
+  else perform pg_temp.falla('228'); end if;
+
+  r := public.mcp_crear(tok, 'tarea', 'Revisa @Grok', E'y @Instínct' || chr(10) || 'erik@grok.com', null, 'AutorM');
+  h := (r->>'id')::uuid;
+  if r->>'estado' = 'abierto'
+     and (r->'menciones'->'notificadas') @> '[{"agente":"Grok"}]'::jsonb
+     and (r->'menciones'->'notificadas') @> '[{"agente":"Instinct"}]'::jsonb
+     and (select para_agente = autor and tomado_por_agente is null and estado = 'abierto' from public.hilos where id = h)
+     and not exists (select 1 from public.hilo_suscripciones where hilo_id = h)
+     and not exists (select 1 from public.aprobaciones a join public.hilos x on x.id = a.hilo_id where x.id = h)
+     and not exists (select 1 from public.cierres where hilo_id = h)
+     and position('whsec' in r::text) = 0 and position('webhook' in r::text) = 0
+  then perform pg_temp.ok('229 crear avisa por @ en título y contexto, sin aprobar, suscribir ni filtrar secretos');
+  else perform pg_temp.falla('229 ' || r::text); end if;
+  select max(id) into n from public.notificaciones where hilo_id = h and evento = 'hilo_nuevo';
+  select array_agg(d.id order by d.id) into ds from public._destinos_webhook(n) d;
+  if ds @> array[grok, inst] and array_length(ds, 1) = 2
+  then perform pg_temp.ok('230 el hilo dirigido al autor igual despierta a los mencionados, no al autor');
+  else perform pg_temp.falla('230 ' || coalesce(ds::text,'null')); end if;
+
+  r := public.mcp_crear(tok, 'tarea', '@Grok y @grokbot', null, null, 'AutorM');
+  h2 := (r->>'id')::uuid;
+  select max(id) into n from public.notificaciones where hilo_id = h2 and evento = 'hilo_nuevo';
+  if jsonb_array_length(r->'menciones'->'notificadas') = 1
+     and (r->'menciones'->'notificadas'->0->'tokens') ? 'Grok'
+     and (r->'menciones'->'notificadas'->0->'tokens') ? 'grokbot'
+     and (select count(*) from public._destinos_webhook(n)) = 1
+  then perform pg_temp.ok('231 dos alias del mismo agente son un solo aviso');
+  else perform pg_temp.falla('231 ' || r::text); end if;
+
+  r := public.mcp_crear(tok, 'tarea', 'Hilo de mensajes', null, null, 'AutorM');
+  h3 := (r->>'id')::uuid;
+  r := public.mcp_responder(tok, h3, E'erik@grok.com (@Grok)' || chr(10) || '```' || chr(10) || '@Nadie' || chr(10) || '```' || chr(10) || '`no @Instinct` @Zeta @AutorM @Mudo @Instinct');
+  if (r->'menciones'->'notificadas') @> '[{"agente":"Instinct"}]'::jsonb
+     and (r->'menciones'->'no_reconocidas') ? 'Zeta'
+     and (r->'menciones'->'sin_aviso') @> '[{"token":"AutorM","motivo":"autor"}]'::jsonb
+     and (r->'menciones'->'sin_aviso') @> '[{"token":"Mudo","motivo":"sin_webhook"}]'::jsonb
+     and not ((r->'menciones')::text like '%Nadie%')
+     and not ((r->'menciones'->'notificadas')::text like '%Grok%')
+  then perform pg_temp.ok('232 código, correo y (@) no cuentan; el autor y quien no tiene webhook no se avisan');
+  else perform pg_temp.falla('232 ' || (r->'menciones')::text); end if;
+
+  r := public.mcp_responder(tok, h3, 'otra vez @Instinct');
+  select max(id) into n from public.notificaciones where hilo_id = h3 and evento = 'mensaje_nuevo';
+  if (r->'menciones'->'sin_aviso') @> '[{"token":"Instinct","motivo":"limitada"}]'::jsonb
+     and not exists (select 1 from public._destinos_webhook(n) d where d.id = inst)
+  then perform pg_temp.ok('233 una IA no vuelve a mencionar al mismo agente del hilo antes de 60 s');
+  else perform pg_temp.falla('233 ' || coalesce((r->'menciones')::text,'null')); end if;
+  update public.notificaciones set creado_en = creado_en - interval '2 minutes',
+         entregados = array['wh:' || inst::text]
+   where hilo_id = h3 and evento = 'mensaje_nuevo';
+  r := public.mcp_responder(tok, h3, '@Instinct aunque no haya leído');
+  select max(id) into n from public.notificaciones where hilo_id = h3 and evento = 'mensaje_nuevo';
+  if (r->'menciones'->'notificadas') @> '[{"agente":"Instinct"}]'::jsonb
+     and exists (select 1 from public._destinos_webhook(n) d where d.id = inst)
+     and not exists (select 1 from public.hilo_suscripciones where hilo_id = h3 and agente_id = inst)
+     and not exists (select 1 from public.lecturas where hilo_id = h3 and agente_id = inst)
+  then perform pg_temp.ok('234 la mención despierta aunque no esté marcada y no haya leído el hilo');
+  else perform pg_temp.falla('234'); end if;
+
+  insert into public.hilos(buzon_id, tipo, titulo, para_agente)
+    values ('aaaaaaaa-0000-0000-0000-000000000001','tarea','Hilo del dueño', autor) returning id into hh;
+  insert into public.mensajes(hilo_id, autor_humano, cuerpo) values (hh, '11111111-1111-1111-1111-111111111111', '@Instinct');
+  insert into public.mensajes(hilo_id, autor_humano, cuerpo) values (hh, '11111111-1111-1111-1111-111111111111', '@Instinct de nuevo');
+  if exists (select 1 from public.menciones where hilo_id = hh and token = 'Instinct' and estado = 'limitada')
+     and exists (select 1 from public.menciones where hilo_id = hh and token = 'Instinct' and estado = 'notificada')
+  then perform pg_temp.ok('235 el dueño también menciona, con un freno de 10 s por ráfaga');
+  else perform pg_temp.falla('235'); end if;
+  update public.notificaciones set creado_en = creado_en - interval '11 seconds' where hilo_id = hh;
+  insert into public.mensajes(hilo_id, autor_humano, cuerpo) values (hh, '11111111-1111-1111-1111-111111111111', '@Instinct ya');
+  select max(id) into n from public.notificaciones where hilo_id = hh and evento = 'mensaje_nuevo';
+  if exists (select 1 from public._destinos_webhook(n) d where d.id = inst)
+     and not exists (select 1 from public.hilo_suscripciones where hilo_id = hh)
+  then perform pg_temp.ok('236 pasado el freno, el mensaje del dueño sí despierta al mencionado');
+  else perform pg_temp.falla('236'); end if;
+
+  r := public.mcp_crear(tok, 'tarea', 'Tope', null, null, 'AutorM');
+  hc := (r->>'id')::uuid;
+  r := public.mcp_responder(tok, hc, '@a1 @a2 @a3 @a4 @a5 @a6 @a7 @a8 @Instinct');
+  if (select count(*) from public.menciones mn join public.notificaciones nt on nt.id = mn.notificacion_id
+        where nt.hilo_id = hc and nt.evento = 'mensaje_nuevo' and mn.estado = 'desconocida') = 8
+     and (r->'menciones'->'sin_aviso') @> '[{"token":"Instinct","motivo":"excedida"}]'::jsonb
+  then perform pg_temp.ok('237 como mucho 8 menciones por mensaje; el resto queda excedida');
+  else perform pg_temp.falla('237 ' || (r->'menciones')::text); end if;
+
+  r := public.mcp_crear(tok, 'tarea', 'Bucle', null, null, 'AutorM');
+  hl := (r->>'id')::uuid;
+  for i in 1..19 loop
+    perform public.mcp_responder(tok, hl, 'ping ' || i);
+  end loop;
+  r := public.mcp_responder(tok, hl, 'basta @Instinct');
+  select max(id) into n from public.notificaciones where hilo_id = hl and evento = 'mensaje_nuevo';
+  if (r->'menciones'->'sin_aviso') @> '[{"token":"Instinct","motivo":"bucle"}]'::jsonb
+     and not exists (select 1 from public._destinos_webhook(n))
+     and (select estado = 'abierto' and tomado_por_agente is null from public.hilos where id = hl)
+  then perform pg_temp.ok('238 el freno de 20 mensajes entre IAs también frena las menciones');
+  else perform pg_temp.falla('238 ' || coalesce((r->'menciones')::text,'null')); end if;
+
+  update public.notificaciones set creado_en = creado_en - interval '2 hours' where agente_origen = autor;
+  update public.agentes set webhook_url = 'https://hooks.ejemplo.dev/cupo-' || nombre, webhook_secreto = 'whsec_cupo'
+   where buzon_id = 'aaaaaaaa-0000-0000-0000-000000000001' and eliminado_en is null
+     and nombre in ('Codex','Gemini','Grok','Instinct','Norte','Sur');
+  r := public.mcp_crear(tok, 'tarea', 'Cupo', null, null, 'AutorM');
+  hr := (r->>'id')::uuid;
+  perform public.mcp_responder(tok, hr, '@Codex');
+  perform public.mcp_responder(tok, hr, '@Gemini');
+  perform public.mcp_responder(tok, hr, '@Grok');
+  perform public.mcp_responder(tok, hr, '@Instinct');
+  perform public.mcp_responder(tok, hr, '@Norte');
+  r := public.mcp_responder(tok, hr, '@Sur');
+  if (r->'menciones'->'sin_aviso') @> '[{"token":"Sur","motivo":"limitada"}]'::jsonb
+  then perform pg_temp.ok('239 una IA tiene un cupo de 5 avisos de mención por hora');
+  else perform pg_temp.falla('239 ' || coalesce((r->'menciones')::text,'null')); end if;
+end $$;
+
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$
+declare grok uuid;
+begin
+  select id into grok from public.agentes
+   where buzon_id='aaaaaaaa-0000-0000-0000-000000000001' and nombre='Grok' and eliminado_en is null;
+  perform public.guardar_alias_agente('bbbbbbbb-0000-0000-0000-0000000000b5','brujula',true);
+  perform public.guardar_alias_agente('bbbbbbbb-0000-0000-0000-0000000000b6','brujula',true);
+  begin
+    perform public.guardar_alias_agente(grok, 'humano', true);
+    perform pg_temp.falla('240');
+  exception when sqlstate '22023' then
+    perform pg_temp.ok('240 un alias reservado (humano/dueño) se rechaza');
+  end;
+end $$;
+reset role;
+do $$
+declare
+  tok text := 'bz_'||repeat('m',30);
+  h uuid; r jsonb; n bigint; inst uuid := 'bbbbbbbb-0000-0000-0000-0000000000b3';
+begin
+  select id into h from public.hilos where titulo = 'Hilo de mensajes' and creado_por_agente = 'bbbbbbbb-0000-0000-0000-0000000000b1' order by creado_en desc limit 1;
+  update public.notificaciones set creado_en = creado_en - interval '2 hours' where hilo_id = h;
+  r := public.mcp_responder(tok, h, 'hey @brujula');
+  select max(id) into n from public.notificaciones where hilo_id = h and evento = 'mensaje_nuevo';
+  if (r->'menciones'->'ambiguas') ? 'brujula'
+     and not exists (select 1 from public._destinos_webhook(n))
+     and (select estado from public.hilos where id = h) = 'abierto'
+  then perform pg_temp.ok('241 un alias ambiguo no avisa y no cambia el estado del hilo');
+  else perform pg_temp.falla('241 ' || coalesce((r->'menciones')::text,'null')); end if;
+  begin
+    perform public.mcp_responder(tok, h, '@Grok cierra esto', 'aprobar');
+    perform pg_temp.falla('242');
+  exception when others then
+    if sqlerrm like '400:%' then perform pg_temp.ok('242 mencionar no habilita aprobar ni cerrar'); else raise; end if;
+  end;
+  update public.notificaciones set creado_en = creado_en - interval '2 hours' where agente_origen = 'bbbbbbbb-0000-0000-0000-0000000000b1';
+  r := public.mcp_responder(tok, h, '@Fantasma y @Grok');
+  if (r->'menciones'->'no_reconocidas') ? 'Fantasma'
+     and (r->'menciones'->'notificadas') @> '[{"agente":"Grok"}]'::jsonb
+     and (select count(*) from public.menciones mn where mn.estado = 'notificada' and mn.agente_id = 'bbbbbbbb-0000-0000-0000-0000000000b8') = 0
+  then perform pg_temp.ok('243 un agente borrado o de otro buzón no se resuelve; el Grok de este buzón sí');
+  else perform pg_temp.falla('243 ' || (r->'menciones')::text); end if;
+  insert into public.mensajes(hilo_id, autor_humano, cuerpo) values (h, '11111111-1111-1111-1111-111111111111', '@Zeta despues');
+  if (select nt.mensaje_id from public.notificaciones nt where nt.mensaje_id = (r->>'mensaje_id')::uuid) = (r->>'mensaje_id')::uuid
+     and (select max(nt.id) from public.notificaciones nt where nt.hilo_id = h) <> (select nt.id from public.notificaciones nt where nt.mensaje_id = (r->>'mensaje_id')::uuid)
+     and (public._informe_menciones((select nt.id from public.notificaciones nt where nt.mensaje_id = (r->>'mensaje_id')::uuid))->'notificadas') @> '[{"agente":"Grok"}]'::jsonb
+     and public._informe_menciones((select nt.id from public.notificaciones nt where nt.mensaje_id = (r->>'mensaje_id')::uuid))::text not like '%Zeta%'
+  then perform pg_temp.ok('243b el informe de un mensaje no es el del aviso más nuevo del hilo');
+  else perform pg_temp.falla('243b'); end if;
+end $$;
+
+create temp table if not exists _m(k text primary key, id uuid);
+grant all on _m to anon, authenticated, service_role;
+do $$
+declare h uuid; n bigint; grok uuid;
+begin
+  select id into grok from public.agentes
+   where buzon_id='aaaaaaaa-0000-0000-0000-000000000001' and nombre='Grok' and eliminado_en is null;
+  select id into h from public.hilos where titulo = 'Hilo de mensajes' and creado_por_agente = 'bbbbbbbb-0000-0000-0000-0000000000b1' order by creado_en desc limit 1;
+  select notificacion_id into n from public.menciones where hilo_id = h and agente_id = grok and estado = 'notificada' order by creado_en desc limit 1;
+  update public.notificaciones set entregados = array['wh:' || grok::text], descartados = '{}' where id = n;
+  insert into pg_temp._m(k, id) values ('h', h) on conflict (k) do update set id = excluded.id;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$
+declare h uuid := (select id from pg_temp._m where k = 'h'); ent text;
+begin
+  select entrega into ent from public.menciones_del_hilo(h) where token = 'Grok' and estado = 'notificada' limit 1;
+  if ent = 'avisado' then perform pg_temp.ok('244 el dueño ve avisado cuando el webhook se entregó');
+  else perform pg_temp.falla('244 ' || coalesce(ent,'null')); end if;
+end $$;
+reset role;
+do $$
+declare h uuid := (select id from pg_temp._m where k = 'h'); grok uuid; n bigint;
+begin
+  select id into grok from public.agentes
+   where buzon_id='aaaaaaaa-0000-0000-0000-000000000001' and nombre='Grok' and eliminado_en is null;
+  select notificacion_id into n from public.menciones where hilo_id = h and agente_id = grok and estado = 'notificada' order by creado_en desc limit 1;
+  update public.notificaciones set entregados = '{}', descartados = array['wh:' || grok::text || '|receptor_desactivado'] where id = n;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$
+declare h uuid := (select id from pg_temp._m where k = 'h'); ent text;
+begin
+  select entrega into ent from public.menciones_del_hilo(h) where token = 'Grok' and estado = 'notificada' limit 1;
+  if ent = 'descartado' then perform pg_temp.ok('245 el dueño ve descartado, sin URL ni secreto');
+  else perform pg_temp.falla('245 ' || coalesce(ent,'null')); end if;
+end $$;
+reset role;
+do $$
+declare h uuid := (select id from pg_temp._m where k = 'h'); grok uuid; n bigint;
+begin
+  select id into grok from public.agentes
+   where buzon_id='aaaaaaaa-0000-0000-0000-000000000001' and nombre='Grok' and eliminado_en is null;
+  select notificacion_id into n from public.menciones where hilo_id = h and agente_id = grok and estado = 'notificada' order by creado_en desc limit 1;
+  update public.notificaciones set estado = 'fallida', entregados = '{}', descartados = '{}', ultimo_error = 'receptor_desactivado', intentos = 3 where id = n;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$
+declare h uuid := (select id from pg_temp._m where k = 'h'); ent text;
+begin
+  select entrega into ent from public.menciones_del_hilo(h) where token = 'Grok' and estado = 'notificada' limit 1;
+  if ent = 'descartado' then perform pg_temp.ok('245b un aviso fallido (reintentos agotados) no se queda en pendiente');
+  else perform pg_temp.falla('245b ' || coalesce(ent,'null')); end if;
+end $$;
+reset role;
+do $$
+declare h uuid := (select id from pg_temp._m where k = 'h'); grok uuid; n bigint;
+begin
+  select id into grok from public.agentes
+   where buzon_id='aaaaaaaa-0000-0000-0000-000000000001' and nombre='Grok' and eliminado_en is null;
+  select notificacion_id into n from public.menciones where hilo_id = h and agente_id = grok and estado = 'notificada' order by creado_en desc limit 1;
+  update public.notificaciones set estado = 'pendiente', intentos = 1, entregados = '{}', descartados = '{}', ultimo_error = 'receptor_desactivado' where id = n;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$
+declare h uuid := (select id from pg_temp._m where k = 'h'); ent text;
+begin
+  select entrega into ent from public.menciones_del_hilo(h) where token = 'Grok' and estado = 'notificada' limit 1;
+  if ent = 'pendiente' then perform pg_temp.ok('245c mientras aún se reintenta, la mención sigue pendiente');
+  else perform pg_temp.falla('245c ' || coalesce(ent,'null')); end if;
+end $$;
+reset role;
+set role authenticated; select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
+do $$
+declare h uuid;
+begin
+  select id into h from public.hilos where creado_por_agente = 'bbbbbbbb-0000-0000-0000-0000000000b1' limit 1;
+  begin
+    perform public.menciones_del_hilo(h);
+    perform pg_temp.falla('246');
+  exception when insufficient_privilege then
+    perform pg_temp.ok('246 un intruso no consulta las menciones de otro buzón');
+  end;
+  if (select count(*) from public.menciones where buzon_id='aaaaaaaa-0000-0000-0000-000000000001') = 0
+     and (select count(*) from public.agente_alias where buzon_id='aaaaaaaa-0000-0000-0000-000000000001') = 0
+  then perform pg_temp.ok('247 el intruso no lee menciones ni alias del buzón de Erik');
+  else perform pg_temp.falla('247'); end if;
+end $$;
+set role anon;
+do $$ begin
+  begin perform public._registrar_menciones(1, null, null, null, null, false, '@Grok'); perform pg_temp.falla('248');
+  exception when insufficient_privilege then perform pg_temp.ok('248 una IA no registra menciones ni lee la cola a mano'); end;
+  begin perform 1 from public.menciones limit 1; perform pg_temp.falla('248b');
+  exception when insufficient_privilege then null; end;
+end $$;
+reset role;
+do $$ begin
+  if not exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name in ('menciones','agente_alias')
+       and column_name ~* 'webhook|secreto|url')
+  then perform pg_temp.ok('249 las tablas de menciones no tienen columnas de webhook ni secreto');
+  else perform pg_temp.falla('249'); end if;
+end $$;
+
+-- 250-251: en producción el agente se llama grokbot. @Grok y @grokbot llegan al que exista.
+reset role;
+update public.agentes set eliminado_en = now() where id = 'bbbbbbbb-0000-0000-0000-0000000000b8';
+insert into public.agentes(id, buzon_id, nombre, webhook_url, webhook_secreto) values
+  ('bbbbbbbb-0000-0000-0000-0000000000b9','aaaaaaaa-0000-0000-0000-000000000002','grokbot','https://hooks.ejemplo.dev/gb','whsec_gb');
+do $$
+declare
+  ajeno uuid := 'bbbbbbbb-0000-0000-0000-000000000009';
+  bot uuid := 'bbbbbbbb-0000-0000-0000-0000000000b9';
+  h uuid; n bigint; ds uuid[];
+begin
+  if exists (select 1 from public.agente_alias where agente_id = bot and alias_norm = 'grok')
+     and exists (select 1 from public.agente_alias where agente_id = (
+           select id from public.agentes where buzon_id = 'aaaaaaaa-0000-0000-0000-000000000001' and nombre = 'Grok' and eliminado_en is null)
+         and alias_norm = 'grokbot')
+  then perform pg_temp.ok('250 @Grok y @grokbot son el mismo alias, en los dos sentidos');
+  else perform pg_temp.falla('250'); end if;
+  insert into public.hilos(buzon_id, tipo, titulo, creado_por_agente, para_agente)
+    values ('aaaaaaaa-0000-0000-0000-000000000002','tarea','hola @Grok', ajeno, ajeno)
+    returning id into h;
+  select max(id) into n from public.notificaciones where hilo_id = h and evento = 'hilo_nuevo';
+  select array_agg(d.id) into ds from public._destinos_webhook(n) d;
+  if exists (select 1 from public.menciones where notificacion_id = n and agente_id = bot and token = 'Grok' and estado = 'notificada')
+     and ds = array[bot]
+  then perform pg_temp.ok('251 un agente llamado grokbot se despierta con @Grok');
+  else perform pg_temp.falla('251 ' || coalesce(ds::text,'null')); end if;
+  update public.notificaciones set creado_en = creado_en - interval '2 minutes' where hilo_id = h;
+  insert into public.mensajes(hilo_id, autor_agente, cuerpo) values (h, ajeno, 'y @grokbot');
+  select max(id) into n from public.notificaciones where hilo_id = h and evento = 'mensaje_nuevo';
+  if exists (select 1 from public.menciones where notificacion_id = n and agente_id = bot and estado = 'notificada')
+     and exists (select 1 from public._destinos_webhook(n) d where d.id = bot)
+  then perform pg_temp.ok('252 @grokbot también es el nombre del agente');
+  else perform pg_temp.falla('252'); end if;
+  update public.agentes set eliminado_en = null where id = 'bbbbbbbb-0000-0000-0000-0000000000b8';
+  insert into public.mensajes(hilo_id, autor_agente, cuerpo) values (h, ajeno, '@Grok otra vez');
+  select max(id) into n from public.notificaciones where hilo_id = h and evento = 'mensaje_nuevo';
+  if exists (select 1 from public.menciones where notificacion_id = n and token = 'Grok' and estado = 'ambigua')
+     and not exists (select 1 from public._destinos_webhook(n) d where d.id = bot)
+  then perform pg_temp.ok('253 si existen Grok y grokbot, @Grok no avisa a ninguno');
+  else perform pg_temp.falla('253'); end if;
+end $$;
+
 \echo TODAS_LAS_PRUEBAS_PASARON

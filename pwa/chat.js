@@ -37,6 +37,75 @@ export function debeEncuestarLista({ oculto, vista }) {
 
 // Envía el texto. Limpia solo si el servidor aceptó el alta (alExito).
 // Si falla, el texto se queda y se avisa (alError). Si el botón ya está ocupado, no vuelve a enviar.
+// Misma idea que mencion_norm en la base: minúsculas, sin tildes ni signos.
+export function normMencion(s) {
+  return String(s ?? '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Token de una sola pieza para insertar tras @ (el servidor ignora espacios y tildes).
+export function tokenMencion(nombre) {
+  return String(nombre ?? '').normalize('NFKC').replace(/[^0-9A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ_-]+/g, '').slice(0, 40);
+}
+
+// Si el cursor está escribiendo una @mencion (inicio o tras espacio, no un correo).
+export function consultaMencion(texto, cursor) {
+  const src = String(texto ?? '');
+  const pos = Math.max(0, Math.min(Number.isFinite(cursor) ? cursor : src.length, src.length));
+  const m = /(?:^|[\s\u00A0])@([A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ][0-9A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ_-]{0,39})?$/.exec(src.slice(0, pos));
+  if (!m) return null;
+  const consulta = m[1] || '';
+  return { inicio: pos - consulta.length - 1, consulta };
+}
+
+export function sugerenciasMencion(filas, consulta, limite = 8) {
+  const q = normMencion(consulta);
+  const vistos = new Set();
+  const lista = [];
+  for (const f of filas ?? []) {
+    const etiqueta = String(f?.etiqueta || f?.nombre || '').trim();
+    const nombre = String(f?.nombre || etiqueta).trim();
+    const id = f?.id;
+    if (!id || !etiqueta) continue;
+    const nEt = normMencion(etiqueta);
+    const nNom = normMencion(nombre);
+    if (!nEt || nEt.length < 2) continue;
+    if (q && !nEt.startsWith(q) && !nNom.startsWith(q) && !nEt.includes(q) && !nNom.includes(q)) continue;
+    const key = `${id}:${nEt}`;
+    if (vistos.has(key)) continue;
+    vistos.add(key);
+    lista.push({ id, nombre, etiqueta, token: tokenMencion(etiqueta), pref: !q || nEt.startsWith(q) || nNom.startsWith(q) });
+  }
+  lista.sort((a, b) => (a.pref === b.pref ? a.nombre.localeCompare(b.nombre, 'es') || a.etiqueta.localeCompare(b.etiqueta, 'es') : (a.pref ? -1 : 1)));
+  return lista.slice(0, limite).map(({ pref, ...r }) => r);
+}
+
+export function aplicarMencion(texto, inicio, etiqueta) {
+  const src = String(texto ?? '');
+  const tok = tokenMencion(etiqueta);
+  if (!tok || inicio < 0 || inicio > src.length) return { texto: src, cursor: Math.max(0, Math.min(inicio, src.length)) };
+  const antes = src.slice(0, inicio);
+  const resto = src.slice(inicio).replace(/^@[0-9A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ_-]{0,40}/, '');
+  const pieza = `@${tok} `;
+  return { texto: antes + pieza + resto.replace(/^ /, ''), cursor: (antes + pieza).length };
+}
+
+// avisado | descartado | pendiente | ambigua | desconocida | excedida | sin_aviso
+export function claseMencion(m) {
+  if (!m) return null;
+  if (m.entrega === 'avisado') return 'avisado';
+  if (m.entrega === 'descartado') return 'descartado';
+  if (m.estado === 'notificada') return 'pendiente';
+  if (m.estado === 'ambigua') return 'ambigua';
+  if (m.estado === 'desconocida') return 'desconocida';
+  if (m.estado === 'excedida') return 'excedida';
+  if (['autor', 'sin_webhook', 'limitada', 'bucle', 'rafaga'].includes(m.estado)) return 'sin_aviso';
+  return null;
+}
+
+export function firmaMenciones(lista) {
+  return (lista ?? []).map((m) => [m.mensaje_id ?? '', m.token ?? '', m.estado ?? '', m.entrega ?? ''].join(':')).join('|');
+}
+
 export async function enviarMensajeChat({ cuerpo, insertar, alExito, alError, conBotones, boton }) {
   const texto = String(cuerpo ?? '').trim();
   if (!texto) return { enviado: false };

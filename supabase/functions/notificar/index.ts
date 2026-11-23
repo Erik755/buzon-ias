@@ -31,7 +31,7 @@ const deps = {
     return { tituloHilo: h.titulo, quien: a?.nombre ?? null };
   },
   borrarSuscripcion: async (id: string) => { await db.from('push_suscripciones').delete().eq('id', id); },
-  // Solo las IAs involucradas en el hilo, sin re-despertar a quien no lo ha abierto y con freno anti ping-pong.
+  // IAs del hilo (frenos de la 017) más las mencionadas con @ en este aviso.
   webhooks: async (_b: string, _excepto: string | null, n: { id: number }) => {
     const { data, error } = await db.rpc('_destinos_webhook', { p_id: n.id });
     if (error) throw new Error('destinos');

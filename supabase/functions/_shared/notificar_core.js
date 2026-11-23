@@ -3,8 +3,11 @@
 //         webhooks(buzon, excepto), resolver(host),
 //         enviar(url, ip, headers, body) -> status   (POST a la IP ya validada; ver http_fijo.js), claves? }
 // * webhooks(buzon, excepto, n): en producción usa _destinos_webhook(n.id) (solo IAs del hilo + freno anti ping-pong).
-// * Un fallo temporal (DNS, red, 408/429/5xx) se reintenta; uno definitivo (destino prohibido, sin secreto,
+// * Un fallo temporal (DNS, red, 408/429/5xx, o un 4xx cuyo cuerpo dice que el receptor está
+//   desactivado: "disabled" / "paused") se reintenta. Uno definitivo (destino prohibido, sin secreto,
 //   redirección, otro 4xx) se DESCARTA con motivo (_marcar_descartado): nunca cuenta como entregado y no se reintenta.
+// * Un receptor desactivado no se descarta: queda pendiente con motivo receptor_desactivado (visible, sin el
+//   texto del receptor) y se reintenta con el tope de siempre (3 intentos, luego fallida).
 // * Cada destino entregado se marca (_marcar_entregado): los reintentos solo van a los que fallaron.
 // * Los descartes previos vuelven a entrar en `fallos`: un aviso con destinos descartados cierra como fallo
 //   visible (estado 'fallida' con el motivo), nunca como entregado.
@@ -12,6 +15,14 @@
 //   el status numérico va solo al log de la función, no a ninguna columna legible por el dueño.
 // * Cada destino deja una línea de log JSON con notif, destino, motivo, status y ms: sin URLs, secretos ni contenido.
 import { validarDestino, definitivoHttp, DNS_TEMPORALES } from './ssrf.js';
+
+// 4xx que en realidad es temporal: la automatización del receptor está apagada un rato
+// ("Automation … is disabled"). No es un 404 ni un rechazo de credenciales.
+export function receptorTemporal(pista) {
+  const s = String(pista || '');
+  return /\bdisabled\b/i.test(s) || /\bdesactivad/i.test(s) || /\bpaused\b/i.test(s)
+    || /\bpausad/i.test(s) || /\btemporarily\b/i.test(s) || /\btemporalmente\b/i.test(s);
+}
 import { firmar, payloadTarea, payloadMensaje } from './hmac.js';
 import { enviarPush, payloadPush } from './webpush.js';
 
@@ -87,7 +98,7 @@ async function procesarUna(n, deps) {
         bitacora(d, r, t1);
         if (r.ok) await marcar(d);
         else if (r.definitivo) await descartar(d, motivoDb(r));
-        else fallos.add('webhook_fallo');
+        else fallos.add(r.motivo === 'receptor_desactivado' ? 'receptor_desactivado' : 'webhook_fallo');
       } catch (e) { errorDestino(d, e); fallos.add('webhook_fallo'); }
     }
   }
@@ -115,7 +126,8 @@ export async function enviarWebhook(w, hiloId, deps, evento = 'hilo_nuevo') {
       const pista = typeof res === 'number' ? null : res.pista ?? null;
       if (status >= 300 && status < 400) return { ok: false, motivo: 'redireccion_no_permitida', status, definitivo: true, ...(pista ? { pista } : {}) };
       if (status >= 200 && status < 300) return { ok: true, status };
-      return { ok: false, motivo: `http_${status}`, status, definitivo: definitivoHttp(status), ...(pista ? { pista } : {}) };
+      const desactivado = status >= 400 && status < 500 && status !== 408 && status !== 429 && receptorTemporal(pista);
+      return { ok: false, motivo: desactivado ? 'receptor_desactivado' : `http_${status}`, status, definitivo: definitivoHttp(status) && !desactivado, ...(pista ? { pista } : {}) };
     } catch { ultimo = { ok: false, motivo: 'red_o_timeout', definitivo: false }; }
   }
   return ultimo;

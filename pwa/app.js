@@ -4,7 +4,7 @@ import { GUIAS, ETIQUETA, QUE_HACER } from './guias.js';
 import { GUIAS_EN, ETIQUETA_EN, QUE_HACER_EN } from './guias-i18n.js';
 import { mensajeAmable, conBotones, avisar, mostrarAviso } from './errores.js';
 import { etiquetaAviso } from './avisos.js';
-import { fusionarMensajes, idsMensajes, firmaLista, debeEncuestar, debeEncuestarLista, enviarMensajeChat, INTERVALO_SONDEO_MS } from './chat.js';
+import { fusionarMensajes, idsMensajes, firmaLista, firmaMenciones, debeEncuestar, debeEncuestarLista, enviarMensajeChat, INTERVALO_SONDEO_MS, consultaMencion, sugerenciasMencion, aplicarMencion, claseMencion } from './chat.js';
 import { t, setIdioma, getIdioma, onIdioma, iniciarIdioma } from './i18n.js';
 import { buscarGuias, guiaPorNombre as guiaPorNombreEn, rellenarPlantilla, enmascararToken, ALIAS } from './conectar.js';
 import { ETIQUETA_PROMPT, promptDeGuia, PROMPT_DE_GUIA } from './prompts-agentes.js';
@@ -417,9 +417,34 @@ function pintarCentroVacio() {
 }
 
 let chatHilo = null, chatTimer = null, chatCanal = null, chatVis = null, chatBorrador = '';
+let chatMenciones = [], chatSugerencias = [], chatAgentesAviso = [];
 const consultaMensajes = (hilo) => sb.from('mensajes').select('id,cuerpo,creado_en,autor_humano,agentes(nombre,eliminado_en)').eq('hilo_id', hilo).order('creado_en');
 
-function nodoBurbuja(m) {
+function chipMencion(m) {
+  const clase = claseMencion(m);
+  if (!clase) return null;
+  const s = document.createElement('span');
+  s.className = 'mencion-chip ' + clase;
+  s.textContent = `@${m.token} · ${t('mencion.' + clase)}`;
+  return s;
+}
+
+function pintarChipsHilo(menciones) {
+  const cab = $('#chat-cab');
+  if (!cab || cab.hidden) return;
+  let caja = $('#chat-menciones-hilo');
+  const deHilo = (menciones || []).filter((m) => !m.mensaje_id && claseMencion(m));
+  if (!deHilo.length) { caja?.remove(); return; }
+  if (!caja) {
+    caja = document.createElement('div');
+    caja.id = 'chat-menciones-hilo';
+    caja.className = 'mencion-chips';
+    cab.append(caja);
+  }
+  caja.replaceChildren(...deHilo.map(chipMencion).filter(Boolean));
+}
+
+function nodoBurbuja(m, menciones) {
   const d = document.createElement('div');
   d.className = 'burbuja ' + (m.autor_humano ? 'mia' : 'suya');
   d.dataset.id = m.id;
@@ -432,30 +457,51 @@ function nodoBurbuja(m) {
   autor.append(av, meta);
   const cuerpo = document.createElement('div'); cuerpo.className = 'cuerpo'; cuerpo.textContent = m.cuerpo ?? '';
   d.append(autor, cuerpo);
+  const propias = (menciones || []).filter((x) => String(x.mensaje_id || '') === String(m.id));
+  if (propias.length) {
+    const fila = document.createElement('div');
+    fila.className = 'mencion-chips';
+    for (const x of propias) { const chip = chipMencion(x); if (chip) fila.append(chip); }
+    if (fila.childElementCount) d.append(fila);
+  }
   return d;
 }
 
-function pintarCajaMensajes(caja, lista) {
+function pintarCajaMensajes(caja, lista, menciones = chatMenciones) {
   if (!caja) return;
   const ids = idsMensajes(lista);
-  if (caja.dataset.ids === ids) return;
+  const firma = ids + '|' + firmaMenciones(menciones);
+  if (caja.dataset.firma === firma) return;
+  const nuevos = caja.dataset.ids !== ids;
   caja.dataset.ids = ids;
+  caja.dataset.firma = firma;
   caja.replaceChildren();
   if (!lista?.length) {
     const p = document.createElement('p'); p.className = 'meta'; p.textContent = t('chat.vacio');
     caja.append(p);
     return;
   }
-  for (const m of lista) caja.append(nodoBurbuja(m));
-  caja.parentElement?.scrollTo?.({ top: caja.parentElement.scrollHeight });
+  for (const m of lista) caja.append(nodoBurbuja(m, menciones));
+  if (nuevos) caja.parentElement?.scrollTo?.({ top: caja.parentElement.scrollHeight });
+}
+
+async function cargarMenciones(hilo) {
+  const { data, error } = await sb.rpc('menciones_del_hilo', { p_hilo: hilo });
+  if (error) return null;
+  return data || [];
 }
 
 async function refrescarChat() {
   if (!chatHilo) return;
+  const hilo = chatHilo;
   const caja = $('#chat-msgs'); if (!caja) return;
-  const { data, error } = await consultaMensajes(chatHilo);
-  if (error) return;
-  pintarCajaMensajes(caja, data || []);
+  const { data, error } = await consultaMensajes(hilo);
+  if (error || chatHilo !== hilo) return;
+  const menciones = await cargarMenciones(hilo);
+  if (chatHilo !== hilo) return;
+  if (menciones) chatMenciones = menciones;
+  pintarCajaMensajes(caja, data || [], chatMenciones);
+  pintarChipsHilo(chatMenciones);
 }
 
 function detenerEnVivo() {
@@ -486,14 +532,19 @@ async function abrirConversacion(id) {
   if (!id) return pintarCentroVacio();
   hiloAbierto = id;
   chatHilo = id;
-  const [{ data: h, error: eh }, { data: ms, error: em }, { data: ap }, { data: adj }, { data: evs }, { data: cierres }] = await Promise.all([
+  const [{ data: h, error: eh }, { data: ms, error: em }, { data: ap }, { data: adj }, { data: evs }, { data: cierres }, mencionesRes, sugerenciasRes] = await Promise.all([
     sb.from('hilos').select('*, creador:agentes!hilos_creado_por_agente_fkey(nombre,eliminado_en), destino:agentes!hilos_para_agente_fkey(nombre,eliminado_en)').eq('id', id).single(),
     consultaMensajes(id),
     sb.from('aprobaciones').select('decision,nota,creado_en').eq('hilo_id', id).order('creado_en'),
     sb.from('adjuntos').select('id,nombre,tipo,tamano').eq('hilo_id', id).order('creado_en'),
     sb.from('evidencias_cierre').select('*, agentes(nombre)').eq('hilo_id', id).order('creado_en'),
     sb.from('cierres').select('veredicto,motivo,creado_en').eq('hilo_id', id).order('creado_en'),
+    sb.rpc('menciones_del_hilo', { p_hilo: id }),
+    sb.rpc('menciones_sugerencias', { p_hilo: id }),
   ]);
+  if (chatHilo !== id) return;
+  chatMenciones = mencionesRes?.error ? [] : (mencionesRes?.data || []);
+  if (!sugerenciasRes?.error && sugerenciasRes?.data) chatSugerencias = sugerenciasRes.data;
   if (eh || !h) { if (eh) avisar(t('err.noCargar'), eh); return pintarCentroVacio(); }
 
   const cab = $('#chat-cab');
@@ -534,7 +585,8 @@ async function abrirConversacion(id) {
   }
   const msgs = document.createElement('div'); msgs.id = 'chat-msgs';
   cuerpo.append(msgs);
-  if (!em) pintarCajaMensajes(msgs, ms || []);
+  if (!em) pintarCajaMensajes(msgs, ms || [], chatMenciones);
+  pintarChipsHilo(chatMenciones);
   else { const p = document.createElement('p'); p.className = 'meta'; p.textContent = mensajeAmable(em); cuerpo.append(p); }
   for (const a of (ap || [])) {
     const p = document.createElement('p'); p.className = 'ficha';
@@ -585,8 +637,61 @@ async function abrirConversacion(id) {
     const boton = form.querySelector('button[type="submit"]');
     const borrador = chatBorrador;
     if (borrador) entrada.value = borrador;
-    entrada.addEventListener('input', () => { chatBorrador = entrada.value; entrada.style.height = 'auto'; entrada.style.height = Math.min(entrada.scrollHeight, 200) + 'px'; });
+    const menu = document.createElement('ul');
+    menu.className = 'mencion-menu';
+    menu.hidden = true;
+    menu.setAttribute('role', 'listbox');
+    menu.setAttribute('aria-label', t('mencion.sugerencias'));
+    entrada.parentElement.append(menu);
+    const mencion = { abierta: false, items: [], activo: 0 };
+    const cerrarMencion = () => { mencion.abierta = false; menu.hidden = true; menu.replaceChildren(); mencion.items = []; };
+    const elegirMencion = (i) => {
+      const c = consultaMencion(entrada.value, entrada.selectionStart);
+      const op = mencion.items[i];
+      if (!c || !op) return cerrarMencion();
+      const r = aplicarMencion(entrada.value, c.inicio, op.etiqueta);
+      entrada.value = r.texto;
+      chatBorrador = r.texto;
+      entrada.setSelectionRange(r.cursor, r.cursor);
+      entrada.style.height = 'auto';
+      entrada.style.height = Math.min(entrada.scrollHeight, 200) + 'px';
+      cerrarMencion();
+      entrada.focus();
+    };
+    const pintarMencion = () => {
+      const c = consultaMencion(entrada.value, entrada.selectionStart);
+      if (!c) return cerrarMencion();
+      const filas = chatSugerencias.length ? chatSugerencias : (chatAgentesAviso || []).map((a) => ({ id: a.id, nombre: a.nombre, etiqueta: a.nombre }));
+      mencion.items = sugerenciasMencion(filas, c.consulta);
+      if (!mencion.items.length) return cerrarMencion();
+      mencion.activo = Math.min(mencion.activo, mencion.items.length - 1);
+      menu.replaceChildren();
+      mencion.items.forEach((op, i) => {
+        const li = document.createElement('li');
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.setAttribute('role', 'option');
+        b.setAttribute('aria-selected', i === mencion.activo ? 'true' : 'false');
+        b.textContent = op.etiqueta === op.nombre ? op.nombre : `${op.nombre} · @${op.token}`;
+        b.onmousedown = (ev) => { ev.preventDefault(); elegirMencion(i); };
+        li.append(b);
+        menu.append(li);
+      });
+      menu.hidden = false;
+      mencion.abierta = true;
+    };
+    entrada.addEventListener('input', () => { chatBorrador = entrada.value; entrada.style.height = 'auto'; entrada.style.height = Math.min(entrada.scrollHeight, 200) + 'px'; mencion.activo = 0; pintarMencion(); });
+    entrada.addEventListener('click', () => { mencion.activo = 0; pintarMencion(); });
     entrada.addEventListener('keydown', (e) => {
+      if (mencion.abierta && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Escape' || (e.key === 'Enter' && !e.shiftKey))) {
+        e.preventDefault();
+        if (e.key === 'Escape') return cerrarMencion();
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          mencion.activo = (mencion.activo + (e.key === 'ArrowDown' ? 1 : mencion.items.length - 1)) % mencion.items.length;
+          return pintarMencion();
+        }
+        return elegirMencion(mencion.activo);
+      }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
     });
     $('#f-chat').onsubmit = async (e) => {
@@ -656,6 +761,7 @@ async function pintarAvisosHilo(hiloId) {
     return;
   }
   const lista = data ?? [];
+  chatAgentesAviso = lista;
   caja.replaceChildren();
   const tit = document.createElement('b'); tit.textContent = t('avisos.titulo'); caja.append(tit);
   const intro = document.createElement('p'); intro.className = 'meta';

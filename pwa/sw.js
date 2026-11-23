@@ -1,5 +1,5 @@
 // Service worker: carcasa de la app disponible sin conexión. Nunca cachea datos del buzón (Supabase ni MCP).
-const C = 'buzon-v25-prompts-agentes';
+const C = 'buzon-v26-menciones';
 const CASCARA = ['./', 'index.html', 'app.js', 'config.js', 'guias.js', 'errores.js', 'chat.js', 'avisos.js', 'i18n.js', 'conectar.js', 'guias-i18n.js', 'prompts-agentes.js', 'layout.js', 'destinatarios.js', 'tema-inicio.js', 'temas.js', 'estilo.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'fonts/InterVariable.woff2',
   'vendor/supabase.js', 'offline.html', 'privacidad.html', 'terminos.html'];
 self.addEventListener('install', (e) => e.waitUntil(caches.open(C).then((c) => c.addAll(CASCARA)).then(() => self.skipWaiting())));
