@@ -586,8 +586,8 @@ async function abrirConversacion(id) {
   const msgs = document.createElement('div'); msgs.id = 'chat-msgs';
   cuerpo.append(msgs);
   if (!em) pintarCajaMensajes(msgs, ms || [], chatMenciones);
-  pintarChipsHilo(chatMenciones);
   else { const p = document.createElement('p'); p.className = 'meta'; p.textContent = mensajeAmable(em); cuerpo.append(p); }
+  pintarChipsHilo(chatMenciones);
   for (const a of (ap || [])) {
     const p = document.createElement('p'); p.className = 'ficha';
     p.textContent = `✅ ${t('hilo.decision.' + a.decision) || a.decision}${a.nota ? ' · ' + a.nota : ''} · ${fecha(a.creado_en)}`;
