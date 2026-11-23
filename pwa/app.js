@@ -11,6 +11,7 @@ import { ETIQUETA_PROMPT, promptDeGuia, PROMPT_DE_GUIA } from './prompts-agentes
 import { filtrarHilos, inicialDe, hiloCerrado } from './layout.js';
 import { listaDestinatarios, idAgentePorNombre, nombresDeHilos } from './destinatarios.js';
 import { aplicarTema, leerTema, alternarTema as cambiarTema, sincronizarControlTema } from './temas.js';
+import { accionAuth, rutaHash, leerRuta, claveBorrador, guardarBorrador, leerBorrador, borrarBorrador, vigilarFoco } from './foco.js';
 
 const { SUPABASE_URL, SUPABASE_ANON_KEY, MCP_URL } = CFG;
 const VAPID = CFG.VAPID_PUBLIC_KEY || '';
@@ -21,13 +22,35 @@ const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const fecha = (f) => new Date(f).toLocaleString(getIdioma() === 'en' ? 'en-US' : 'es-MX', { dateStyle: 'short', timeStyle: 'short' });
 let usuario, buzon, buzones = [], vista = 'chat', filtro = 'todos', tokenGuia = '', guiaPendiente = '', buscaHilos = '';
 let hiloAbierto = null, listaHilosCache = [], listaAgentesCache = [], listaRemitentesExtra = [];
+let chatBorradorHilo = null;
+const almacen = () => (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
 const URL_MCP = MCP_URL || 'https://buzon-ias-mcp.vercel.app/api/mcp';
 const URL_CANJE = URL_MCP.replace(/\/api\/mcp$/, '/api/canje');
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 const avisoRed = () => { const n = $('#sin-red'); if (n) n.hidden = navigator.onLine; };
-addEventListener('online', () => { avisoRed(); if (usuario) asegurarBuzon().then(pintar).catch(() => {}); });
+addEventListener('online', () => {
+  avisoRed();
+  if (!usuario) return;
+  refrescarListaHilos();
+  if (vista === 'chat' && chatHilo) refrescarChat();
+});
 addEventListener('offline', avisoRed); avisoRed();
+// Volver de otra app (visibility, focus, pageshow, online) no reconstruye la vista.
+vigilarFoco({ document, window }, { onVisible() {
+  if (!usuario || document.hidden) return;
+  refrescarListaHilos();
+  if (vista === 'chat' && chatHilo) refrescarChat();
+} });
+addEventListener('hashchange', () => {
+  if (!usuario) return;
+  const r = leerRuta(location.hash);
+  if (r.vista === vista && (r.hilo || null) === (vista === 'chat' ? hiloAbierto : null)) return;
+  vista = r.vista;
+  if (r.hilo) hiloAbierto = r.hilo;
+  $$('[data-vista]').forEach((x) => x.classList.toggle('activa', x.dataset.vista === vista));
+  pintar();
+});
 $('#aviso-cerrar') && ($('#aviso-cerrar').onclick = () => mostrarAviso(''));
 
 iniciarIdioma();
@@ -213,10 +236,24 @@ $('#ver-guias').onclick = () => {
   else { pintarConectar(g, false); llevarA(g); }
 };
 
+function escribirRuta() {
+  const hash = rutaHash({ vista, hilo: vista === 'chat' ? hiloAbierto : null });
+  if (location.hash === hash) return;
+  history.replaceState(null, '', location.pathname + hash);
+}
+function aplicarRutaGuardada() {
+  const q = new URLSearchParams(location.search).get('hilo');
+  const r = leerRuta(location.hash);
+  if (r.vista === 'agentes' || r.vista === 'conectar') vista = r.vista;
+  if (/^[0-9a-f-]{36}$/i.test(q || '')) hiloAbierto = q;
+  else if (r.hilo) { vista = 'chat'; hiloAbierto = r.hilo; }
+  $$('[data-vista]').forEach((x) => x.classList.toggle('activa', x.dataset.vista === vista));
+}
 function irA(v) {
   vista = v;
   $$('[data-vista]').forEach((x) => x.classList.toggle('activa', x.dataset.vista === v));
   if (v === 'chat') cerrarCajones();
+  escribirRuta();
   pintar();
 }
 $$('[data-vista]').forEach((b) => { b.onclick = () => irA(b.dataset.vista); });
@@ -228,8 +265,30 @@ $$('[data-filtro]').forEach((b) => {
   };
 });
 $('#busca-hilos') && ($('#busca-hilos').oninput = (e) => { buscaHilos = e.target.value; dibujarListaHilos(); });
+function claveNuevo() { return claveBorrador(usuario?.id, 'hilo-nuevo'); }
+function persistirNuevo() {
+  const titulo = $('#nuevo-titulo')?.value || '';
+  const para = $('#nuevo-para')?.value || '';
+  const abierto = !$('#form-nuevo')?.hidden;
+  guardarBorrador(almacen(), claveNuevo(), { titulo, para, abierto });
+}
+function restaurarNuevo() {
+  const d = leerBorrador(almacen(), claveNuevo());
+  if (!d || typeof d !== 'object') return;
+  if ($('#nuevo-titulo') && d.titulo) $('#nuevo-titulo').value = d.titulo;
+  if ($('#nuevo-para') && d.para) $('#nuevo-para').value = d.para;
+  if (d.abierto && $('#form-nuevo')) $('#form-nuevo').hidden = false;
+}
+function olvidarNuevo() {
+  borrarBorrador(almacen(), claveNuevo());
+  if ($('#nuevo-titulo')) $('#nuevo-titulo').value = '';
+  if ($('#nuevo-para')) $('#nuevo-para').value = '';
+}
+$('#nuevo-titulo')?.addEventListener('input', persistirNuevo);
+$('#nuevo-para')?.addEventListener('input', persistirNuevo);
 $('#btn-nuevo') && ($('#btn-nuevo').onclick = async () => {
   const f = $('#form-nuevo'); f.hidden = !f.hidden;
+  persistirNuevo();
   if (!f.hidden) {
     await cargarAgentesDestino();
     refrescarListaDestino();
@@ -240,7 +299,7 @@ $('#btn-nuevo') && ($('#btn-nuevo').onclick = async () => {
 });
 $('#nuevo-cancelar') && ($('#nuevo-cancelar').onclick = () => {
   $('#form-nuevo').hidden = true;
-  const p = $('#nuevo-para'); if (p) p.value = '';
+  olvidarNuevo();
   ocultarListaDestino();
   const h = $('#nuevo-para-hint'); if (h) h.hidden = true;
 });
@@ -256,8 +315,7 @@ $('#form-nuevo') && ($('#form-nuevo').onsubmit = async (e) => {
   }
   const { data, error } = await sb.from('hilos').insert(fila).select('id').single();
   if (error) return avisar(t('err.noCrearHilo'), error);
-  $('#nuevo-titulo').value = '';
-  if ($('#nuevo-para')) $('#nuevo-para').value = '';
+  olvidarNuevo();
   const hint = $('#nuevo-para-hint'); if (hint) hint.hidden = true;
   $('#form-nuevo').hidden = true;
   ocultarListaDestino();
@@ -269,16 +327,19 @@ $('#form-nuevo') && ($('#form-nuevo').onsubmit = async (e) => {
 armarSelectorDestino();
 
 sb.auth.onAuthStateChange(async (ev, ses) => {
-  usuario = ses?.user ?? null;
+  const nuevo = ses?.user ?? null;
+  // TOKEN_REFRESHED y un SIGNED_IN del mismo usuario (al volver el foco) no repintan.
+  const accion = accionAuth(ev, { usuarioActual: usuario?.id ?? null, usuarioNuevo: nuevo?.id ?? null });
+  usuario = nuevo;
   $('#login').hidden = !!usuario; $('#app').hidden = !usuario; $('#salir').hidden = !usuario;
-  if (!usuario) { detenerEnVivo(); cerrarCajones(); return; }
-  // TOKEN_REFRESHED no debe volver a pintar: eso destrozaba el chat, apagaba el sondeo y podía dejar el texto en la caja.
-  if (ev === 'TOKEN_REFRESHED' || ev === 'USER_UPDATED') return;
+  if (accion === 'salir') { detenerEnVivo(); cerrarCajones(); return; }
+  if (accion !== 'entrar') return;
   try {
     await asegurarBuzon();
-    const h = new URLSearchParams(location.search).get('hilo');
-    if (/^[0-9a-f-]{36}$/i.test(h || '')) { hiloAbierto = h; history.replaceState(null, '', location.pathname); }
-    pintar();
+    aplicarRutaGuardada();
+    history.replaceState(null, '', location.pathname + rutaHash({ vista, hilo: vista === 'chat' ? hiloAbierto : null }));
+    await pintar();
+    restaurarNuevo();
   } catch (e) {
     const caja = $('#panel-centro') || $('#vista-pagina');
     if (caja) {
@@ -384,6 +445,7 @@ async function pintar() {
     else pintarConectar(extra, true);
     await refrescarListaHilos();
     await cargarAgentesDestino();
+    escribirRuta();
     arrancarEnVivo();
     return;
   }
@@ -399,6 +461,8 @@ async function pintar() {
   }
   if (hiloAbierto) await abrirConversacion(hiloAbierto);
   else pintarCentroVacio();
+  escribirRuta();
+  restaurarNuevo();
   arrancarEnVivo();
 }
 
@@ -635,6 +699,11 @@ async function abrirConversacion(id) {
     }
     const entrada = $('#chat-texto');
     const boton = form.querySelector('button[type="submit"]');
+    if (chatBorradorHilo !== id) {
+      const guardado = leerBorrador(almacen(), claveBorrador(usuario?.id, `chat:${id}`));
+      chatBorrador = typeof guardado === 'string' ? guardado : '';
+      chatBorradorHilo = id;
+    }
     const borrador = chatBorrador;
     if (borrador) entrada.value = borrador;
     const menu = document.createElement('ul');
@@ -680,7 +749,15 @@ async function abrirConversacion(id) {
       menu.hidden = false;
       mencion.abierta = true;
     };
-    entrada.addEventListener('input', () => { chatBorrador = entrada.value; entrada.style.height = 'auto'; entrada.style.height = Math.min(entrada.scrollHeight, 200) + 'px'; mencion.activo = 0; pintarMencion(); });
+    entrada.addEventListener('input', () => {
+      chatBorrador = entrada.value;
+      chatBorradorHilo = id;
+      guardarBorrador(almacen(), claveBorrador(usuario?.id, `chat:${id}`), entrada.value);
+      entrada.style.height = 'auto';
+      entrada.style.height = Math.min(entrada.scrollHeight, 200) + 'px';
+      mencion.activo = 0;
+      pintarMencion();
+    });
     entrada.addEventListener('click', () => { mencion.activo = 0; pintarMencion(); });
     entrada.addEventListener('keydown', (e) => {
       if (mencion.abierta && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Escape' || (e.key === 'Enter' && !e.shiftKey))) {
@@ -702,7 +779,7 @@ async function abrirConversacion(id) {
         conBotones,
         insertar: (cuerpo) => sb.from('mensajes').insert({ hilo_id: chatHilo, autor_humano: usuario.id, cuerpo }).select('id').single(),
         alError: (err) => avisar('No se pudo enviar', err),
-        alExito: async () => { entrada.value = ''; chatBorrador = ''; entrada.style.height = ''; await refrescarChat(); refrescarListaHilos(); },
+        alExito: async () => { borrarBorrador(almacen(), claveBorrador(usuario?.id, 'chat:' + chatHilo)); entrada.value = ''; chatBorrador = ''; entrada.style.height = ''; await refrescarChat(); refrescarListaHilos(); },
       });
     };
   } else if (cerrado && !pie.childElementCount) {
@@ -710,6 +787,14 @@ async function abrirConversacion(id) {
   }
 
   pintarAvisosHilo(h.id);
+  const nota = $('#nota');
+  if (nota) {
+    const claveNota = claveBorrador(usuario?.id, `nota:${id}`);
+    const previa = leerBorrador(almacen(), claveNota);
+    if (typeof previa === 'string' && previa) nota.value = previa;
+    nota.addEventListener('input', () => guardarBorrador(almacen(), claveNota, nota.value));
+  }
+  escribirRuta();
   arrancarEnVivo();
   dibujarListaHilos();
 }
@@ -732,6 +817,7 @@ function enlazarAccionesHilo(id, raiz) {
     if (!cuerpo) { const av = $('#nota-aviso'); av.textContent = 'Escribe tu mensaje en el cuadro de arriba antes de tocar «Comentar».'; av.hidden = false; $('#nota').focus(); return; }
     const { error } = await sb.from('mensajes').insert({ hilo_id: id, autor_humano: usuario.id, cuerpo });
     if (error) return avisar('No se pudo enviar', error);
+    borrarBorrador(almacen(), claveBorrador(usuario?.id, `nota:${id}`));
     abrirConversacion(id);
   });
 }
@@ -972,12 +1058,15 @@ async function pintarAgentes(v) {
     if (clave && (clave.length < 8 || /\s/.test(clave))) return mostrarAviso(getIdioma() === 'en' ? 'The key looks incomplete: copy it again in full, with no spaces.' : 'La clave parece incompleta: cópiala otra vez completa, sin espacios.');
     const { error } = await sb.rpc('guardar_webhook', { p_agente: id, p_url: url, p_clave: clave || null });
     if (error) return avisar('No se pudo guardar', error);
+    borrarBorrador(almacen(), claveBorrador(usuario?.id, `wh-url:${id}`));
+    borrarBorrador(almacen(), claveBorrador(usuario?.id, `wh-clave:${id}`));
     pintar();
   }));
   v.querySelectorAll('[data-whq]').forEach((b) => b.onclick = () => conBotones([b], async () => {
     if (!confirm(getIdioma() === 'en' ? 'Remove the key? This AI will stop receiving notices until you paste another.' : '¿Quitar la clave? Esta IA dejará de recibir avisos hasta que pegues otra.')) return;
     const { error } = await sb.rpc('guardar_clave_webhook', { p_agente: b.dataset.whq, p_clave: null });
     if (error) return avisar(getIdioma() === 'en' ? 'Could not remove the key' : 'No se pudo quitar la clave', error);
+    borrarBorrador(almacen(), claveBorrador(usuario?.id, `wh-clave:${b.dataset.whq}`));
     pintar();
   }));
   v.querySelectorAll('[data-whs]').forEach((b) => b.onclick = async () => {
@@ -991,6 +1080,27 @@ async function pintarAgentes(v) {
         : 'Cópiala ahora: no se vuelve a mostrar. Solo la necesita un receptor que tú programes para comprobar que el aviso viene del Buzón (técnico: cabecera X-Buzon-Firma, HMAC-SHA256 de "t.cuerpo"). Grok Bot no la necesita: usa la Clave.',
       valor: data,
     });
+  });
+  v.querySelectorAll('[data-wh]').forEach((input) => {
+    const id = input.dataset.wh;
+    const claveUrl = claveBorrador(usuario?.id, `wh-url:${id}`);
+    const claveKey = claveBorrador(usuario?.id, `wh-clave:${id}`);
+    const urlGuardada = leerBorrador(almacen(), claveUrl);
+    const claveGuardada = leerBorrador(almacen(), claveKey);
+    const keyInput = v.querySelector(`[data-whk="${id}"]`);
+    if (typeof urlGuardada === 'string' && urlGuardada) input.value = urlGuardada;
+    // La clave vive en sessionStorage: Android puede descartar la página al ir a copiarla.
+    if (keyInput && typeof claveGuardada === 'string' && claveGuardada) keyInput.value = claveGuardada;
+    if ((typeof urlGuardada === 'string' && urlGuardada) || (typeof claveGuardada === 'string' && claveGuardada)) {
+      const det = input.closest('details');
+      if (det) det.open = true;
+    }
+    const guardar = () => {
+      guardarBorrador(almacen(), claveUrl, input.value);
+      guardarBorrador(almacen(), claveKey, keyInput?.value || '');
+    };
+    input.addEventListener('input', guardar);
+    keyInput?.addEventListener('input', guardar);
   });
   pintarCodigos(); pintarPush();
   $('#f-nl').onsubmit = async (e) => {
