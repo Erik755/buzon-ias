@@ -72,6 +72,10 @@ test('flujo demo: ChatGPT crea, Claude toma y pide aprobación, Erik aprueba, se
   assert.equal(h.json.hilo.estado, 'aprobado');
   assert.equal(h.json.mensajes.length, 2);
   assert.equal(h.json.aprobaciones[0].decision, 'aprobado');
+  assert.equal(h.json.aprobaciones[0].por_dueno, true);
+  assert.equal(h.json.aprobaciones[0].hasta_mensaje_id, h.json.mensajes.at(-1).id);
+  assert.equal(Object.hasOwn(h.json.aprobaciones[0], 'humano_id'), false);
+  assert.equal(JSON.stringify(h.json).includes(ERIK), false);
 });
 
 test('negativa: token de otro buzón no ve ni responde el hilo de Erik', async () => {
@@ -209,6 +213,10 @@ test('cierre verificable: evidencia estructurada, es_humano y nombres reservados
   const final = (await llamar(v, 'leer', { hilo_id: r2.json.id })).json;
   assert.equal(final.mensajes.find((m) => m.cuerpo === 'Revisado por Erik').es_humano, true);
   assert.equal(final.cierres[0].veredicto, 'aceptado'); assert.equal(final.cierres[0].motivo, 'Evidencia revisada');
+  assert.equal(final.cierres[0].por_dueno, true);
+  assert.equal(final.cierres[0].hasta_mensaje_id, final.mensajes.find((m) => m.cuerpo === 'Evidencia revisada').id);
+  assert.equal(Object.hasOwn(final.cierres[0], 'humano_id'), false);
+  assert.equal(JSON.stringify(final).includes(ERIK), false);
   // Nombres reservados: ninguna IA puede llamarse humano/owner/dueño
   await assert.rejects(() => pool.query("insert into agentes(buzon_id,nombre) values('aaaaaaaa-0000-0000-0000-000000000001','HUMANO')"), /reservado/);
   await assert.rejects(() => pool.query("insert into agentes(buzon_id,nombre) values('aaaaaaaa-0000-0000-0000-000000000001','Dueño')"), /reservado/);
