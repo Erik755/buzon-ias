@@ -493,10 +493,12 @@ async function cargarMenciones(hilo) {
 
 async function refrescarChat() {
   if (!chatHilo) return;
+  const hilo = chatHilo;
   const caja = $('#chat-msgs'); if (!caja) return;
-  const { data, error } = await consultaMensajes(chatHilo);
-  if (error) return;
-  const menciones = await cargarMenciones(chatHilo);
+  const { data, error } = await consultaMensajes(hilo);
+  if (error || chatHilo !== hilo) return;
+  const menciones = await cargarMenciones(hilo);
+  if (chatHilo !== hilo) return;
   if (menciones) chatMenciones = menciones;
   pintarCajaMensajes(caja, data || [], chatMenciones);
   pintarChipsHilo(chatMenciones);
@@ -540,6 +542,7 @@ async function abrirConversacion(id) {
     sb.rpc('menciones_del_hilo', { p_hilo: id }),
     sb.rpc('menciones_sugerencias', { p_hilo: id }),
   ]);
+  if (chatHilo !== id) return;
   chatMenciones = mencionesRes?.error ? [] : (mencionesRes?.data || []);
   if (!sugerenciasRes?.error && sugerenciasRes?.data) chatSugerencias = sugerenciasRes.data;
   if (eh || !h) { if (eh) avisar(t('err.noCargar'), eh); return pintarCentroVacio(); }

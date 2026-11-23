@@ -128,6 +128,8 @@ test('app.js limpia la caja solo tras un envío exitoso y el refresco no la rell
   const refrescar = app.split('async function refrescarChat()')[1].split('function detenerEnVivo')[0];
   assert.match(refrescar, /#chat-msgs/);
   assert.doesNotMatch(refrescar, /chat-texto/);
+  assert.match(refrescar, /chatHilo !== hilo/);
+  assert.match(app, /if \(chatHilo !== id\) return;/);
   assert.doesNotMatch(refrescar, /entrada\.value/);
   // Si se reconstruye la vista, se restaura el borrador; no se vacía al pintar.
   assert.match(app, /if \(borrador\) entrada\.value = borrador/);

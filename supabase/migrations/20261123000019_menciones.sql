@@ -350,6 +350,11 @@ language sql stable security definer set search_path = public as $$
 $$;
 revoke all on function public._informe_menciones(bigint) from public, anon, authenticated;
 
+-- Liga el aviso de un mensaje con ese mensaje, para que mcp_responder informe
+-- sus menciones aunque otro mensaje del mismo hilo se encole en paralelo.
+alter table public.notificaciones add column if not exists mensaje_id uuid references public.mensajes(id) on delete set null;
+create index if not exists notificaciones_mensaje_idx on public.notificaciones(mensaje_id);
+
 -- ============ Encolar: mismos avisos de siempre + registro de menciones ============
 create or replace function public.encolar_mensaje() returns trigger
 language plpgsql security definer set search_path = public as $$
@@ -357,8 +362,8 @@ declare nid bigint; b uuid;
 begin
   select h.buzon_id into b from public.hilos h where h.id = new.hilo_id and h.estado <> 'cerrado';
   if b is null then return new; end if;
-  insert into public.notificaciones(buzon_id, hilo_id, evento, agente_origen, origen_humano)
-    values (b, new.hilo_id, 'mensaje_nuevo', new.autor_agente, new.autor_agente is null)
+  insert into public.notificaciones(buzon_id, hilo_id, evento, agente_origen, origen_humano, mensaje_id)
+    values (b, new.hilo_id, 'mensaje_nuevo', new.autor_agente, new.autor_agente is null, new.id)
     returning id into nid;
   perform public._registrar_menciones(nid, b, new.hilo_id, new.id, new.autor_agente, new.autor_agente is null, new.cuerpo);
   return new;
@@ -523,7 +528,7 @@ begin
   if p_accion = 'tomar' then update public.hilos set estado = 'tomado', tomado_por_agente = a.id where id = h.id returning * into h; end if;
   if p_accion = 'pedir_aprobacion' then update public.hilos set estado = 'pide_aprobacion' where id = h.id returning * into h; end if;
   if p_accion = 'pedir_cierre' and h.estado <> 'pide_cierre' then update public.hilos set estado = 'pide_cierre' where id = h.id returning * into h; end if;
-  select id into nid from public.notificaciones where hilo_id = h.id and evento = 'mensaje_nuevo' order by id desc limit 1;
+  select id into nid from public.notificaciones where mensaje_id = m and evento = 'mensaje_nuevo' limit 1;
   perform public._mcp_audit(a, 'responder:' || p_accion, h.id, p_ip);
   return jsonb_build_object('mensaje_id', m, 'estado', h.estado,
     'evidencia', case when p_accion = 'pedir_cierre' then (p_evidencia is not null) else null end,
@@ -571,6 +576,7 @@ begin
              when mn.estado <> 'notificada' or mn.agente_id is null then null
              when ('wh:' || mn.agente_id::text) = any(nt.entregados) then 'avisado'
              when exists (select 1 from unnest(nt.descartados) d where split_part(d, '|', 1) = 'wh:' || mn.agente_id::text) then 'descartado'
+             when nt.estado = 'fallida' then 'descartado'
              else 'pendiente'
            end
       from public.menciones mn

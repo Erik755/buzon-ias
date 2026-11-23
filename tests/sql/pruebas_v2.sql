@@ -1334,6 +1334,13 @@ begin
      and (select count(*) from public.menciones mn where mn.estado = 'notificada' and mn.agente_id = 'bbbbbbbb-0000-0000-0000-0000000000b8') = 0
   then perform pg_temp.ok('243 un agente borrado o de otro buzón no se resuelve; el Grok de este buzón sí');
   else perform pg_temp.falla('243 ' || (r->'menciones')::text); end if;
+  insert into public.mensajes(hilo_id, autor_humano, cuerpo) values (h, '11111111-1111-1111-1111-111111111111', '@Zeta despues');
+  if (select nt.mensaje_id from public.notificaciones nt where nt.mensaje_id = (r->>'mensaje_id')::uuid) = (r->>'mensaje_id')::uuid
+     and (select max(nt.id) from public.notificaciones nt where nt.hilo_id = h) <> (select nt.id from public.notificaciones nt where nt.mensaje_id = (r->>'mensaje_id')::uuid)
+     and (public._informe_menciones((select nt.id from public.notificaciones nt where nt.mensaje_id = (r->>'mensaje_id')::uuid))->'notificadas') @> '[{"agente":"Grok"}]'::jsonb
+     and public._informe_menciones((select nt.id from public.notificaciones nt where nt.mensaje_id = (r->>'mensaje_id')::uuid))::text not like '%Zeta%'
+  then perform pg_temp.ok('243b el informe de un mensaje no es el del aviso más nuevo del hilo');
+  else perform pg_temp.falla('243b'); end if;
 end $$;
 
 create temp table if not exists _m(k text primary key, id uuid);
@@ -1372,6 +1379,40 @@ begin
   select entrega into ent from public.menciones_del_hilo(h) where token = 'Grok' and estado = 'notificada' limit 1;
   if ent = 'descartado' then perform pg_temp.ok('245 el dueño ve descartado, sin URL ni secreto');
   else perform pg_temp.falla('245 ' || coalesce(ent,'null')); end if;
+end $$;
+reset role;
+do $$
+declare h uuid := (select id from pg_temp._m where k = 'h'); grok uuid; n bigint;
+begin
+  select id into grok from public.agentes
+   where buzon_id='aaaaaaaa-0000-0000-0000-000000000001' and nombre='Grok' and eliminado_en is null;
+  select notificacion_id into n from public.menciones where hilo_id = h and agente_id = grok and estado = 'notificada' order by creado_en desc limit 1;
+  update public.notificaciones set estado = 'fallida', entregados = '{}', descartados = '{}', ultimo_error = 'receptor_desactivado', intentos = 3 where id = n;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$
+declare h uuid := (select id from pg_temp._m where k = 'h'); ent text;
+begin
+  select entrega into ent from public.menciones_del_hilo(h) where token = 'Grok' and estado = 'notificada' limit 1;
+  if ent = 'descartado' then perform pg_temp.ok('245b un aviso fallido (reintentos agotados) no se queda en pendiente');
+  else perform pg_temp.falla('245b ' || coalesce(ent,'null')); end if;
+end $$;
+reset role;
+do $$
+declare h uuid := (select id from pg_temp._m where k = 'h'); grok uuid; n bigint;
+begin
+  select id into grok from public.agentes
+   where buzon_id='aaaaaaaa-0000-0000-0000-000000000001' and nombre='Grok' and eliminado_en is null;
+  select notificacion_id into n from public.menciones where hilo_id = h and agente_id = grok and estado = 'notificada' order by creado_en desc limit 1;
+  update public.notificaciones set estado = 'pendiente', intentos = 1, entregados = '{}', descartados = '{}', ultimo_error = 'receptor_desactivado' where id = n;
+end $$;
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+do $$
+declare h uuid := (select id from pg_temp._m where k = 'h'); ent text;
+begin
+  select entrega into ent from public.menciones_del_hilo(h) where token = 'Grok' and estado = 'notificada' limit 1;
+  if ent = 'pendiente' then perform pg_temp.ok('245c mientras aún se reintenta, la mención sigue pendiente');
+  else perform pg_temp.falla('245c ' || coalesce(ent,'null')); end if;
 end $$;
 reset role;
 set role authenticated; select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
