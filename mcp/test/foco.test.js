@@ -106,6 +106,8 @@ test('la app no repinta al volver el foco y recuerda la ruta y los borradores', 
   assert.match(app, /TOKEN_REFRESHED/);
   const online = app.split("addEventListener('online'")[1].split('addEventListener')[0];
   assert.doesNotMatch(online, /pintar\(/);
+  assert.match(online, /!sesionLista/);
+  assert.match(online, /entrarSesion\(/);
   assert.match(app, /vigilarFoco\(/);
   assert.match(app, /rutaHash\(/);
   assert.match(app, /leerRuta\(/);

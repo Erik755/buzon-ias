@@ -23,6 +23,10 @@ const fecha = (f) => new Date(f).toLocaleString(getIdioma() === 'en' ? 'en-US' :
 let usuario, buzon, buzones = [], vista = 'chat', filtro = 'todos', tokenGuia = '', guiaPendiente = '', buscaHilos = '';
 let hiloAbierto = null, listaHilosCache = [], listaAgentesCache = [], listaRemitentesExtra = [];
 let chatBorradorHilo = null;
+// El buzón llegó a abrirse. Si el primer arranque falló (sin red), volver online
+// reintenta entrar. Si ya está abierto, el foco solo refresca datos.
+let sesionLista = false;
+let entradaEnCurso = null;
 const almacen = () => (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
 const URL_MCP = MCP_URL || 'https://buzon-ias-mcp.vercel.app/api/mcp';
 const URL_CANJE = URL_MCP.replace(/\/api\/mcp$/, '/api/canje');
@@ -32,6 +36,9 @@ const avisoRed = () => { const n = $('#sin-red'); if (n) n.hidden = navigator.on
 addEventListener('online', () => {
   avisoRed();
   if (!usuario) return;
+  // Sin buzón abierto (el arranque pilló sin red) sí se entra de nuevo.
+  // Con la sesión ya lista solo se refrescan los datos: reconstruir vaciaba el formulario.
+  if (!sesionLista) { entrarSesion(); return; }
   refrescarListaHilos();
   if (vista === 'chat' && chatHilo) refrescarChat();
 });
@@ -39,6 +46,7 @@ addEventListener('offline', avisoRed); avisoRed();
 // Volver de otra app (visibility, focus, pageshow, online) no reconstruye la vista.
 vigilarFoco({ document, window }, { onVisible() {
   if (!usuario || document.hidden) return;
+  if (!sesionLista) { entrarSesion(); return; }
   refrescarListaHilos();
   if (vista === 'chat' && chatHilo) refrescarChat();
 } });
@@ -148,6 +156,7 @@ function elegirDestino(o) {
   if (input) input.value = o.nombre;
   ocultarListaDestino();
   actualizarHintDestino();
+  persistirNuevo();
 }
 
 function armarSelectorDestino() {
@@ -181,7 +190,7 @@ function armarSelectorDestino() {
     } else if (e.key === 'Escape') {
       e.preventDefault();
       if (!lista.hidden) ocultarListaDestino();
-      else { input.value = ''; actualizarHintDestino(); }
+      else { input.value = ''; actualizarHintDestino(); persistirNuevo(); }
     }
   });
   input.addEventListener('blur', () => { /* la lista se queda visible mientras el formulario esté abierto */ });
@@ -277,7 +286,15 @@ function restaurarNuevo() {
   if (!d || typeof d !== 'object') return;
   if ($('#nuevo-titulo') && d.titulo) $('#nuevo-titulo').value = d.titulo;
   if ($('#nuevo-para') && d.para) $('#nuevo-para').value = d.para;
-  if (d.abierto && $('#form-nuevo')) $('#form-nuevo').hidden = false;
+  if (d.abierto && $('#form-nuevo')) {
+    $('#form-nuevo').hidden = false;
+    // En el móvil el formulario vive en el cajón del historial.
+    if (window.matchMedia('(max-width:860px)').matches) {
+      document.body.classList.add('izq-abierto');
+      const fondo = $('#fondo-panel'); if (fondo) fondo.hidden = false;
+      $('#btn-menu')?.setAttribute('aria-expanded', 'true');
+    }
+  }
 }
 function olvidarNuevo() {
   borrarBorrador(almacen(), claveNuevo());
@@ -326,33 +343,51 @@ $('#form-nuevo') && ($('#form-nuevo').onsubmit = async (e) => {
 });
 armarSelectorDestino();
 
+function mostrarFalloInicio(e) {
+  const caja = $('#panel-centro') || $('#vista-pagina');
+  if (!caja) return;
+  caja.replaceChildren();
+  const d = document.createElement('div'); d.className = 'vacio';
+  const b = document.createElement('b');
+  b.textContent = !navigator.onLine || /fetch|network/i.test(e.message || '')
+    ? (getIdioma() === 'en' ? '📡 Offline' : '📡 Sin conexión')
+    : (getIdioma() === 'en' ? 'We could not open your inbox' : 'No pudimos abrir tu buzón');
+  const p = document.createElement('p'); p.textContent = mensajeAmable(e);
+  d.append(b, p); caja.append(d);
+}
+
+function entrarSesion() {
+  if (entradaEnCurso) return entradaEnCurso;
+  entradaEnCurso = (async () => {
+    try {
+      await asegurarBuzon();
+      aplicarRutaGuardada();
+      history.replaceState(null, '', location.pathname + rutaHash({ vista, hilo: vista === 'chat' ? hiloAbierto : null }));
+      await pintar();
+      restaurarNuevo();
+      sesionLista = true;
+    } catch (e) {
+      sesionLista = false;
+      mostrarFalloInicio(e);
+    } finally {
+      entradaEnCurso = null;
+    }
+  })();
+  return entradaEnCurso;
+}
+
 sb.auth.onAuthStateChange(async (ev, ses) => {
   const nuevo = ses?.user ?? null;
   // TOKEN_REFRESHED y un SIGNED_IN del mismo usuario (al volver el foco) no repintan.
   const accion = accionAuth(ev, { usuarioActual: usuario?.id ?? null, usuarioNuevo: nuevo?.id ?? null });
   usuario = nuevo;
   $('#login').hidden = !!usuario; $('#app').hidden = !usuario; $('#salir').hidden = !usuario;
-  if (accion === 'salir') { detenerEnVivo(); cerrarCajones(); return; }
-  if (accion !== 'entrar') return;
-  try {
-    await asegurarBuzon();
-    aplicarRutaGuardada();
-    history.replaceState(null, '', location.pathname + rutaHash({ vista, hilo: vista === 'chat' ? hiloAbierto : null }));
-    await pintar();
-    restaurarNuevo();
-  } catch (e) {
-    const caja = $('#panel-centro') || $('#vista-pagina');
-    if (caja) {
-      caja.replaceChildren();
-      const d = document.createElement('div'); d.className = 'vacio';
-      const b = document.createElement('b');
-      b.textContent = !navigator.onLine || /fetch|network/i.test(e.message || '')
-        ? (getIdioma() === 'en' ? '📡 Offline' : '📡 Sin conexión')
-        : (getIdioma() === 'en' ? 'We could not open your inbox' : 'No pudimos abrir tu buzón');
-      const p = document.createElement('p'); p.textContent = mensajeAmable(e);
-      d.append(b, p); caja.append(d);
-    }
-  }
+  if (accion === 'salir') { sesionLista = false; detenerEnVivo(); cerrarCajones(); return; }
+  // Con el buzón ya abierto, un refresco del token no reconstruye la vista.
+  // Si el primer arranque falló, el mismo SIGNED_IN (o el online) sí reintenta.
+  if (accion !== 'entrar' && sesionLista) return;
+  if (!usuario) return;
+  await entrarSesion();
 });
 
 async function asegurarBuzon() {
@@ -808,6 +843,7 @@ function enlazarAccionesHilo(id, raiz) {
   const decidir = (decision) => conBotones([$('#aprobar'), $('#rechazar')], async () => {
     const { error } = await sb.from('aprobaciones').insert({ hilo_id: id, humano_id: usuario.id, decision, nota: $('#nota')?.value || null });
     if (error) return avisar(t('err.noCerrar'), error);
+    olvidarNota(id);
     pintar();
   });
   $('#aprobar') && ($('#aprobar').onclick = () => decidir('aprobado'));
@@ -817,9 +853,13 @@ function enlazarAccionesHilo(id, raiz) {
     if (!cuerpo) { const av = $('#nota-aviso'); av.textContent = 'Escribe tu mensaje en el cuadro de arriba antes de tocar «Comentar».'; av.hidden = false; $('#nota').focus(); return; }
     const { error } = await sb.from('mensajes').insert({ hilo_id: id, autor_humano: usuario.id, cuerpo });
     if (error) return avisar('No se pudo enviar', error);
-    borrarBorrador(almacen(), claveBorrador(usuario?.id, `nota:${id}`));
+    olvidarNota(id);
     abrirConversacion(id);
   });
+}
+
+function olvidarNota(id) {
+  borrarBorrador(almacen(), claveBorrador(usuario?.id, `nota:${id}`));
 }
 
 function cierreHilo(id, cerrar, bots) {
@@ -827,6 +867,7 @@ function cierreHilo(id, cerrar, bots) {
     if (cerrar && !confirm(t('hilo.confirmarCerrar'))) return;
     const { error } = await sb.rpc('decidir_cierre', { p_hilo: id, p_cerrar: cerrar, p_nota: $('#nota')?.value || null });
     if (error) return avisar('No se pudo', error);
+    olvidarNota(id);
     pintar();
   });
 }
