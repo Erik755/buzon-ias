@@ -45,7 +45,7 @@ test('honestidad: sin receptor propio se dice revisión periódica', () => {
 test('el service worker cachea el módulo de prompts y cambió de versión', () => {
   const sw = readFileSync(raiz + 'pwa/sw.js', 'utf8');
   assert.match(sw, /'prompts-agentes\.js'/);
-  assert.match(sw, /buzon-v25-prompts-agentes/);
+  assert.match(sw, /buzon-v26-menciones/);
   assert.match(readFileSync(raiz + 'pwa/build-config.mjs', 'utf8'), /'prompts-agentes\.js'/);
 });
 

@@ -5,8 +5,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { conBotones } from '../../pwa/errores.js';
 import {
-  fusionarMensajes, idsMensajes, firmaLista, debeEncuestar, debeEncuestarLista,
-  enviarMensajeChat, INTERVALO_SONDEO_MS,
+  fusionarMensajes, idsMensajes, firmaLista, firmaMenciones, debeEncuestar, debeEncuestarLista,
+  enviarMensajeChat, INTERVALO_SONDEO_MS, consultaMencion, sugerenciasMencion, aplicarMencion,
+  claseMencion, normMencion, tokenMencion,
 } from '../../pwa/chat.js';
 
 const app = readFileSync(new URL('../../pwa/app.js', import.meta.url), 'utf8');
@@ -144,7 +145,35 @@ test('el tiempo real va encendido solo, sin casilla de experimento, y hay sondeo
   assert.match(app, /TOKEN_REFRESHED/);
   assert.match(app, /document\.hidden/);
   // Service worker: nueva carcasa e incluye chat.js (si no, la app vieja se queda en caché).
-  assert.match(sw, /buzon-v25-prompts-agentes/);
+  assert.match(sw, /buzon-v26-menciones/);
   assert.doesNotMatch(sw, /buzon-v18-un-buzon/);
   assert.match(sw, /'chat\.js'/);
+});
+
+test('el compositor reconoce @menciones y no un correo', () => {
+  assert.equal(normMencion('Instínct'), 'instinct');
+  assert.equal(tokenMencion('Grok Bot'), 'GrokBot');
+  assert.deepEqual(consultaMencion('hola @Gr', 8), { inicio: 5, consulta: 'Gr' });
+  assert.equal(consultaMencion('@', 1).consulta, '');
+  assert.equal(consultaMencion('erik@grok.com', 13), null);
+  assert.equal(consultaMencion('(@Grok)', 7), null);
+  const filas = [
+    { id: '1', nombre: 'Grok', etiqueta: 'Grok' },
+    { id: '1', nombre: 'Grok', etiqueta: 'grokbot' },
+    { id: '2', nombre: 'Instinct', etiqueta: 'Instinct' },
+  ];
+  assert.deepEqual(sugerenciasMencion(filas, 'gro').map((x) => x.token), ['Grok', 'grokbot']);
+  assert.deepEqual(aplicarMencion('hola @gr', 5, 'Grok'), { texto: 'hola @Grok ', cursor: 11 });
+  assert.equal(claseMencion({ estado: 'notificada', entrega: 'avisado' }), 'avisado');
+  assert.equal(claseMencion({ estado: 'notificada', entrega: 'descartado' }), 'descartado');
+  assert.equal(claseMencion({ estado: 'notificada', entrega: 'pendiente' }), 'pendiente');
+  assert.equal(claseMencion({ estado: 'ambigua' }), 'ambigua');
+  assert.equal(claseMencion({ estado: 'limitada' }), 'sin_aviso');
+  assert.notEqual(firmaMenciones([{ mensaje_id: 'm', token: 'Grok', estado: 'notificada', entrega: 'pendiente' }]),
+    firmaMenciones([{ mensaje_id: 'm', token: 'Grok', estado: 'notificada', entrega: 'avisado' }]));
+  assert.match(app, /mencion-menu/);
+  assert.match(app, /menciones_del_hilo/);
+  assert.match(app, /consultaMencion/);
+  assert.match(css, /\.mencion-chip\.avisado/);
+  assert.match(css, /\.mencion-chip\.descartado/);
 });

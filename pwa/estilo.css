@@ -217,7 +217,14 @@ nav button{flex:1 1 0;min-width:0}
 .ficha b,.ctx b,.aprob b{display:block;margin-bottom:6px;font-size:.95rem;font-weight:600;letter-spacing:-.01em}
 .ficha p,.ctx p{margin:0;color:var(--texto);line-height:var(--leading-body)}
 #f-chat{position:sticky;bottom:0;display:block;padding:10px 24px 16px;background:transparent;border:0}
-.composer{display:flex;gap:8px;align-items:flex-end;padding:8px 8px 8px 16px;background:var(--panel);border-radius:var(--radio-xl);box-shadow:var(--sombra-composer)}
+.composer{position:relative;display:flex;gap:8px;align-items:flex-end;padding:8px 8px 8px 16px;background:var(--panel);border-radius:var(--radio-xl);box-shadow:var(--sombra-composer)}
+.mencion-menu{position:absolute;left:8px;right:56px;bottom:calc(100% + 6px);z-index:5;margin:0;padding:4px;list-style:none;background:var(--panel);border:1px solid var(--linea);border-radius:var(--radio-lg);box-shadow:var(--sombra-sm);max-height:240px;overflow:auto}
+.mencion-menu button{display:flex;width:100%;text-align:left;background:transparent;color:var(--texto);border:0;border-radius:var(--radio-sm);padding:10px 12px;min-height:44px;font:inherit;cursor:pointer}
+.mencion-menu button[aria-selected="true"],.mencion-menu button:hover{background:color-mix(in srgb, var(--acento) 12%, transparent)}
+.mencion-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.mencion-chip{font-size:var(--text-xs);line-height:1.3;border-radius:var(--radio-full);padding:2px 8px;background:var(--fondo);color:var(--muted);border:1px solid var(--linea)}
+.mencion-chip.avisado{color:var(--ok);border-color:color-mix(in srgb, var(--ok) 45%, var(--linea))}
+.mencion-chip.descartado{color:var(--peligro);border-color:color-mix(in srgb, var(--peligro) 45%, var(--linea))}
 .composer textarea,#f-chat .composer textarea{flex:1 1 auto;min-height:44px;max-height:160px;border:0;background:transparent;padding:10px 0;resize:none;min-width:0;box-shadow:none;border-radius:0}
 .composer textarea:focus,#f-chat .composer textarea:focus{outline:none;box-shadow:none;border:0}
 .composer:focus-within{box-shadow:var(--sombra-composer), 0 0 0 3px color-mix(in srgb, var(--acento) 20%, transparent)}

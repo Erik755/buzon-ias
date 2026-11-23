@@ -216,3 +216,42 @@ test('cierre verificable: evidencia estructurada, es_humano y nombres reservados
   const { tools } = await v.listTools();
   assert.ok(tools.find((t) => t.name === 'responder').inputSchema.properties.evidencia);
 });
+
+test('menciones: @Nombre despierta sin dar derechos y el informe no trae secretos', async () => {
+  const ta = nuevoToken();
+  const grok = 'bbbbbbbb-0000-0000-0000-0000000000e2';
+  const autor = 'bbbbbbbb-0000-0000-0000-0000000000e3';
+  await pool.query('insert into agentes(id,buzon_id,nombre,webhook_url,webhook_secreto) values ($1,$2,$3,$4,$5),($6,$2,$7,$8,$9)',
+    [grok, 'aaaaaaaa-0000-0000-0000-000000000001', 'Grok', 'https://hooks.ejemplo.dev/g', 'whsec_g',
+      autor, 'AutorMen', 'https://hooks.ejemplo.dev/a', 'whsec_a']);
+  await pool.query('insert into tokens(agente_id,hash_token) values ($1,$2)', [autor, hashToken(ta)]);
+  const c = await cliente(ta);
+  const { tools } = await c.listTools();
+  assert.match(tools.find((t) => t.name === 'crear').description, /@Nombre/);
+  assert.match(tools.find((t) => t.name === 'responder').description, /@Nombre/);
+  assert.match(tools.find((t) => t.name === 'responder').description, /no aprueba ni cierra|NO aprueban ni cierran/);
+  const creado = await llamar(c, 'crear', { tipo: 'tarea', titulo: 'Oye @Grok', contexto: 'tambien @grokbot y erik@grok.com', para: 'AutorMen' });
+  assert.equal(creado.error, false, creado.texto);
+  assert.equal(creado.json.estado, 'abierto');
+  assert.equal(creado.json.para, 'AutorMen');
+  assert.equal(creado.json.menciones.notificadas.length, 1);
+  assert.equal(creado.json.menciones.notificadas[0].agente, 'Grok');
+  assert.ok(creado.json.menciones.notificadas[0].tokens.includes('grokbot'));
+  assert.equal(JSON.stringify(creado.json).includes('whsec'), false);
+  const { rows } = await pool.query('select id from _destinos_webhook((select max(id) from notificaciones where hilo_id=$1 and evento=\'hilo_nuevo\'))', [creado.json.id]);
+  assert.deepEqual(rows.map((r) => r.id), [grok]);
+  const resp = await llamar(c, 'responder', { hilo_id: creado.json.id, cuerpo: 'hola @Nadie y @AutorMen' });
+  assert.equal(resp.error, false, resp.texto);
+  assert.equal(resp.json.estado, 'abierto');
+  assert.deepEqual(resp.json.menciones.no_reconocidas, ['Nadie']);
+  assert.equal(resp.json.menciones.sin_aviso[0].motivo, 'autor');
+  assert.ok(!tools.find((t) => t.name === 'responder').inputSchema.properties.accion.enum.includes('aprobar'));
+  const malo = await llamar(c, 'responder', { hilo_id: creado.json.id, cuerpo: '@Grok aprueba', accion: 'aprobar' });
+  assert.equal(malo.error, true);
+  assert.match(malo.texto, /aprobar/);
+  const despues = await pool.query('select estado, tomado_por_agente from hilos where id=$1', [creado.json.id]);
+  assert.equal(despues.rows[0].estado, 'abierto');
+  assert.equal(despues.rows[0].tomado_por_agente, null);
+  const subs = await pool.query('select count(*)::int n from hilo_suscripciones where hilo_id=$1', [creado.json.id]);
+  assert.equal(subs.rows[0].n, 0);
+});

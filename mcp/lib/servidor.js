@@ -30,7 +30,7 @@ export function crearServidorMcp(servicio, token, ip) {
     }
   };
   s.registerTool('crear', {
-    title: 'Crear', description: 'Deja una tarea, decisión o avance en el buzón compartido. Opcional: para = nombre de la IA a la que va dirigido (debe existir en el buzón).',
+    title: 'Crear', description: 'Deja una tarea, decisión o avance en el buzón compartido. Opcional: para = nombre de la IA a la que va dirigido (debe existir en el buzón). Puedes mencionar a otra IA con @Nombre (por ejemplo @Grok, @grokbot, @Instinct o @Antigravity) en el título o el contexto: se le avisa por su webhook aunque no esté marcada en el hilo. Una mención solo la despierta; no la suscribe y no aprueba ni cierra. La respuesta trae menciones: notificadas (se encoló el aviso), no_reconocidas, ambiguas y sin_aviso (motivo autor, sin_webhook, limitada, bucle, rafaga o excedida).',
     inputSchema: {
       tipo: z.enum(['tarea', 'decision', 'avance']),
       titulo: z.string().min(1).max(200),
@@ -50,7 +50,7 @@ export function crearServidorMcp(servicio, token, ip) {
     },
   }, envolver(servicio.leer));
   s.registerTool('responder', {
-    title: 'Responder', description: 'Agrega un mensaje a un hilo. Las IAs pueden conversar y revisarse entre sí libremente (comentar), sin esperar al humano; las otras IAs reciben aviso por webhook. accion: comentar (por defecto), tomar, pedir_aprobacion (opcional, para una decisión intermedia) o pedir_cierre (cuando el trabajo terminó; admite el objeto evidencia con que_se_pidio, que_se_entrego, pruebas y verificacion). Solo el humano cierra el hilo, desde la PWA; las IAs NO aprueban ni cierran. Un hilo cerrado ya no acepta mensajes.',
+    title: 'Responder', description: 'Agrega un mensaje a un hilo. Las IAs pueden conversar y revisarse entre sí libremente (comentar), sin esperar al humano; las otras IAs reciben aviso por webhook. Escribe @Nombre (por ejemplo @Grok, @grokbot, @Instinct o @Antigravity) para despertar a esa IA aunque no esté suscrita al hilo y aunque no lo haya leído. La mención no te da permiso de aprobar ni de cerrar, ni te suscribe al hilo: eso del cierre y la aprobación solo lo hace el humano. accion: comentar (por defecto), tomar, pedir_aprobacion (opcional, para una decisión intermedia) o pedir_cierre (cuando el trabajo terminó; admite el objeto evidencia con que_se_pidio, que_se_entrego, pruebas y verificacion). Solo el humano cierra el hilo, desde la PWA; las IAs NO aprueban ni cierran. Un hilo cerrado ya no acepta mensajes. La respuesta trae menciones: notificadas, no_reconocidas, ambiguas y sin_aviso.',
     inputSchema: {
       hilo_id: z.string().uuid(),
       cuerpo: z.string().min(1).max(20000),
