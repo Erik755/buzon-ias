@@ -1448,4 +1448,46 @@ do $$ begin
   else perform pg_temp.falla('249'); end if;
 end $$;
 
+-- 250-251: en producción el agente se llama grokbot. @Grok y @grokbot llegan al que exista.
+reset role;
+update public.agentes set eliminado_en = now() where id = 'bbbbbbbb-0000-0000-0000-0000000000b8';
+insert into public.agentes(id, buzon_id, nombre, webhook_url, webhook_secreto) values
+  ('bbbbbbbb-0000-0000-0000-0000000000b9','aaaaaaaa-0000-0000-0000-000000000002','grokbot','https://hooks.ejemplo.dev/gb','whsec_gb');
+do $$
+declare
+  ajeno uuid := 'bbbbbbbb-0000-0000-0000-000000000009';
+  bot uuid := 'bbbbbbbb-0000-0000-0000-0000000000b9';
+  h uuid; n bigint; ds uuid[];
+begin
+  if exists (select 1 from public.agente_alias where agente_id = bot and alias_norm = 'grok')
+     and exists (select 1 from public.agente_alias where agente_id = (
+           select id from public.agentes where buzon_id = 'aaaaaaaa-0000-0000-0000-000000000001' and nombre = 'Grok' and eliminado_en is null)
+         and alias_norm = 'grokbot')
+  then perform pg_temp.ok('250 @Grok y @grokbot son el mismo alias, en los dos sentidos');
+  else perform pg_temp.falla('250'); end if;
+  insert into public.hilos(buzon_id, tipo, titulo, creado_por_agente, para_agente)
+    values ('aaaaaaaa-0000-0000-0000-000000000002','tarea','hola @Grok', ajeno, ajeno)
+    returning id into h;
+  select max(id) into n from public.notificaciones where hilo_id = h and evento = 'hilo_nuevo';
+  select array_agg(d.id) into ds from public._destinos_webhook(n) d;
+  if exists (select 1 from public.menciones where notificacion_id = n and agente_id = bot and token = 'Grok' and estado = 'notificada')
+     and ds = array[bot]
+  then perform pg_temp.ok('251 un agente llamado grokbot se despierta con @Grok');
+  else perform pg_temp.falla('251 ' || coalesce(ds::text,'null')); end if;
+  update public.notificaciones set creado_en = creado_en - interval '2 minutes' where hilo_id = h;
+  insert into public.mensajes(hilo_id, autor_agente, cuerpo) values (h, ajeno, 'y @grokbot');
+  select max(id) into n from public.notificaciones where hilo_id = h and evento = 'mensaje_nuevo';
+  if exists (select 1 from public.menciones where notificacion_id = n and agente_id = bot and estado = 'notificada')
+     and exists (select 1 from public._destinos_webhook(n) d where d.id = bot)
+  then perform pg_temp.ok('252 @grokbot también es el nombre del agente');
+  else perform pg_temp.falla('252'); end if;
+  update public.agentes set eliminado_en = null where id = 'bbbbbbbb-0000-0000-0000-0000000000b8';
+  insert into public.mensajes(hilo_id, autor_agente, cuerpo) values (h, ajeno, '@Grok otra vez');
+  select max(id) into n from public.notificaciones where hilo_id = h and evento = 'mensaje_nuevo';
+  if exists (select 1 from public.menciones where notificacion_id = n and token = 'Grok' and estado = 'ambigua')
+     and not exists (select 1 from public._destinos_webhook(n) d where d.id = bot)
+  then perform pg_temp.ok('253 si existen Grok y grokbot, @Grok no avisa a ninguno');
+  else perform pg_temp.falla('253'); end if;
+end $$;
+
 \echo TODAS_LAS_PRUEBAS_PASARON

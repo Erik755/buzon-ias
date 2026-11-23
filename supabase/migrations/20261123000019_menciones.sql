@@ -49,6 +49,8 @@ create or replace function public._alias_conocidos(p_norm text) returns text[]
 language sql immutable set search_path = public as $$
   select case p_norm
     when 'grok' then array['grokbot', 'xaigrok']
+    when 'grokbot' then array['grok', 'xaigrok']
+    when 'xaigrok' then array['grok', 'grokbot']
     when 'chatgpt' then array['openai', 'chatgptweb']
     when 'claude' then array['claudecode', 'claudedesktop', 'anthropic']
     when 'claudecode' then array['claude']
@@ -465,7 +467,11 @@ begin
   end if;
   insert into public.hilos(buzon_id, tipo, titulo, contexto, creado_por_agente, para_agente)
     values (a.buzon_id, p_tipo, p_titulo, p_contexto, a.id, dest) returning * into h;
-  select id into nid from public.notificaciones where hilo_id = h.id and evento = 'hilo_nuevo' order by id desc limit 1;
+  -- El aviso de este insert (el hilo_nuevo de este hilo), no el mensaje_nuevo más nuevo.
+  select id into nid from public.notificaciones
+   where hilo_id = h.id and evento = 'hilo_nuevo'
+   order by id asc
+   limit 1;
   perform public._mcp_audit(a, 'crear', h.id, p_ip);
   return jsonb_build_object('id', h.id, 'estado', h.estado, 'creado_por', a.nombre,
     'para', (select nombre from public.agentes where id = dest),
