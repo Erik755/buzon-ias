@@ -281,15 +281,16 @@ function persistirNuevo() {
   const abierto = !$('#form-nuevo')?.hidden;
   guardarBorrador(almacen(), claveNuevo(), { titulo, para, abierto });
 }
-function restaurarNuevo() {
+function restaurarNuevo({ cajon = false } = {}) {
   const d = leerBorrador(almacen(), claveNuevo());
   if (!d || typeof d !== 'object') return;
   if ($('#nuevo-titulo') && d.titulo) $('#nuevo-titulo').value = d.titulo;
   if ($('#nuevo-para') && d.para) $('#nuevo-para').value = d.para;
   if (d.abierto && $('#form-nuevo')) {
     $('#form-nuevo').hidden = false;
-    // En el móvil el formulario vive en el cajón del historial.
-    if (window.matchMedia('(max-width:860px)').matches) {
+    // Solo al entrar de nuevo (la página se descartó). Un pintar() del chat
+    // no debe reabrir el cajón: irA('chat') acaba de cerrarlo.
+    if (cajon && window.matchMedia('(max-width:860px)').matches) {
       document.body.classList.add('izq-abierto');
       const fondo = $('#fondo-panel'); if (fondo) fondo.hidden = false;
       $('#btn-menu')?.setAttribute('aria-expanded', 'true');
@@ -364,7 +365,7 @@ function entrarSesion() {
       aplicarRutaGuardada();
       history.replaceState(null, '', location.pathname + rutaHash({ vista, hilo: vista === 'chat' ? hiloAbierto : null }));
       await pintar();
-      restaurarNuevo();
+      restaurarNuevo({ cajon: true });
       sesionLista = true;
     } catch (e) {
       sesionLista = false;
