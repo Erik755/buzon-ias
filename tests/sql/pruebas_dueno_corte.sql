@@ -318,4 +318,51 @@ begin
 end $$;
 reset role;
 
+-- El corte no se mueve con un UPDATE directo, pero borrar el mensaje o el hilo sí puede limpiarlo.
+do $$
+declare
+  ag uuid := (select id from _cz where k = 'ag');
+  h uuid; m uuid; corte uuid; bz uuid;
+begin
+  insert into public.hilos(buzon_id, tipo, titulo, estado, creado_por_agente)
+  values ('aaaaaaaa-0000-0000-0000-000000000001', 'tarea', 'Corte para borrar', 'pide_aprobacion', ag)
+  returning id into h;
+  insert into public.mensajes(hilo_id, autor_agente, cuerpo) values (h, ag, 'cubierto') returning id into m;
+  insert into public.aprobaciones(hilo_id, humano_id, decision) values (h, '11111111-1111-1111-1111-111111111111', 'aprobado');
+  corte := (select hasta_mensaje_id from public.aprobaciones where hilo_id = h);
+  update public.aprobaciones set hasta_mensaje_id = null, nota = 'intento' where hilo_id = h;
+  if (select hasta_mensaje_id from public.aprobaciones where hilo_id = h) is distinct from corte then
+    perform pg_temp.falla('273 un update directo movio el corte');
+  else
+    perform pg_temp.ok('273 un update directo no mueve el corte');
+  end if;
+  begin
+    delete from public.mensajes where id = m;
+    if (select hasta_mensaje_id is null from public.aprobaciones where hilo_id = h) then
+      perform pg_temp.ok('274 borrar el mensaje cubierto deja el corte en null');
+    else
+      perform pg_temp.falla('274 el corte siguio apuntando al mensaje borrado');
+    end if;
+  exception when foreign_key_violation then
+    perform pg_temp.falla('274 ' || sqlerrm);
+  end;
+
+  insert into auth.users(id, email) values ('33333333-3333-3333-3333-333333333333', 'corte-borrar@ejemplo.test');
+  insert into public.buzones(dueno_id, nombre) values ('33333333-3333-3333-3333-333333333333', 'Buzon corte') returning id into bz;
+  insert into public.hilos(buzon_id, tipo, titulo) values (bz, 'tarea', 'Hilo del buzon') returning id into h;
+  insert into public.mensajes(hilo_id, autor_humano, cuerpo) values (h, '33333333-3333-3333-3333-333333333333', 'nota');
+  insert into public.aprobaciones(hilo_id, humano_id, decision) values (h, '33333333-3333-3333-3333-333333333333', 'aprobado');
+  insert into public.cierres(hilo_id, humano_id, veredicto) values (h, '33333333-3333-3333-3333-333333333333', 'aceptado');
+  begin
+    delete from public.buzones where id = bz;
+    if not exists (select 1 from public.hilos where id = h)
+       and not exists (select 1 from public.aprobaciones where hilo_id = h)
+       and not exists (select 1 from public.cierres where hilo_id = h)
+    then perform pg_temp.ok('275 borrar el buzon arrastra hilo, aprobacion y cierre');
+    else perform pg_temp.falla('275 quedaron filas'); end if;
+  exception when foreign_key_violation then
+    perform pg_temp.falla('275 ' || sqlerrm);
+  end;
+end $$;
+
 \echo TODAS_LAS_PRUEBAS_PASARON

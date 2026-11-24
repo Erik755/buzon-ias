@@ -36,7 +36,12 @@ create or replace function public.fijar_hasta_mensaje() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
   if tg_op = 'UPDATE' then
-    new.hasta_mensaje_id := old.hasta_mensaje_id;
+    -- Un UPDATE directo no mueve el corte. ON DELETE SET NULL llega desde el
+    -- trigger de la FK (profundidad > 1) y sí puede dejarlo en null; si no,
+    -- borrar el mensaje, el hilo o el buzón choca con la clave foránea.
+    if pg_trigger_depth() = 1 then
+      new.hasta_mensaje_id := old.hasta_mensaje_id;
+    end if;
     return new;
   end if;
   perform 1 from public.hilos where id = new.hilo_id for update;
