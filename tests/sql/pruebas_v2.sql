@@ -1489,5 +1489,3 @@ begin
   then perform pg_temp.ok('253 si existen Grok y grokbot, @Grok no avisa a ninguno');
   else perform pg_temp.falla('253'); end if;
 end $$;
-
-\echo TODAS_LAS_PRUEBAS_PASARON
