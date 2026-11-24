@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   accionAuth, rutaHash, leerRuta, claveBorrador, guardarBorrador, leerBorrador, borrarBorrador,
-  reiniciarMemoriaBorradores, vigilarFoco,
+  reiniciarMemoriaBorradores, borrarBorradores, vigilarFoco,
 } from '../../pwa/foco.js';
 
 const app = readFileSync(new URL('../../pwa/app.js', import.meta.url), 'utf8');
@@ -31,6 +31,8 @@ function entorno() {
 function memoria() {
   const bag = new Map();
   return {
+    get length() { return bag.size; },
+    key: (i) => [...bag.keys()][i] ?? null,
     getItem: (k) => (bag.has(k) ? bag.get(k) : null),
     setItem: (k, v) => bag.set(k, v),
     removeItem: (k) => bag.delete(k),
@@ -93,6 +95,10 @@ test('el primer inicio sí entra, y un borrador sobrevive a que se descarte la p
   reiniciarMemoriaBorradores();
   assert.equal(leerBorrador(storage, claveBorrador(uid, 'wh-clave:ag1')), null);
   assert.equal(leerBorrador(storage, claveBorrador(uid, 'hilo-nuevo')), null);
+  guardarBorrador(storage, claveBorrador(uid, 'wh-clave:ag1'), 'clave-de-grok-123456');
+  borrarBorradores(storage);
+  assert.equal(leerBorrador(storage, claveBorrador(uid, 'wh-clave:ag1')), null);
+  assert.equal(storage.getItem(claveBorrador(uid, 'wh-url:ag1')), null);
 
   assert.equal(rutaHash({ vista: 'agentes' }), '#agentes');
   assert.equal(rutaHash({ vista: 'conectar' }), '#conectar');
@@ -112,6 +118,7 @@ test('la app no repinta al volver el foco y recuerda la ruta y los borradores', 
   assert.match(app, /rutaHash\(/);
   assert.match(app, /leerRuta\(/);
   assert.match(app, /wh-clave:/);
+  assert.match(app, /accion === 'salir'[\s\S]{0,240}borrarBorradores\(/);
   assert.doesNotMatch(app, /localStorage\.setItem\([^)]*wh-clave|localStorage\.setItem\([^)]*webhook/);
   assert.match(sw, /foco\.js/);
   assert.match(sw, /buzon-v27-foco/);

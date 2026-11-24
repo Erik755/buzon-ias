@@ -68,6 +68,21 @@ export function borrarBorrador(storage, clave) {
   try { storage?.removeItem(clave); } catch { /* ya no está */ }
 }
 
+// Al cerrar sesión se tiran todos los borradores de esta pestaña, incluida la
+// clave del webhook. sessionStorage es de la pestaña, no de la cuenta.
+export function borrarBorradores(storage) {
+  MEMORIA.clear();
+  if (!storage) return;
+  try {
+    const claves = [];
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i);
+      if (k && k.startsWith('buzon-borrador:')) claves.push(k);
+    }
+    for (const k of claves) storage.removeItem(k);
+  } catch { /* modo privado */ }
+}
+
 /** Simula que el proceso murió (Android descartó la página) pero sessionStorage sigue. */
 export function reiniciarMemoriaBorradores() {
   MEMORIA.clear();

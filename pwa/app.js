@@ -11,7 +11,7 @@ import { ETIQUETA_PROMPT, promptDeGuia, PROMPT_DE_GUIA } from './prompts-agentes
 import { filtrarHilos, inicialDe, hiloCerrado } from './layout.js';
 import { listaDestinatarios, idAgentePorNombre, nombresDeHilos } from './destinatarios.js';
 import { aplicarTema, leerTema, alternarTema as cambiarTema, sincronizarControlTema } from './temas.js';
-import { accionAuth, rutaHash, leerRuta, claveBorrador, guardarBorrador, leerBorrador, borrarBorrador, vigilarFoco } from './foco.js';
+import { accionAuth, rutaHash, leerRuta, claveBorrador, guardarBorrador, leerBorrador, borrarBorrador, borrarBorradores, vigilarFoco } from './foco.js';
 
 const { SUPABASE_URL, SUPABASE_ANON_KEY, MCP_URL } = CFG;
 const VAPID = CFG.VAPID_PUBLIC_KEY || '';
@@ -383,7 +383,14 @@ sb.auth.onAuthStateChange(async (ev, ses) => {
   const accion = accionAuth(ev, { usuarioActual: usuario?.id ?? null, usuarioNuevo: nuevo?.id ?? null });
   usuario = nuevo;
   $('#login').hidden = !!usuario; $('#app').hidden = !usuario; $('#salir').hidden = !usuario;
-  if (accion === 'salir') { sesionLista = false; detenerEnVivo(); cerrarCajones(); return; }
+  if (accion === 'salir') {
+    sesionLista = false;
+    borrarBorradores(almacen());
+    olvidarNuevo();
+    detenerEnVivo();
+    cerrarCajones();
+    return;
+  }
   // Con el buzón ya abierto, un refresco del token no reconstruye la vista.
   // Si el primer arranque falló, el mismo SIGNED_IN (o el online) sí reintenta.
   if (accion !== 'entrar' && sesionLista) return;
