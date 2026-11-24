@@ -147,7 +147,7 @@ test('el tiempo real va encendido solo, sin casilla de experimento, y hay sondeo
   assert.match(app, /TOKEN_REFRESHED/);
   assert.match(app, /document\.hidden/);
   // Service worker: nueva carcasa e incluye chat.js (si no, la app vieja se queda en caché).
-  assert.match(sw, /buzon-v26-menciones/);
+  assert.match(sw, /buzon-v27-foco/);
   assert.doesNotMatch(sw, /buzon-v18-un-buzon/);
   assert.match(sw, /'chat\.js'/);
 });
